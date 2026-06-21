@@ -37,7 +37,9 @@ TEX_NAME_RENAME = {"silver": "light_gray"}
 COPY_PREFIXES = [
     "todeploy/millenaire/",          # building templates, cultures, goals, quests, languages, villagerconfig
     "assets/millenaire/sounds/",     # author's sound files
-    "assets/millenaire/lang/",       # author's translation strings
+    # NOTE: the official jar's assets/millenaire/lang/*.lang is the 1.12 format, which 26.2 does NOT read.
+    # The 26.2 .json language files (our reformatting) live in src/main/resources and are committed, so we
+    # do NOT fetch the author's .lang here.
 ]
 TEXTURE_PREFIX = "assets/millenaire/textures/"
 

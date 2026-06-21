@@ -430,7 +430,62 @@ public abstract class MillVillager extends PathfinderMob implements IAStarPathed
    public static AttributeSupplier.Builder createAttributes() {
       return PathfinderMob.createMobAttributes()
          .add(Attributes.MOVEMENT_SPEED, 0.5)
-         .add(Attributes.MAX_HEALTH, 20.0);
+         .add(Attributes.MAX_HEALTH, 20.0)
+         // ATTACK_DAMAGE/KNOCKBACK are NOT in PathfinderMob's default set; doHurtTarget reads them, so the
+         // new combat behaviour crashed ("Can't find attribute attack_damage") the moment a villager meleed.
+         .add(Attributes.ATTACK_DAMAGE, 2.0)
+         .add(Attributes.ATTACK_KNOCKBACK, 0.0);
+   }
+
+   @Override
+   protected net.minecraft.world.entity.ai.navigation.PathNavigation createNavigation(net.minecraft.world.level.Level level) {
+      // OPT-IN only (MillConfigValues.NewAI, default false): the rewritten no-warp, terrain+safety-aware
+      // navigation. When the flag is off this returns the exact legacy navigation, so none of Mill's existing
+      // behaviour changes.
+      if (org.millenaire.common.config.MillConfigValues.NewAI) {
+         return new org.millenaire.common.ai.MillPathNavigation(this, level);
+      }
+      return super.createNavigation(level);
+   }
+
+   /** New-AI danger field (req 4/5/6), rebuilt periodically from nearby hostiles and fed to the navigation. */
+   private org.millenaire.common.ai.MillInfluenceGrid aiInfluence = org.millenaire.common.ai.MillInfluenceGrid.empty();
+   private int aiGridCooldown = 0;
+   /** NewAI decision engine (tactical combat layer). Lazily created; only ticked under the NewAI flag. */
+   private org.millenaire.common.ai.MillAI millAI;
+
+   /**
+    * NewAI only: rebuild the local danger field from nearby hostiles (~every 20 ticks) and feed it to the
+    * MillPathNavigation cost so paths route safely. Additive + side-effect-free w.r.t. the rest of Mill —
+    * it only tunes the navigation cost; goal selection / performAction / economy are untouched.
+    */
+   private void updateNewAiDanger() {
+      if (--this.aiGridCooldown <= 0) {
+         this.aiGridCooldown = 20;
+         // Use getEntities(except, AABB, predicate) NOT getEntitiesOfClass: the latter goes through
+         // ClassInstanceMultiMap's per-class cache (computeIfAbsent), which is not reentrancy-safe during the
+         // entity tick loop and was throwing ConcurrentModificationException. getEntities iterates the section
+         // lists directly. We then keep only living hostiles.
+         java.util.List<net.minecraft.world.entity.LivingEntity> hostiles = new java.util.ArrayList<>();
+         for (net.minecraft.world.entity.Entity e : this.level().getEntities(this, this.getBoundingBox().inflate(24.0),
+            e -> e instanceof net.minecraft.world.entity.monster.Enemy && e.isAlive())) {
+            if (e instanceof net.minecraft.world.entity.LivingEntity le) {
+               hostiles.add(le);
+            }
+         }
+         int bx = this.getBlockX();
+         int bz = this.getBlockZ();
+         this.aiInfluence = org.millenaire.common.ai.MillInfluenceGrid.build(
+            bx, bz, bx, bz, hostiles, org.millenaire.common.ai.MillInfluenceGrid.DEFAULT_RADIUS);
+      }
+      if (this.getNavigation() instanceof org.millenaire.common.ai.MillPathNavigation nav) {
+         nav.configureCost(this.aiInfluence, 1.0F, 2.0F);
+      }
+   }
+
+   /** The current danger field (for the combat behaviour's position scoring). */
+   public org.millenaire.common.ai.MillInfluenceGrid getAiInfluence() {
+      return this.aiInfluence;
    }
 
    private void applyPathCalculatedSinceLastTick() {
@@ -2143,6 +2198,27 @@ public abstract class MillVillager extends PathfinderMob implements IAStarPathed
       if (this.level().dimension() != net.minecraft.world.level.Level.OVERWORLD) {
          this.despawnVillagerSilent();
       }
+      // NewAI: keep the navigation's danger-aware cost up to date (server-side only). Side-effect-free w.r.t.
+      // the legacy tick that follows — it only tunes path cost. No-op when the flag is off.
+      if (org.millenaire.common.config.MillConfigValues.NewAI && !this.level().isClientSide()) {
+         this.updateNewAiDanger();
+         // Tactical combat layer ONLY (the piece Mill lacks): when a target exists, BehaviourCombat drives
+         // smart positioning + ranged/melee. It's additive — when there's no target it does nothing, so the
+         // legacy goal movement/economy below is untouched (seamless). Not GoTo/Wander (those would fight the
+         // legacy movement); those move in once the legacy mover is fully replaced.
+         if (this.millAI == null) {
+            // Priority order emerges from each behaviour's priority(): Combat(50) > GoToPoint(10) > Wander(0).
+            // GoToPoint drives the villager to the Mill goal's dest point via the multi-objective navigation
+            // (the legacy A* mover is gated off above), Wander is the safe idle fallback, Combat preempts both.
+            // Priorities: EscapeFluid(lava 100 / water 60) > Combat(50) > GoToPoint(10) > Wander(0).
+            this.millAI = new org.millenaire.common.ai.MillAI(java.util.List.of(
+               new org.millenaire.common.ai.behaviours.BehaviourEscapeFluid(),
+               new org.millenaire.common.ai.behaviours.BehaviourCombat(),
+               new org.millenaire.common.ai.behaviours.BehaviourGoToPoint(),
+               new org.millenaire.common.ai.behaviours.BehaviourWander()));
+         }
+         this.millAI.tick(this);
+      }
 
       try {
          // mw is set in the ctor from Mill.getMillWorld(level), but that returns null if the level wasn't
@@ -2170,7 +2246,9 @@ public abstract class MillVillager extends PathfinderMob implements IAStarPathed
             this.pathFailedSinceLastTick();
          }
 
-         if (this.pathCalculatedSinceLastTick != null) {
+         // Legacy A* path application (bridge to vanilla nav). Under NewAI the new navigation does its own
+         // multi-objective pathing via moveTo(dest) (BehaviourGoToPoint), so skip the bridge.
+         if (this.pathCalculatedSinceLastTick != null && !org.millenaire.common.config.MillConfigValues.NewAI) {
             this.applyPathCalculatedSinceLastTick();
          }
 
@@ -2420,7 +2498,12 @@ public abstract class MillVillager extends PathfinderMob implements IAStarPathed
                   );
                }
 
-               if (this.longDistanceStuck > 3000 && (!this.vtype.noTeleport || this.getRecord() != null && this.getRecord().raidingVillage)) {
+               // Legacy long-distance-stuck teleport. Under the new AI (req 1: never warp) this is suppressed
+               // — the new navigation re-plans / the goal layer abandons instead. Everything else in this tick
+               // (goal selection, performAction, building/economy/social) is untouched, so integration stays
+               // seamless with the rest of Mill.
+               if (!org.millenaire.common.config.MillConfigValues.NewAI
+                  && this.longDistanceStuck > 3000 && (!this.vtype.noTeleport || this.getRecord() != null && this.getRecord().raidingVillage)) {
                   this.jumpToDest();
                }
 
@@ -2443,7 +2526,8 @@ public abstract class MillVillager extends PathfinderMob implements IAStarPathed
                      this.pathEntity = null;
                   }
 
-                  if (this.localStuck > 100) {
+                  // Legacy local-stuck warp to the next node — suppressed under the new AI (req 1: never warp).
+                  if (!org.millenaire.common.config.MillConfigValues.NewAI && this.localStuck > 100) {
                      this.setPos(nextPoint.x + 0.5, nextPoint.y + 0.5, nextPoint.z + 0.5);
                      this.localStuck = 0;
                   }
@@ -2453,7 +2537,9 @@ public abstract class MillVillager extends PathfinderMob implements IAStarPathed
                this.localStuck = 0;
             }
 
-            if (this.getPathDestPoint() != null && !this.stopMoving) {
+            // Legacy: kick the Mill A* planner toward the dest. Under NewAI the navigation paths there
+            // itself (multi-objective cost) via BehaviourGoToPoint, so the old planner is not used.
+            if (this.getPathDestPoint() != null && !this.stopMoving && !org.millenaire.common.config.MillConfigValues.NewAI) {
                this.updatePathIfNeeded(this.getPathDestPoint());
             }
 
@@ -2556,7 +2642,10 @@ public abstract class MillVillager extends PathfinderMob implements IAStarPathed
    }
 
    private void pathFailedSinceLastTick() {
-      if (!this.vtype.noTeleport || this.getRecord() != null && this.getRecord().raidingVillage) {
+      // Legacy "path failed → warp to destination". Suppressed under the new AI (req 1: never warp); the new
+      // navigation simply re-plans or the goal layer abandons. Seamless: nothing else here changes.
+      if (!org.millenaire.common.config.MillConfigValues.NewAI
+         && (!this.vtype.noTeleport || this.getRecord() != null && this.getRecord().raidingVillage)) {
          this.jumpToDest();
       }
 

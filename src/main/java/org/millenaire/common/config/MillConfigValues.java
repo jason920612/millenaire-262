@@ -65,6 +65,10 @@ public class MillConfigValues {
    public static int LogNetwork = 0;
    public static boolean DEV = false;
    public static boolean DEBUG_MODE = false;
+   /** Opt-in flag for the rewritten villager AI (org.millenaire.common.ai). Lets the new behaviour engine +
+    *  MillPathNavigation run ALONGSIDE the legacy goal/movement so we can switch villagers over per phase
+    *  without breaking the working mod. Default off until the rewrite is proven. */
+   public static boolean NewAI = true;
    public static boolean displayNames = true;
    public static boolean displayStart = true;
    public static final String NEOL = System.getProperty("line.separator");

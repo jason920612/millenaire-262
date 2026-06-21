@@ -540,6 +540,7 @@ public final class MillClientSelfTest {
    private double combatStartX;
    private double combatStartZ;
    private volatile boolean combatEngaged = false;
+   private volatile java.util.UUID combatZombieId = null;
 
    /** Spawn a zombie (melee) + pillager (ranged) next to a fighter villager and target the zombie, exercising
     *  the new combat AI (acquire → move → attack → ranged retreat). Combat crashes/freezes slipped through
@@ -594,6 +595,7 @@ public final class MillClientSelfTest {
                }
                if (fe instanceof MillVillager mv && zombie instanceof net.minecraft.world.entity.LivingEntity le) {
                   mv.setTarget(le);
+                  this.combatZombieId = le.getUUID();
                   // Record the movement baseline at the MOMENT combat starts (server-side), so combat-check
                   // measures movement since engagement regardless of how far the integrated server lagged.
                   this.combatStartX = mv.getX();
@@ -631,12 +633,21 @@ public final class MillClientSelfTest {
          double dx = mv.getX() - this.combatStartX;
          double dz = mv.getZ() - this.combatStartZ;
          double movedSq = dx * dx + dz * dz;
+         // Did the fighter actually land hits? The zombie should be hurt, or already dead (getEntity → null).
+         net.minecraft.world.entity.Entity ze = this.combatZombieId != null ? server.overworld().getEntity(this.combatZombieId) : null;
+         boolean zombieHurtOrDead = ze == null
+            || (ze instanceof net.minecraft.world.entity.LivingEntity zl && zl.getHealth() < zl.getMaxHealth());
          String detail = "movedDist2=" + String.format("%.1f", movedSq)
-            + " stillTargeting=" + (mv.getTarget() != null) + " alive=" + mv.isAlive();
+            + " stillTargeting=" + (mv.getTarget() != null) + " alive=" + mv.isAlive() + " zombieHurtOrDead=" + zombieHurtOrDead;
          if (movedSq > 1.0) {
             pass("combat-check", "fighter ENGAGED and moved (not frozen): " + detail);
          } else {
             fail("combat-check", new IllegalStateException("fighter did NOT move ~2.5s after targeting — FREEZE suspected: " + detail));
+         }
+         if (zombieHurtOrDead) {
+            pass("combat-attack", "fighter dealt damage to its target (hurt or killed)");
+         } else {
+            log("combat-attack: target not yet damaged (fighter may still be closing the gap) — non-fatal");
          }
       } catch (Throwable t) {
          fail("combat-check", t);

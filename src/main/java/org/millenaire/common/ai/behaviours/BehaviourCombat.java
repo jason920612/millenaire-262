@@ -155,6 +155,14 @@ public final class BehaviourCombat implements MillBehaviour {
          double rnz = nx * sin + nz * cos;
          gx = tp.x - rnx * optimal;
          gz = tp.z - rnz * optimal;
+         // TERRAIN HERDING: if the enemy borders bad terrain (a drop or fluid), blend our stand point to the
+         // side AWAY from that hazard, so the pack presses the enemy toward the restricted/dangerous ground
+         // (limiting its movement) instead of leaving it an open escape.
+         double[] herd = herdDir(villager.level(), target.blockPosition());
+         if (herd[0] != 0.0 || herd[1] != 0.0) {
+            gx = 0.5 * gx + 0.5 * (tp.x - herd[0] * optimal);
+            gz = 0.5 * gz + 0.5 * (tp.z - herd[1] * optimal);
+         }
       } else {
          // At range → strafe perpendicular so we keep moving. RANDOM side + random duration so an archer
          // can't lead the shot (req: unpredictable). Only overridden if a side is clearly more dangerous.
@@ -182,6 +190,24 @@ public final class BehaviourCombat implements MillBehaviour {
          return true;
       }
       return r;
+   }
+
+   /** Cardinal unit vector from the enemy toward nearby BAD terrain (a drop or a fluid) within ~4 blocks, or
+    *  {0,0} if it stands on open safe ground — used to herd it toward hazards / restricted terrain. */
+   private static double[] herdDir(Level level, BlockPos enemy) {
+      int[][] dirs = {{1, 0}, {-1, 0}, {0, 1}, {0, -1}};
+      for (int dist = 2; dist <= 4; dist++) {
+         for (int[] d : dirs) {
+            BlockPos c = enemy.offset(d[0] * dist, 0, d[1] * dist);
+            if (!level.getBlockState(c).getFluidState().isEmpty()) {
+               return new double[]{d[0], d[1]}; // fluid hazard (water/lava)
+            }
+            if (!level.getBlockState(c.below()).isSolid() && level.getBlockState(c.below(2)).isAir()) {
+               return new double[]{d[0], d[1]}; // a drop / cliff edge
+            }
+         }
+      }
+      return new double[]{0.0, 0.0};
    }
 
    /** First standable cell near (x,z), scanning a couple of blocks up/down from the target's height. */

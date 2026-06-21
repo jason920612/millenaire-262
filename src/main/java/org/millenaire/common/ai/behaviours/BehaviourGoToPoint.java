@@ -17,6 +17,9 @@ public final class BehaviourGoToPoint implements MillBehaviour {
    private double lastX = Double.NaN;
    private double lastZ;
    private int stuckTicks;
+   private net.minecraft.core.BlockPos detour; // side waypoint to re-route around a stuck spot
+   private int detourTicks;
+   private int detourSide = 1;
 
    @Override
    public boolean canRun(MillVillager villager) {
@@ -34,30 +37,43 @@ public final class BehaviourGoToPoint implements MillBehaviour {
       if (d == null) {
          return false;
       }
+      // Re-routing: if we're escaping a stuck spot, go to the side waypoint first, then resume direct pathing.
+      // We KEEP the Mill task and just plan a NEW ROUTE — we never abandon/override the goal.
+      if (this.detour != null) {
+         if (--this.detourTicks <= 0 || villager.blockPosition().closerThan(this.detour, 2.0)) {
+            this.detour = null;
+            villager.getNavigation().stop();
+         } else {
+            if (villager.getNavigation().isDone()) {
+               villager.getNavigation().moveTo(this.detour.getX() + 0.5, this.detour.getY(), this.detour.getZ() + 0.5, SPEED);
+            }
+            return true;
+         }
+      }
       double dist = villager.getPos().distanceTo(d);
       if (dist <= ARRIVE) {
          villager.getNavigation().stop();
          return false; // arrived → done
       }
-      // (Re)issue a path only when idle; if the planner can't reach it, fail gracefully (no warp).
+      // (Re)issue a path only when idle; if the planner can't reach it directly, plan a NEW ROUTE around it.
       if (villager.getNavigation().isDone()) {
          boolean pathed = villager.getNavigation().moveTo(d.getiX() + 0.5, d.getiY(), d.getiZ() + 0.5, SPEED);
          if (!pathed) {
-            return false; // unreachable — abandon, the goal layer decides what next
+            startDetour(villager, d);
+            return true;
          }
       }
-      // Stuck detection: when a large obstacle / dead-end path stops progress, force a FRESH re-path (the
-      // navigation otherwise keeps following its stuck path); if still stuck after a while, give up so the
-      // goal layer re-plans instead of standing forever.
+      // Stuck detection: no progress → drop the stuck path and re-pathfind; if still stuck, RE-ROUTE via a
+      // side waypoint to get around the blockage (keeping the goal — never clearGoal).
       double mx = villager.getX() - this.lastX;
       double mz = villager.getZ() - this.lastZ;
       if (!Double.isNaN(this.lastX) && mx * mx + mz * mz < 0.0025) {
          this.stuckTicks++;
          if (this.stuckTicks == 60) {
-            villager.getNavigation().stop(); // drop the stuck path → re-pathfind next tick (now finds climbs)
-         } else if (this.stuckTicks > 140) {
+            villager.getNavigation().stop();
+         } else if (this.stuckTicks > 100) {
             this.stuckTicks = 0;
-            return false; // genuinely stuck ~7s → abandon, let the goal layer re-plan
+            startDetour(villager, d);
          }
       } else {
          this.stuckTicks = 0;
@@ -72,6 +88,27 @@ public final class BehaviourGoToPoint implements MillBehaviour {
       villager.getNavigation().stop();
       this.lastX = Double.NaN;
       this.stuckTicks = 0;
+      this.detour = null;
+   }
+
+   /**
+    * Plan a NEW ROUTE around a blockage: aim for a reachable side waypoint ~5 blocks perpendicular to the
+    * goal direction (alternating sides each attempt) so the villager breaks out of the local dead-end, then
+    * resumes pathing to the SAME goal. The Mill task/goal is preserved — we only change the route.
+    */
+   private void startDetour(MillVillager villager, Point goal) {
+      double dx = goal.getiX() - villager.getX();
+      double dz = goal.getiZ() - villager.getZ();
+      double len = Math.sqrt(dx * dx + dz * dz);
+      if (len < 0.01) {
+         return;
+      }
+      this.detourSide = -this.detourSide; // alternate left/right between attempts
+      double px = -dz / len * this.detourSide * 5.0;
+      double pz = dx / len * this.detourSide * 5.0;
+      this.detour = net.minecraft.core.BlockPos.containing(villager.getX() + px, villager.getY(), villager.getZ() + pz);
+      this.detourTicks = 80; // ~4s to reach the side waypoint before resuming direct pathing
+      villager.getNavigation().moveTo(this.detour.getX() + 0.5, this.detour.getY(), this.detour.getZ() + 0.5, SPEED);
    }
 
    private static Point dest(MillVillager villager) {

@@ -2250,9 +2250,10 @@ public abstract class MillVillager extends PathfinderMob implements IAStarPathed
             // Priority order emerges from each behaviour's priority(): Combat(50) > GoToPoint(10) > Wander(0).
             // GoToPoint drives the villager to the Mill goal's dest point via the multi-objective navigation
             // (the legacy A* mover is gated off above), Wander is the safe idle fallback, Combat preempts both.
-            // Priorities: EscapeFluid(lava 100 / water 60) > Combat(50) > GoToPoint(10) > Wander(0).
+            // Priorities: EscapeFluid(lava 100 / water 60) > EscapePit(55) > Combat(50) > GoToPoint(10) > Wander(0).
             this.millAI = new org.millenaire.common.ai.MillAI(java.util.List.of(
                new org.millenaire.common.ai.behaviours.BehaviourEscapeFluid(),
+               new org.millenaire.common.ai.behaviours.BehaviourEscapePit(),
                new org.millenaire.common.ai.behaviours.BehaviourCombat(),
                new org.millenaire.common.ai.behaviours.BehaviourGoToPoint(),
                new org.millenaire.common.ai.behaviours.BehaviourWander()));

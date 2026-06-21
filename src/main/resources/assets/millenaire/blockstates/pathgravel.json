@@ -1,0 +1,6 @@
+{
+    "variants": {
+        "stable=false": { "model": "millenaire:block/pathgravel" },
+        "stable=true": { "model": "millenaire:block/pathgravel" }
+    }
+}

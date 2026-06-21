@@ -1,0 +1,17 @@
+{
+    "type":  "minecraft:crafting_shaped",
+    "group":  "vegcurry",
+    "pattern":  [
+                    "#",
+                    "X"
+                ],
+    "category":  "misc",
+    "key":  {
+                "#":  "millenaire:turmeric",
+                "X":  "millenaire:rice"
+            },
+    "result":  {
+                   "id":  "millenaire:vegcurry",
+                   "count":  1
+               }
+}

@@ -1,0 +1,15 @@
+{
+	"variants": {
+		"type=bottom,variant=timberframeplain": { "model": "millenaire:block/timberframe_bottom" },
+		"type=top,variant=timberframeplain":    { "model": "millenaire:block/timberframe_top" },
+		"type=double,variant=timberframeplain": { "model": "millenaire:block/timberframe_double" },
+
+		"type=bottom,variant=timberframecross": { "model": "millenaire:block/timberframe_bottom" },
+		"type=top,variant=timberframecross":    { "model": "millenaire:block/timberframe_top" },
+		"type=double,variant=timberframecross": { "model": "millenaire:block/timberframe_double" },
+
+		"type=bottom,variant=thatch": { "model": "millenaire:block/thatch_bottom" },
+		"type=top,variant=thatch":    { "model": "millenaire:block/thatch_top" },
+		"type=double,variant=thatch": { "model": "millenaire:block/thatch_double" }
+	}
+}

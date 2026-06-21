@@ -1,0 +1,15 @@
+{
+    "type":  "minecraft:crafting_shaped",
+    "pattern":  [
+                    "##",
+                    "##"
+                ],
+    "category":  "misc",
+    "key":  {
+                "#":  "minecraft:snow_block"
+            },
+    "result":  {
+                   "id":  "millenaire:snowbrick",
+                   "count":  4
+               }
+}

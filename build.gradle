@@ -1,0 +1,136 @@
+plugins {
+	id 'net.fabricmc.fabric-loom' version "${loom_version}"
+	id 'maven-publish'
+}
+
+version = project.mod_version
+group = project.maven_group
+
+repositories {
+	// Add repositories to retrieve artifacts from in here.
+	// You should only use this when depending on other mods because
+	// Loom adds the essential maven repositories to download Minecraft and libraries from automatically.
+	// See https://docs.gradle.org/current/userguide/declaring_repositories.html
+	// for more information about repositories.
+}
+
+loom {
+	// Single source set for the whole port (client + common together) to minimise
+	// porting friction. Client-only code is gated with @Environment(EnvType.CLIENT).
+	mods {
+		"millenaire" {
+			sourceSet sourceSets.main
+		}
+	}
+
+}
+
+dependencies {
+	// To change the versions see the gradle.properties file
+	minecraft "com.mojang:minecraft:${project.minecraft_version}"
+
+	// MC 26.2 ships non-obfuscated: class/method names are already the official Mojang
+	// (Mojmap) names, so no separate mappings layer is declared (matches fabric-example-mod
+	// for this MC version). Loom would reject officialMojangMappings() here as redundant.
+
+	implementation "net.fabricmc:fabric-loader:${project.loader_version}"
+
+	// Fabric API. Loom 1.17 has no modImplementation; plain implementation is correct
+	// for this version and exposes the nested submodule classes on the classpath.
+	implementation "net.fabricmc.fabric-api:fabric-api:${project.fabric_api_version}"
+
+	// --- Headless test stack -------------------------------------------------
+	// fabric-loader-junit bootstraps the Fabric/Minecraft classpath + registries IN-JVM so JUnit tests
+	// can touch MC classes (FriendlyByteBuf, BlockState, registries) WITHOUT launching the game client.
+	// Version is pinned to the project's loader version (gradle.properties loader_version).
+	testImplementation "net.fabricmc:fabric-loader-junit:${project.loader_version}"
+	testImplementation platform("org.junit:junit-bom:5.11.4")
+	testImplementation "org.junit.jupiter:junit-jupiter"
+	testRuntimeOnly "org.junit.platform:junit-platform-launcher"
+	// Mockito (inline mock maker, default on modern versions) for lightweight stand-ins of heavyweight
+	// Mill classes (Building, MillVillager) whose full construction needs a live world.
+	testImplementation "org.mockito:mockito-core:5.14.2"
+}
+
+test {
+	useJUnitPlatform()
+	// Mockito's ByteBuddy doesn't officially support the JDK 25 class-file version yet; this flag lets it
+	// mock Mill classes (Building/MillVillager) on JDK 25 instead of failing with an "unsupported" error.
+	systemProperty "net.bytebuddy.experimental", "true"
+	// Pure headless: never spawn a game window. Fail fast and show each test result on the console.
+	testLogging {
+		events "passed", "skipped", "failed"
+		showStandardStreams = false
+		exceptionFormat = "full"
+	}
+}
+
+// The original Millénaire art/data assets (textures, sounds, lang, building/culture/quest content under
+// todeploy) are © Kinniken and NOT committed to this repo (see NOTICE). scripts/fetch-upstream.py downloads
+// them from the official release into upstream-assets/, which we overlay onto the main resources here so the
+// build produces a complete mod. Our own resources in src/main/resources take precedence on any overlap.
+sourceSets {
+	main {
+		resources {
+			// Order matters: upstream (author) first, our src/main/resources last, so OUR files win on any
+			// overlap (e.g. a texture we fixed) when processResources flattens them.
+			setSrcDirs(['upstream-assets', 'src/main/resources'])
+		}
+	}
+}
+
+processResources {
+	def version = project.version
+	inputs.property "version", version
+	// The overlay can produce duplicates (ours + upstream); INCLUDE keeps the last (ours, listed last).
+	duplicatesStrategy = DuplicatesStrategy.INCLUDE
+
+	filesMatching("fabric.mod.json") {
+		expand "version": version
+	}
+}
+
+tasks.withType(JavaCompile).configureEach {
+	it.options.release = 25
+	// Force UTF-8 source encoding. ~66 Mill source files contain non-ASCII string literals (§ colour
+	// codes, accented culture text like "Millénaire"); without this, a build on a non-UTF-8 platform
+	// (or a gradle daemon pinned to file.encoding=MS950/Cp1252) compiles them with the wrong charset and
+	// the in-game text renders as mojibake.
+	it.options.encoding = "UTF-8"
+}
+
+java {
+	// Loom will automatically attach sourcesJar to a RemapSourcesJar task and to the "build" task
+	// if it is present.
+	// If you remove this line, sources will not be generated.
+	withSourcesJar()
+
+	sourceCompatibility = JavaVersion.VERSION_25
+	targetCompatibility = JavaVersion.VERSION_25
+}
+
+jar {
+	def projectName = project.name
+	inputs.property "projectName", projectName
+
+	from("LICENSE") {
+		rename { "${it}_$projectName"}
+	}
+}
+
+// configure the maven publication
+publishing {
+	publications {
+		create("mavenJava", MavenPublication) {
+			from components.java
+		}
+	}
+
+	// See https://docs.gradle.org/current/userguide/publishing_maven.html for information on how to set up publishing.
+	repositories {
+		// Add repositories to publish to here.
+		// Notice: This block does NOT have the same function as the block in the top level.
+		// The repositories here will be used for publishing your artifact, not for
+		// retrieving dependencies.
+	}
+}

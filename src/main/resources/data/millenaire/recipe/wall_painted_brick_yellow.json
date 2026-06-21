@@ -1,0 +1,16 @@
+{
+    "type":  "minecraft:crafting_shaped",
+    "group":  "wall_painted_brick",
+    "pattern":  [
+                    "###",
+                    "###"
+                ],
+    "category":  "misc",
+    "key":  {
+                "#":  "millenaire:painted_brick_yellow"
+            },
+    "result":  {
+                   "id":  "millenaire:wall_painted_brick_yellow",
+                   "count":  6
+               }
+}

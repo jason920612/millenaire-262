@@ -1,0 +1,6 @@
+{
+    "variants": {
+        "stable=false": { "model": "millenaire:block/pathgravelslabs" },
+        "stable=true": { "model": "millenaire:block/pathgravelslabs" }
+    }
+}

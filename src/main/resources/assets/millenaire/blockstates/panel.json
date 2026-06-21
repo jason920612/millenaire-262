@@ -1,0 +1,8 @@
+{
+  "variants": {
+      "facing=south": { "model": "millenaire:block/panel" },
+    "facing=north": { "model": "millenaire:block/panel" },
+    "facing=east": { "model": "millenaire:block/panel" },
+    "facing=west": { "model": "millenaire:block/panel" }
+  }
+}

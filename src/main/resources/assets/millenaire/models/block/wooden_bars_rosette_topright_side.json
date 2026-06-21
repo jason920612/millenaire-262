@@ -1,0 +1,7 @@
+{
+    "parent": "millenaire:block/mil_pane_side",
+    "textures": {
+        "edge": "millenaire:block/empty",
+        "pane": "millenaire:block/wooden_bars_rosette_topright"
+    }
+}

@@ -1,0 +1,17 @@
+{
+    "variants": {
+        "": {"model": "millenaire:block/markerBlock"},
+        "variant=preserveground": { "model": "millenaire:block/preserveground" },
+        "variant=sleepingpos": { "model": "minecraft:block/white_carpet" },
+        "variant=sellingpos": { "model": "minecraft:block/blue_carpet" },
+        "variant=craftingpos": { "model": "minecraft:block/brown_carpet" },
+        "variant=defendingpos": { "model": "minecraft:block/red_carpet" },
+        "variant=shelterpos": { "model": "minecraft:block/cyan_carpet" },
+        "variant=pathstartpos": { "model": "minecraft:block/purple_carpet" },
+        "variant=leisurepos": { "model": "minecraft:block/orange_carpet" },
+        "variant=stall": { "model": "minecraft:block/pink_carpet" },
+        "variant=brickspot": { "model": "minecraft:block/gray_carpet" },
+        "variant=healingspot": { "model": "minecraft:block/lime_carpet" },
+        "variant=fishingspot": { "model": "minecraft:block/light_blue_carpet" }
+    }
+}

@@ -1,0 +1,17 @@
+{
+    "type":  "minecraft:crafting_shaped",
+    "group":  "cider",
+    "pattern":  [
+                    "##",
+                    "##",
+                    "##"
+                ],
+    "category":  "misc",
+    "key":  {
+                "#":  "millenaire:ciderapple"
+            },
+    "result":  {
+                   "id":  "millenaire:cider",
+                   "count":  1
+               }
+}

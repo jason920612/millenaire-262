@@ -1,0 +1,16 @@
+{
+	"variants": {
+		"half=bottom,stable=false": {
+			"model": "millenaire:block/pathdirt_bottom"
+		},
+		"half=top,stable=false": {
+			"model": "millenaire:block/pathdirt_top"
+		},
+		"half=bottom,stable=true": {
+			"model": "millenaire:block/pathdirt_bottom"
+		},
+		"half=top,stable=true": {
+			"model": "millenaire:block/pathdirt_top"
+		}
+	}
+}

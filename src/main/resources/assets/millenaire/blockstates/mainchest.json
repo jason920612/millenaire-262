@@ -1,0 +1,9 @@
+{
+  "variants": {
+    "": { "model": "millenaire:block/mainchest" },
+    "facing=north": { "model": "millenaire:block/mainchest" },
+    "facing=south": { "model": "millenaire:block/mainchest", "y": 180},
+    "facing=east": { "model": "millenaire:block/mainchest", "y": 90},
+    "facing=west": { "model": "millenaire:block/mainchest", "y": 270}
+  }
+}

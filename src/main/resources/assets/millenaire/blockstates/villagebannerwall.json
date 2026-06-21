@@ -1,0 +1,8 @@
+{
+    "variants": {
+        "facing=north": { "model": "millenaire:block/empty" },
+        "facing=south": { "model": "millenaire:block/empty" },
+        "facing=east": { "model": "millenaire:block/empty" },
+        "facing=west": { "model": "millenaire:block/empty" }
+    }
+}

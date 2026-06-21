@@ -1,0 +1,14 @@
+{
+    "variants": {
+        "": {"model": "millenaire:block/markerBlock"},
+        "resource=stone": { "model": "millenaire:block/free_stone" },
+        "resource=sand": { "model": "millenaire:block/free_sand" },
+        "resource=gravel": { "model": "millenaire:block/free_gravel" },
+        "resource=sandstone": { "model": "millenaire:block/free_sandstone" },
+        "resource=wool": { "model": "millenaire:block/free_wool" },
+        "resource=cobblestone": { "model": "millenaire:block/free_cobblestone" },
+        "resource=stonebrick": { "model": "millenaire:block/free_stonebrick" },
+        "resource=paintedbrick": { "model": "millenaire:block/free_paintedbrick" },
+        "resource=grass_block": { "model": "millenaire:block/free_grass_block" }
+    }
+}

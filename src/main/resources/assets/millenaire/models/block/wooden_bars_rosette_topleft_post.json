@@ -1,0 +1,7 @@
+{
+    "parent": "block/template_glass_pane_post",
+    "textures": {
+        "edge": "millenaire:block/empty",
+        "pane": "millenaire:block/wooden_bars_rosette_topleft"
+    }
+}

@@ -1,0 +1,20 @@
+{
+    "variants": {
+        "rotation=0": { "model": "millenaire:block/empty" },
+        "rotation=1": { "model": "millenaire:block/empty" },
+        "rotation=2": { "model": "millenaire:block/empty" },
+        "rotation=3": { "model": "millenaire:block/empty" },
+        "rotation=4": { "model": "millenaire:block/empty" },
+        "rotation=5": { "model": "millenaire:block/empty" },
+        "rotation=6": { "model": "millenaire:block/empty" },
+        "rotation=7": { "model": "millenaire:block/empty" },
+        "rotation=8": { "model": "millenaire:block/empty" },
+        "rotation=9": { "model": "millenaire:block/empty" },
+        "rotation=10": { "model": "millenaire:block/empty" },
+        "rotation=11": { "model": "millenaire:block/empty" },
+        "rotation=12": { "model": "millenaire:block/empty" },
+        "rotation=13": { "model": "millenaire:block/empty" },
+        "rotation=14": { "model": "millenaire:block/empty" },
+        "rotation=15": { "model": "millenaire:block/empty" }
+    }
+}

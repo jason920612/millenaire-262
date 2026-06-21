@@ -1,0 +1,22 @@
+{
+  "type": "minecraft:block",
+  "pools": [
+    {
+      "rolls": 1,
+      "entries": [
+        {
+          "type": "minecraft:item",
+          "name": "millenaire:bed_straw"
+        }
+      ],
+      "conditions": [
+        { "condition": "minecraft:survives_explosion" },
+        {
+          "condition": "minecraft:block_state_property",
+          "block": "millenaire:bed_straw",
+          "properties": { "part": "head" }
+        }
+      ]
+    }
+  ]
+}

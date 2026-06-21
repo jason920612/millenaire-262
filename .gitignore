@@ -1,0 +1,29 @@
+# Author-owned Millénaire assets fetched by scripts/fetch-upstream.py — NEVER commit these
+# (they are © Kinniken and not redistributable; see NOTICE).
+upstream-assets/
+# The official jar (do not host the author's file)
+millenaire-*.jar
+# Decompiled / reference sources used only during porting — never commit (defensive; they live
+# outside this repo, but guard against accidental copies)
+decompiled/
+vanilla1122-srg/
+vanilla1122-decompiled/
+mc-sources/
+forge1122/
+
+# Build output
+build/
+.gradle/
+# Dev run dir (server world, logs, deployed content)
+run/
+# Logs / temp build artifacts
+*.log
+compile-errors.txt
+build-out.txt
+# IDE
+.idea/
+*.iml
+.vscode/
+# OS
+.DS_Store
+Thumbs.db

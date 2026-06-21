@@ -1,0 +1,35 @@
+{
+	"schemaVersion": 1,
+	"id": "millenaire",
+	"version": "${version}",
+	"name": "Millénaire",
+	"description": "Adds NPC villages of several historical cultures to Minecraft. Fabric port for 26.2.",
+	"authors": [
+		"Kinniken",
+		"Millénaire team"
+	],
+	"contact": {
+		"homepage": "https://millenaire.org/",
+		"sources": "https://github.com/Millenaire/millenaire-source"
+	},
+	"license": "CC-BY-NC-SA-4.0",
+	"icon": "assets/millenaire/icon.png",
+	"environment": "*",
+	"entrypoints": {
+		"main": [
+			"org.millenaire.MillenaireMod"
+		],
+		"client": [
+			"org.millenaire.MillenaireModClient"
+		]
+	},
+	"mixins": [
+		"millenaire.mixins.json"
+	],
+	"depends": {
+		"fabricloader": ">=0.19.3",
+		"minecraft": "~26.2",
+		"java": ">=25",
+		"fabric-api": "*"
+	}
+}

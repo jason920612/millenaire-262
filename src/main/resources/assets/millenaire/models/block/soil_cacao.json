@@ -1,0 +1,7 @@
+{
+  "parent": "block/cube_all",
+  "textures": {
+    "all": "minecraft:item/brown_dye",
+    "particle" : "minecraft:item/brown_dye"
+  }
+}

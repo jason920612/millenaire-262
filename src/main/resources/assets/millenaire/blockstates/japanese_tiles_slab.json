@@ -1,0 +1,10 @@
+{
+    "variants": {
+        "axis=y,half=bottom": { "model": "millenaire:block/japanese_tiles_slab_bottom", "x": 90, "y": 90 },
+        "axis=z,half=bottom": { "model": "millenaire:block/japanese_tiles_slab_bottom", "y": 90 },
+        "axis=x,half=bottom": { "model": "millenaire:block/japanese_tiles_slab_bottom" },
+        "axis=y,half=top": { "model": "millenaire:block/japanese_tiles_slab_top", "x": 90, "y": 90 },
+        "axis=z,half=top": { "model": "millenaire:block/japanese_tiles_slab_top", "y": 90 },
+        "axis=x,half=top": { "model": "millenaire:block/japanese_tiles_slab_top" }
+    }
+}

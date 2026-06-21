@@ -1,0 +1,9 @@
+{
+	"parent": "minecraft:block/cube_bottom_top",
+	"textures": {
+		"bottom": "millenaire:block/sandstone_ochre_clean",
+		"top": "millenaire:block/sandstone_ochre_clean",
+		"side": "millenaire:block/sandstone_ochre_carved",
+		"particle": "millenaire:block/sandstone_ochre_carved"
+	}
+}

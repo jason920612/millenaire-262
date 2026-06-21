@@ -1,0 +1,6 @@
+{
+    "variants": {
+        "stable=false": { "model": "millenaire:block/pathsnow" },
+        "stable=true": { "model": "millenaire:block/pathsnow" }
+    }
+}

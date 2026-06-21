@@ -1,0 +1,24 @@
+{
+  "type": "minecraft:block",
+  "pools": [
+    {
+      "rolls": 1,
+      "entries": [
+        {
+          "type": "minecraft:item",
+          "name": "millenaire:stained_glass",
+          "functions": [
+            {
+              "function": "minecraft:copy_state",
+              "block": "millenaire:stained_glass",
+              "properties": [ "variant" ]
+            }
+          ]
+        }
+      ],
+      "conditions": [
+        { "condition": "minecraft:survives_explosion" }
+      ]
+    }
+  ]
+}

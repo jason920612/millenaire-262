@@ -1,0 +1,51 @@
+{
+    "multipart": [
+        {
+            "when": {
+                "up": "true"
+            },
+            "apply": {
+                "model": "millenaire:block/wall_painted_brick_green_post"
+            }
+        },
+        {
+            "when": {
+                "north": "low|tall"
+            },
+            "apply": {
+                "model": "millenaire:block/wall_painted_brick_green_side",
+                "uvlock": true
+            }
+        },
+        {
+            "when": {
+                "east": "low|tall"
+            },
+            "apply": {
+                "model": "millenaire:block/wall_painted_brick_green_side",
+                "y": 90,
+                "uvlock": true
+            }
+        },
+        {
+            "when": {
+                "south": "low|tall"
+            },
+            "apply": {
+                "model": "millenaire:block/wall_painted_brick_green_side",
+                "y": 180,
+                "uvlock": true
+            }
+        },
+        {
+            "when": {
+                "west": "low|tall"
+            },
+            "apply": {
+                "model": "millenaire:block/wall_painted_brick_green_side",
+                "y": 270,
+                "uvlock": true
+            }
+        }
+    ]
+}

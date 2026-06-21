@@ -1,0 +1,6 @@
+{
+    "variants": {
+        "stable=false": { "model": "millenaire:block/pathochretiles" },
+        "stable=true": { "model": "millenaire:block/pathochretiles" }
+    }
+}

@@ -1,0 +1,7 @@
+{
+    "variants": {
+        "axis=y": { "model": "millenaire:block/byzantine_tiles", "x": 90, "y": 90 },
+        "axis=z": { "model": "millenaire:block/byzantine_tiles", "y": 90 },
+        "axis=x": { "model": "millenaire:block/byzantine_tiles" }
+    }
+}

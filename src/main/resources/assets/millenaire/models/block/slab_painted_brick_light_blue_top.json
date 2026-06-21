@@ -1,0 +1,9 @@
+{
+    "parent": "block/slab_top",
+    "textures": {
+        "bottom": "millenaire:block/painted_brick_light_blue",
+        "top": "millenaire:block/painted_brick_light_blue",
+        "side": "millenaire:block/painted_brick_light_blue",
+        "particle" : "millenaire:block/painted_brick_light_blue"
+    }
+}

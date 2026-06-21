@@ -1,0 +1,8 @@
+{
+    "parent": "block/inner_stairs",
+    "textures": {
+        "bottom": "millenaire:block/painted_brick_white",
+        "top": "millenaire:block/painted_brick_white",
+        "side": "millenaire:block/painted_brick_white"
+    }
+}

@@ -1,0 +1,17 @@
+{
+    "variants": {
+        "": {"model": "millenaire:block/markerBlock"},
+        "resource=stone": { "model": "millenaire:block/source_stone" },
+        "resource=sand": { "model": "millenaire:block/source_sand" },
+        "resource=sandstone": { "model": "millenaire:block/source_sandstone" },
+        "resource=redsandstone": { "model": "millenaire:block/source_redsandstone" },
+        "resource=clay": { "model": "millenaire:block/source_clay" },
+        "resource=gravel": { "model": "millenaire:block/source_gravel" },
+        "resource=granite": { "model": "millenaire:block/source_granite" },
+        "resource=diorite": { "model": "millenaire:block/source_diorite" },
+        "resource=andesite": { "model": "millenaire:block/source_andesite" },
+        "resource=snow": { "model": "millenaire:block/source_snow" },
+        "resource=ice": { "model": "millenaire:block/source_ice" },
+        "resource=quartz": { "model": "millenaire:block/source_quartz" }
+    }
+}

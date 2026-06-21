@@ -1,0 +1,38 @@
+# Automatically build the project and run any configured tests for every push
+# and submitted pull request. This can help catch issues that only occur on
+# certain platforms or Java versions, and provides a first line of defence
+# against bad commits.
+
+name: build
+on: [pull_request, push]
+
+jobs:
+  build:
+    runs-on: ubuntu-24.04
+    steps:
+      - name: checkout repository
+        uses: actions/checkout@v6
+      - name: validate gradle wrapper
+        uses: gradle/actions/wrapper-validation@v6
+      - name: setup jdk
+        uses: actions/setup-java@v5
+        with:
+          java-version: '25'
+          distribution: 'microsoft'
+      - name: make gradle wrapper executable
+        run: chmod +x ./gradlew
+      - name: setup python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.x'
+      - name: fetch upstream Millénaire art/data assets
+        # Downloads the official Millénaire release from the CurseForge CDN and extracts the author-owned
+        # assets into upstream-assets/ (gitignored), which the build overlays. We do not redistribute them.
+        run: python scripts/fetch-upstream.py
+      - name: build
+        run: ./gradlew build
+      - name: capture build artifacts
+        uses: actions/upload-artifact@v7
+        with:
+          name: Artifacts
+          path: build/libs/

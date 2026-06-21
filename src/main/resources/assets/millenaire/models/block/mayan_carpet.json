@@ -1,0 +1,7 @@
+{
+    "parent": "block/carpet",
+    "textures": {
+        "particle": "millenaire:block/mayan_carpet",
+        "wool": "millenaire:block/mayan_carpet"
+    }
+}

@@ -1,0 +1,16 @@
+{
+    "variants": {
+        "": {"model": "millenaire:block/markerBlock"},
+        "treetype=oak": { "model": "millenaire:block/treespawn_oak" },
+        "treetype=pine": { "model": "millenaire:block/treespawn_pine" },
+        "treetype=birch": { "model": "millenaire:block/treespawn_birch" },
+        "treetype=jungle": { "model": "millenaire:block/treespawn_jungle" },
+        "treetype=acacia": { "model": "millenaire:block/treespawn_acacia" },
+        "treetype=darkoak": { "model": "millenaire:block/treespawn_darkoak" },
+        "treetype=appletree": { "model": "millenaire:block/treespawn_appletree" },
+        "treetype=olivetree": { "model": "millenaire:block/treespawn_olivetree" },
+        "treetype=pistachiotree": { "model": "millenaire:block/treespawn_pistachio" },
+        "treetype=cherrytree": { "model": "millenaire:block/treespawn_cherry" },
+        "treetype=sakuratree": { "model": "millenaire:block/treespawn_sakura" }
+    }
+}

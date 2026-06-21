@@ -1,0 +1,125 @@
+{
+  "model": {
+    "type": "minecraft:range_dispatch",
+    "property": "millenaire:amulet_score",
+    "kind": "alchemist",
+    "fallback": {
+      "type": "minecraft:model",
+      "model": "millenaire:item/alchemist_amulet"
+    },
+    "entries": [
+      {
+        "threshold": 0.0,
+        "model": {
+          "type": "minecraft:model",
+          "model": "millenaire:item/alchemist_amulet"
+        }
+      },
+      {
+        "threshold": 1.0,
+        "model": {
+          "type": "minecraft:model",
+          "model": "millenaire:item/alchemist_amulet1"
+        }
+      },
+      {
+        "threshold": 2.0,
+        "model": {
+          "type": "minecraft:model",
+          "model": "millenaire:item/alchemist_amulet2"
+        }
+      },
+      {
+        "threshold": 3.0,
+        "model": {
+          "type": "minecraft:model",
+          "model": "millenaire:item/alchemist_amulet3"
+        }
+      },
+      {
+        "threshold": 4.0,
+        "model": {
+          "type": "minecraft:model",
+          "model": "millenaire:item/alchemist_amulet4"
+        }
+      },
+      {
+        "threshold": 5.0,
+        "model": {
+          "type": "minecraft:model",
+          "model": "millenaire:item/alchemist_amulet5"
+        }
+      },
+      {
+        "threshold": 6.0,
+        "model": {
+          "type": "minecraft:model",
+          "model": "millenaire:item/alchemist_amulet6"
+        }
+      },
+      {
+        "threshold": 7.0,
+        "model": {
+          "type": "minecraft:model",
+          "model": "millenaire:item/alchemist_amulet7"
+        }
+      },
+      {
+        "threshold": 8.0,
+        "model": {
+          "type": "minecraft:model",
+          "model": "millenaire:item/alchemist_amulet8"
+        }
+      },
+      {
+        "threshold": 9.0,
+        "model": {
+          "type": "minecraft:model",
+          "model": "millenaire:item/alchemist_amulet9"
+        }
+      },
+      {
+        "threshold": 10.0,
+        "model": {
+          "type": "minecraft:model",
+          "model": "millenaire:item/alchemist_amulet10"
+        }
+      },
+      {
+        "threshold": 11.0,
+        "model": {
+          "type": "minecraft:model",
+          "model": "millenaire:item/alchemist_amulet11"
+        }
+      },
+      {
+        "threshold": 12.0,
+        "model": {
+          "type": "minecraft:model",
+          "model": "millenaire:item/alchemist_amulet12"
+        }
+      },
+      {
+        "threshold": 13.0,
+        "model": {
+          "type": "minecraft:model",
+          "model": "millenaire:item/alchemist_amulet13"
+        }
+      },
+      {
+        "threshold": 14.0,
+        "model": {
+          "type": "minecraft:model",
+          "model": "millenaire:item/alchemist_amulet14"
+        }
+      },
+      {
+        "threshold": 15.0,
+        "model": {
+          "type": "minecraft:model",
+          "model": "millenaire:item/alchemist_amulet15"
+        }
+      }
+    ]
+  }
+}

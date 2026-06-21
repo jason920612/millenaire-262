@@ -1,0 +1,9 @@
+{
+  "parent": "block/cube_bottom_top",
+  "textures": {
+    "bottom": "millenaire:block/thatch_topbottom",
+    "top": "millenaire:block/thatch_topbottom",
+    "side": "millenaire:block/thatch",
+    "particle": "millenaire:block/thatch"
+  }
+}

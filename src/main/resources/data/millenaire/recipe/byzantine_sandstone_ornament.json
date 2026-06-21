@@ -1,0 +1,18 @@
+{
+    "type":  "minecraft:crafting_shaped",
+    "group":  "byzantine_sandstone_ornament",
+    "pattern":  [
+                    " # ",
+                    "###",
+                    "SSS"
+                ],
+    "category":  "misc",
+    "key":  {
+                "#":  "millenaire:byzantine_tiles",
+                "S":  "minecraft:sandstone"
+            },
+    "result":  {
+                   "id":  "millenaire:byzantine_sandstone_ornament",
+                   "count":  6
+               }
+}

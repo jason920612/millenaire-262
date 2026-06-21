@@ -1,0 +1,33 @@
+{
+  "model": {
+    "type": "minecraft:select",
+    "property": "minecraft:block_state",
+    "block_state_property": "variant",
+    "fallback": {
+      "type": "minecraft:model",
+      "model": "millenaire:block/stained_glass_white_post"
+    },
+    "cases": [
+      {
+        "when": "white",
+        "model": { "type": "minecraft:model", "model": "millenaire:block/stained_glass_white_post" }
+      },
+      {
+        "when": "yellow",
+        "model": { "type": "minecraft:model", "model": "millenaire:block/stained_glass_yellow_post" }
+      },
+      {
+        "when": "yellow_red",
+        "model": { "type": "minecraft:model", "model": "millenaire:block/stained_glass_yellow_red_post" }
+      },
+      {
+        "when": "red_blue",
+        "model": { "type": "minecraft:model", "model": "millenaire:block/stained_glass_red_blue_post" }
+      },
+      {
+        "when": "green_blue",
+        "model": { "type": "minecraft:model", "model": "millenaire:block/stained_glass_green_blue_post" }
+      }
+    ]
+  }
+}

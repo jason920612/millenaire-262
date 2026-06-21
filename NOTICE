@@ -1,0 +1,41 @@
+NOTICE
+======
+
+This project is an UNOFFICIAL port of the Millénaire mod to Minecraft 26.2
+(Fabric). It is not affiliated with or endorsed by the original author.
+
+Original work
+-------------
+Millénaire is created by Kinniken and contributors — https://millenaire.org.
+The original mod's source has historically been made available by its author,
+but WITHOUT a formal open-source licence; all rights to it are reserved by its
+author. Therefore:
+
+  * This repository does NOT contain and does NOT redistribute Millénaire's
+    original source code, nor its creative assets (building templates, cultures,
+    quests, language text, textures, sounds).
+
+  * Those author-owned art/data assets are downloaded from the official
+    Millénaire 1.12.2 release and assembled locally by `scripts/fetch-upstream.py`
+    at build time. You must obtain the official jar yourself (this project does
+    not host it). Everything that script extracts lands in the gitignored
+    `upstream-assets/` directory and is never committed here.
+
+What IS in this repository (and under the MIT licence — see LICENSE)
+-------------------------------------------------------------------
+  * Our Minecraft 26.2 / Fabric port code (src/main/java).
+  * The 26.2-format resource definitions we authored to drive that code:
+    blockstates, block/item models, item-model definitions, loot tables,
+    recipes, advancements (src/main/resources), and the small number of
+    textures we created ourselves.
+  * The build tooling, the upstream-fetch script, and documentation.
+
+This is original work that interoperates with Millénaire; it is licensed MIT.
+If you are the original author and would prefer a different arrangement, please
+open an issue.
+
+Trademarks
+----------
+"Millénaire" and any associated names/logos are the property of their
+respective owners. Use here is nominative (to identify the mod this port
+targets) and does not imply endorsement.

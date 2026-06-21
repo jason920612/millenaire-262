@@ -1,0 +1,16 @@
+{
+    "type":  "minecraft:crafting_shaped",
+    "pattern":  [
+                    "#  ",
+                    "## ",
+                    "###"
+                ],
+    "category":  "misc",
+    "key":  {
+                "#":  "millenaire:wood_deco"
+            },
+    "result":  {
+                   "id":  "millenaire:stairs_thatch",
+                   "count":  4
+               }
+}

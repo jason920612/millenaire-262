@@ -1,0 +1,7 @@
+{
+    "variants": {
+        "variant=mudbrick_smooth": { "model": "millenaire:block/mudbrick_smooth" },
+        "variant=mudbrick_seljuk_ornamented": { "model": "millenaire:block/mudbrick_seljuk_ornamented" },
+        "variant=mudbrick_seljuk_decorated": { "model": "millenaire:block/mudbrick_seljuk_decorated" }
+    }
+}

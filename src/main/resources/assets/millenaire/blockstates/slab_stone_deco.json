@@ -1,0 +1,67 @@
+{
+	"variants": {
+		"type=bottom,variant=mudbrick": {
+			"model": "millenaire:block/mudbrick_bottom"
+		},
+		"type=top,variant=mudbrick": {
+			"model": "millenaire:block/mudbrick_top"
+		},
+		"type=double,variant=mudbrick": {
+			"model": "millenaire:block/mudbrick"
+		},
+		"type=bottom,variant=cookedbrick": {
+			"model": "millenaire:block/cookedbrick_bottom"
+		},
+		"type=top,variant=cookedbrick": {
+			"model": "millenaire:block/cookedbrick_top"
+		},
+		"type=double,variant=cookedbrick": {
+			"model": "millenaire:block/cookedbrick"
+		},
+		"type=bottom,variant=mayangoldblock": {
+			"model": "millenaire:block/mudbrick_bottom"
+		},
+		"type=top,variant=mayangoldblock": {
+			"model": "millenaire:block/mudbrick_top"
+		},
+		"type=double,variant=mayangoldblock": {
+			"model": "millenaire:block/mayangoldblock"
+		},
+		"type=bottom,variant=byzantine_mosaic_red": {
+			"model": "millenaire:block/byzantine_mosaic_red"
+		},
+		"type=top,variant=byzantine_mosaic_red": {
+			"model": "millenaire:block/byzantine_mosaic_red"
+		},
+		"type=double,variant=byzantine_mosaic_red": {
+			"model": "millenaire:block/byzantine_mosaic_red"
+		},
+		"type=bottom,variant=byzantine_mosaic_blue": {
+			"model": "millenaire:block/byzantine_mosaic_blue"
+		},
+		"type=top,variant=byzantine_mosaic_blue": {
+			"model": "millenaire:block/byzantine_mosaic_blue"
+		},
+		"type=double,variant=byzantine_mosaic_blue": {
+			"model": "millenaire:block/byzantine_mosaic_blue"
+		},
+		"type=bottom,variant=lightbluechiseled_block": {
+			"model": "millenaire:block/lightbluechiseled_block"
+		},
+		"type=top,variant=lightbluechiseled_block": {
+			"model": "millenaire:block/lightbluechiseled_block"
+		},
+		"type=double,variant=lightbluechiseled_block": {
+			"model": "millenaire:block/lightbluechiseled_block"
+		},
+		"type=bottom,variant=lightbluebrick_block": {
+			"model": "millenaire:block/lightbluebrick_block"
+		},
+		"type=top,variant=lightbluebrick_block": {
+			"model": "millenaire:block/lightbluebrick_block"
+		},
+		"type=double,variant=lightbluebrick_block": {
+			"model": "millenaire:block/lightbluebrick_block"
+		}
+	}
+}

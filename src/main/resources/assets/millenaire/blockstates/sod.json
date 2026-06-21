@@ -1,0 +1,10 @@
+{
+    "variants": {
+        "variant=oak": { "model": "millenaire:block/sod_oak" },
+        "variant=spruce": { "model": "millenaire:block/sod_spruce" },
+        "variant=birch": { "model": "millenaire:block/sod_birch" },
+        "variant=jungle": { "model": "millenaire:block/sod_jungle" },
+        "variant=acacia": { "model": "millenaire:block/sod_acacia" },
+        "variant=dark_oak": { "model": "millenaire:block/sod_dark_oak" }
+    }
+}

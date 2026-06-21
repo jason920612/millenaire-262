@@ -1,0 +1,7 @@
+{
+    "variants": {
+        "progress=wetbrick0": { "model": "millenaire:block/wetbrick0" },
+        "progress=wetbrick1": { "model": "millenaire:block/wetbrick1" },
+        "progress=wetbrick2": { "model": "millenaire:block/wetbrick2" }
+    }
+}

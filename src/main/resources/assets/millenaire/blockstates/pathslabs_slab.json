@@ -1,0 +1,16 @@
+{
+	"variants": {	
+		"half=bottom,stable=false": {
+			"model": "millenaire:block/pathslabs_bottom"
+		},
+		"half=top,stable=false": {
+			"model": "millenaire:block/pathslabs_top"
+		},
+		"half=bottom,stable=true": {
+			"model": "millenaire:block/pathslabs_bottom"
+		},
+		"half=top,stable=true": {
+			"model": "millenaire:block/pathslabs_top"
+		}
+	}
+}

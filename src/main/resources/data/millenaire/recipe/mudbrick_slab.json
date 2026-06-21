@@ -1,0 +1,14 @@
+{
+    "type":  "minecraft:crafting_shaped",
+    "pattern":  [
+                    "###"
+                ],
+    "category":  "misc",
+    "key":  {
+                "#":  "millenaire:stone_deco"
+            },
+    "result":  {
+                   "id":  "millenaire:slab_stone_deco",
+                   "count":  6
+               }
+}

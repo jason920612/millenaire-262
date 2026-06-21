@@ -1,0 +1,13 @@
+{
+    "type":  "minecraft:crafting_shapeless",
+    "group":  "paint_bucket",
+    "category":  "misc",
+    "ingredients":  [
+                        "millenaire:paint_bucket_white",
+                        "minecraft:blue_dye"
+                    ],
+    "result":  {
+                   "id":  "millenaire:paint_bucket_blue",
+                   "count":  1
+               }
+}

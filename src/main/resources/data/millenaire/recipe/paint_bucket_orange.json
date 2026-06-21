@@ -1,0 +1,13 @@
+{
+    "type":  "minecraft:crafting_shapeless",
+    "group":  "paint_bucket",
+    "category":  "misc",
+    "ingredients":  [
+                        "millenaire:paint_bucket_white",
+                        "minecraft:orange_dye"
+                    ],
+    "result":  {
+                   "id":  "millenaire:paint_bucket_orange",
+                   "count":  1
+               }
+}

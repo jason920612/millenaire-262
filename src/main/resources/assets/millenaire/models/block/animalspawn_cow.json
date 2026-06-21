@@ -1,0 +1,7 @@
+{
+  "parent": "block/cube_all",
+  "textures": {
+    "all": "minecraft:item/beef",
+    "particle" : "minecraft:item/beef"
+  }
+}

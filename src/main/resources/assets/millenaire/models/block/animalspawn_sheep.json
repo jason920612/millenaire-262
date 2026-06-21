@@ -1,0 +1,7 @@
+{
+  "parent": "block/cube_all",
+  "textures": {
+    "all": "minecraft:item/mutton",
+    "particle" : "minecraft:item/mutton"
+  }
+}

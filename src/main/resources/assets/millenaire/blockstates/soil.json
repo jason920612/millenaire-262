@@ -1,0 +1,18 @@
+{
+    "variants": {
+        "": {"model": "millenaire:block/markerBlock"},
+        "croptype=soil": { "model": "millenaire:block/soil_wheat" },
+        "croptype=ricesoil": { "model": "millenaire:block/soil_rice" },
+        "croptype=turmericsoil": { "model": "millenaire:block/soil_turmeric" },
+        "croptype=sugarcanesoil": { "model": "millenaire:block/soil_reeds" },
+        "croptype=potatosoil": { "model": "millenaire:block/soil_potato" },
+        "croptype=netherwartsoil": { "model": "millenaire:block/soil_netherwart" },
+        "croptype=vinesoil": { "model": "millenaire:block/soil_grape" },
+        "croptype=maizesoil": { "model": "millenaire:block/soil_maize" },
+        "croptype=cacaospot": { "model": "millenaire:block/soil_cacao" },
+        "croptype=carrotsoil": { "model": "millenaire:block/soil_carrot" },
+        "croptype=flowersoil": { "model": "millenaire:block/soil_flower" },
+        "croptype=cottonsoil": { "model": "millenaire:block/soil_cotton" }
+           
+    }
+}

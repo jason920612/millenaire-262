@@ -1,0 +1,9 @@
+{
+	"parent": "minecraft:block/cube_bottom_top",
+	"textures": {
+		"bottom": "millenaire:block/sandstone_red_clean",
+		"top": "millenaire:block/sandstone_red_clean",
+		"side": "millenaire:block/sandstone_red_carved",
+		"particle": "millenaire:block/sandstone_red_carved"
+	}
+}

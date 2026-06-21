@@ -1,0 +1,11 @@
+{
+    "variants": {
+        "variant=mudbrick": { "model": "millenaire:block/mudbrick" },
+        "variant=cookedbrick": { "model": "millenaire:block/cookedbrick" },
+        "variant=mayangoldblock": { "model": "millenaire:block/mayangoldblock" },
+        "variant=byzantine_mosaic_red": { "model": "millenaire:block/byzantine_mosaic_red" },
+        "variant=byzantine_mosaic_blue": { "model": "millenaire:block/byzantine_mosaic_blue" },
+        "variant=lightbluebrick_block": { "model": "millenaire:block/lightbluebrick_block" },
+        "variant=lightbluechiseled_block": { "model": "millenaire:block/lightbluechiseled_block" }
+    }
+}

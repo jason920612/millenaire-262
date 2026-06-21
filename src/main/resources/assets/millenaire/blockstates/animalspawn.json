@@ -1,0 +1,12 @@
+{
+    "variants": {
+        "": {"model": "millenaire:block/markerBlock"},
+        "creature=cow": { "model": "millenaire:block/animalspawn_cow" },
+        "creature=pig": { "model": "millenaire:block/animalspawn_pig" },
+        "creature=sheep": { "model": "millenaire:block/animalspawn_sheep" },
+        "creature=chicken": { "model": "millenaire:block/animalspawn_chicken" },
+        "creature=squid": { "model": "millenaire:block/animalspawn_squid" },
+        "creature=wolf": { "model": "millenaire:block/animalspawn_wolf" },
+        "creature=polarbear": { "model": "millenaire:block/animalspawn_polar_bear" }
+    }
+}

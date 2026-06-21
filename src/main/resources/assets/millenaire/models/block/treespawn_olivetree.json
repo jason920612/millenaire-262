@@ -1,0 +1,7 @@
+{
+  "parent": "block/cube_all",
+  "textures": {
+    "all": "millenaire:block/sapling_olivetree",
+    "particle" : "millenaire:block/sapling_olivetree"
+  }
+}

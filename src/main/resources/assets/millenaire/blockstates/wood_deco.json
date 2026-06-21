@@ -1,0 +1,8 @@
+{
+    "variants": {
+        "variant=timberframeplain": { "model": "millenaire:block/timberframeplain" },
+        "variant=timberframecross": { "model": "millenaire:block/timberframecross" },
+        "variant=thatch": { "model": "millenaire:block/thatch" },
+        "variant=beehive": { "model": "millenaire:block/beehive" }
+    }
+}

@@ -40,8 +40,11 @@ public class MillNodeEvaluator extends WalkNodeEvaluator {
          if (danger > 0.0F) {
             nb.costMalus += this.dangerWeight * danger;
          }
-         // req 9 — fewest jumps/climbs: any vertical step costs extra.
-         if (nb.y != node.y) {
+         // req 9 — gently discourage DROPS only (a step down is a small fall + harder to reverse). Do NOT
+         // penalise climbing UP: vanilla already gates jump reachability, and penalising every step-up made
+         // hills expensive so the A* spent its node budget on flat routes and never found the climb →
+         // villagers got stuck going uphill. Climbing is now free; only downward steps cost a little.
+         if (nb.y < node.y) {
             nb.costMalus += this.jumpPenalty;
          }
       }

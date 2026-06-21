@@ -25,7 +25,7 @@ public class MillPathNavigation extends net.minecraft.world.entity.ai.navigation
    /** Node budget for the planner — extended well past the vanilla follow-range cap so villagers can path
     *  the long distances a Mill village needs. The multi-objective cost (terrain+danger+jump) keeps the
     *  search sane. (A hierarchical region-graph is the future perf optimisation for very large villages.) */
-   private static final int LONG_RANGE_NODES = 4096;
+   private static final int LONG_RANGE_NODES = 8192;
 
    @Override
    protected PathFinder createPathFinder(int maxVisitedNodes) {

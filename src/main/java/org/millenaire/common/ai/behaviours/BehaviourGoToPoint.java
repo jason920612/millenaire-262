@@ -14,6 +14,9 @@ public final class BehaviourGoToPoint implements MillBehaviour {
    private static final double SPEED = 0.5;
    /** How close (blocks) counts as "arrived". */
    private static final double ARRIVE = 1.6;
+   private double lastX = Double.NaN;
+   private double lastZ;
+   private int stuckTicks;
 
    @Override
    public boolean canRun(MillVillager villager) {
@@ -43,12 +46,32 @@ public final class BehaviourGoToPoint implements MillBehaviour {
             return false; // unreachable — abandon, the goal layer decides what next
          }
       }
+      // Stuck detection: when a large obstacle / dead-end path stops progress, force a FRESH re-path (the
+      // navigation otherwise keeps following its stuck path); if still stuck after a while, give up so the
+      // goal layer re-plans instead of standing forever.
+      double mx = villager.getX() - this.lastX;
+      double mz = villager.getZ() - this.lastZ;
+      if (!Double.isNaN(this.lastX) && mx * mx + mz * mz < 0.0025) {
+         this.stuckTicks++;
+         if (this.stuckTicks == 60) {
+            villager.getNavigation().stop(); // drop the stuck path → re-pathfind next tick (now finds climbs)
+         } else if (this.stuckTicks > 140) {
+            this.stuckTicks = 0;
+            return false; // genuinely stuck ~7s → abandon, let the goal layer re-plan
+         }
+      } else {
+         this.stuckTicks = 0;
+      }
+      this.lastX = villager.getX();
+      this.lastZ = villager.getZ();
       return true;
    }
 
    @Override
    public void onStop(MillVillager villager) {
       villager.getNavigation().stop();
+      this.lastX = Double.NaN;
+      this.stuckTicks = 0;
    }
 
    private static Point dest(MillVillager villager) {

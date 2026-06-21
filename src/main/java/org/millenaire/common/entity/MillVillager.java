@@ -431,6 +431,11 @@ public abstract class MillVillager extends PathfinderMob implements IAStarPathed
       return PathfinderMob.createMobAttributes()
          .add(Attributes.MOVEMENT_SPEED, 0.5)
          .add(Attributes.MAX_HEALTH, 20.0)
+         // FOLLOW_RANGE is the navigation's path-length cap (getMaxPathLength) AND scales the node budget
+         // (maxVisitedNodes = maxPathLength*16). The vanilla default (~16-32) is far too short for a Mill
+         // village — villagers couldn't path around a big obstacle or up varied terrain and got stuck. 96
+         // gives village-scale reach (and a ~1536+ node budget for detours).
+         .add(Attributes.FOLLOW_RANGE, 96.0)
          // ATTACK_DAMAGE/KNOCKBACK are NOT in PathfinderMob's default set; doHurtTarget reads them, so the
          // new combat behaviour crashed ("Can't find attribute attack_damage") the moment a villager meleed.
          .add(Attributes.ATTACK_DAMAGE, 2.0)
@@ -507,7 +512,10 @@ public abstract class MillVillager extends PathfinderMob implements IAStarPathed
          }
       }
       if (this.getNavigation() instanceof org.millenaire.common.ai.MillPathNavigation nav) {
-         nav.configureCost(this.aiInfluence, 1.0F, 2.0F);
+         // jumpPenalty kept SMALL (0.3): it must only be a gentle tiebreaker for flatter routes, NOT a
+         // deterrent — at 2.0 it made every 1-block step-up expensive, so on hilly/uphill terrain the A*
+         // exhausted its node budget on flat directions and never found the climb → villagers got stuck.
+         nav.configureCost(this.aiInfluence, 1.0F, 0.3F);
       }
    }
 

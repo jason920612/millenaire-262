@@ -23,13 +23,17 @@ import org.millenaire.common.entity.MillVillager;
  */
 public final class BehaviourCombat implements MillBehaviour {
    private static final int SCAN = 4;           // candidate-cell search radius
-   private static final double MELEE_RANGE = 2.0;
+   private static final double MELEE_RANGE = 3.0; // player-like reach (was 2.0 — felt too short)
    private static final double SPEED = 0.6;
    // scoring weights
    private static final float W_DANGER = 1.0F;
    private static final float W_RANGE = 2.0F;
    private static final float W_ALLY = 1.5F;
    private int rangedCooldown = 0;
+   private int repathCooldown = 0;
+   private int strafeTimer = 0;
+   private boolean strafeRight = true;
+   private int unreachableTicks = 0;
 
    @Override
    public boolean canRun(MillVillager villager) {
@@ -49,20 +53,46 @@ public final class BehaviourCombat implements MillBehaviour {
          return false;
       }
       boolean ranged = isRanged(villager);
-      double optimal = ranged ? 12.0 : 1.6; // weapon-dependent optimal distance band (req 10)
+      double optimal = ranged ? 11.0 : 2.2; // weapon-dependent optimal distance band (req 10)
+      double dist = villager.distanceTo(target);
 
-      // 1. Tactical positioning: move to the highest-scoring safe cell (req 5/6). 迂迴/kite emerge here.
-      BlockPos best = bestCombatCell(villager, target, optimal, ranged);
-      if (best != null && !villager.blockPosition().equals(best)) {
-         boolean pathed = villager.getNavigation().moveTo(best.getX() + 0.5, best.getY(), best.getZ() + 0.5, SPEED);
-         if (!pathed && villager.distanceToSqr(target) > 64 * 64) {
-            return false; // can't reach a useful position and target is far → drop target (no warp)
+      // 1. Intent-driven tactical movement (req 3/5): CLOSE if too far, KITE back if too close (ranged),
+      //    STRAFE sideways when at range. If the target sits where we can't stand next to it (in water, on a
+      //    pillar), head for the nearest REACHABLE point toward it (vanilla moveTo stops at the closest node,
+      //    e.g. the shore) and wait there — then GIVE UP after a while instead of freezing forever.
+      if (--this.repathCooldown <= 0 || villager.getNavigation().isDone()) {
+         this.repathCooldown = 5;
+         BlockPos goal = desiredCombatCell(villager, target, optimal, dist);
+         double gx = goal != null ? goal.getX() + 0.5 : target.getX();
+         double gy = goal != null ? goal.getY() : target.getY();
+         double gz = goal != null ? goal.getZ() + 0.5 : target.getZ();
+         double sp = (dist > optimal + 4.0) ? SPEED + 0.25 : SPEED; // hurry to close the gap
+         villager.getNavigation().moveTo(gx, gy, gz, sp);
+      }
+      boolean inRange = (!ranged && dist <= MELEE_RANGE)
+         || (ranged && dist <= optimal + 4.0 && villager.hasLineOfSight(target));
+      if (!inRange && villager.getNavigation().isDone()) {
+         // Parked at the nearest reachable point but still can't hit it → unreachable.
+         if (isRangedHostile(target) && villager.hasLineOfSight(target) && !villager.isRaider) {
+            // DEFENDERS retreat out of a ranged enemy's line of fire instead of standing and being shot, then
+            // give up quickly. RAIDERS do NOT retreat — they press the assault (village-war balance: retreat
+            // must not blunt an attack or erase the ranged cultures' kiting edge — see balance research).
+            BlockPos cover = retreatFromRanged(villager, target);
+            if (cover != null) {
+               villager.getNavigation().moveTo(cover.getX() + 0.5, cover.getY(), cover.getZ() + 0.5, SPEED + 0.3);
+            }
+            if (++this.unreachableTicks > 40) {
+               return false;
+            }
+         } else if (++this.unreachableTicks > (villager.isRaider ? 200 : 120)) {
+            // Can't hurt us here (or we're a raider pressing on) — hold, raiders longer, then drop the target.
+            return false;
          }
+      } else {
+         this.unreachableTicks = 0;
       }
 
-      // 2. Attack when the target is within reach (melee) — ranged firing is delegated to the entity's
-      //    ranged-attack hook when in band + line of sight (wired per villager type).
-      double dist = villager.distanceTo(target);
+      // 2. Attack when in reach.
       villager.getLookControl().setLookAt(target, 30.0F, 30.0F);
       if (!ranged && dist <= MELEE_RANGE) {
          villager.doHurtTarget(villager.level() instanceof net.minecraft.server.level.ServerLevel sl ? sl : null, target);
@@ -80,53 +110,89 @@ public final class BehaviourCombat implements MillBehaviour {
    }
 
    @Override
+   public void onStart(MillVillager villager) {
+      // Call for help: rally fellow villagers in the village (callForHelp gives those who help-in-attacks the
+      // target + clears their goal, so the engine's combat behaviour makes them drop work and join the fight).
+      LivingEntity target = villager.getTarget();
+      if (target != null && villager.getTownHall() != null) {
+         villager.getTownHall().callForHelp(target);
+      }
+   }
+
+   @Override
    public void onStop(MillVillager villager) {
       villager.getNavigation().stop();
    }
 
-   /** Score nearby standable cells; higher = safer + better weapon range + not crowding allies. */
-   private static BlockPos bestCombatCell(MillVillager villager, LivingEntity target, double optimal, boolean ranged) {
-      Level level = villager.level();
-      MillInfluenceGrid danger = villager.getAiInfluence(); // shared danger field (kept current by the villager tick)
-      List<MillVillager> allies = nearbyAllies(villager);
-      BlockPos origin = villager.blockPosition();
-      BlockPos best = null;
-      float bestScore = -Float.MAX_VALUE;
-      for (int dx = -SCAN; dx <= SCAN; dx++) {
-         for (int dz = -SCAN; dz <= SCAN; dz++) {
-            for (int dy = 1; dy >= -2; dy--) {
-               BlockPos cell = origin.offset(dx, dy, dz);
-               if (!standable(level, cell)) {
-                  continue;
-               }
-               double d = Math.sqrt(cell.distToCenterSqr(target.getX(), target.getY(), target.getZ()));
-               float score = 0.0F;
-               score -= W_DANGER * danger.dangerAt(cell);                       // safety (req 4/5)
-               score -= W_RANGE * (float) Math.abs(d - optimal);                // weapon optimal range (req 10)
-               score -= W_ALLY * allyCrowding(allies, villager, cell);          // don't bunch up (req 6)
-               if (score > bestScore) {
-                  bestScore = score;
-                  best = cell;
-               }
-               break; // first standable y for this column
-            }
-         }
+   /**
+    * Intent-driven combat goal cell: a standable spot at the weapon's optimal distance from the target —
+    * CLOSING when too far (so a melee villager charges a skeleton instead of standing), KITING when too close
+    * (ranged), or a sideways STRAFE when already at range (走位, so we don't stand still). The engaged
+    * target's OWN danger is deliberately ignored (we must close on it); only OTHER hostiles bias the strafe.
+    */
+   private BlockPos desiredCombatCell(MillVillager villager, LivingEntity target, double optimal, double dist) {
+      net.minecraft.world.phys.Vec3 vp = villager.position();
+      net.minecraft.world.phys.Vec3 tp = target.position();
+      double dx = tp.x - vp.x;
+      double dz = tp.z - vp.z;
+      double horiz = Math.sqrt(dx * dx + dz * dz);
+      if (horiz < 0.01) {
+         return null;
       }
-      return best;
+      double nx = dx / horiz;
+      double nz = dz / horiz; // unit vector toward target (horizontal)
+      double gx;
+      double gz;
+      if (dist > optimal + 1.5 || dist < optimal - 1.5) {
+         // Too far → approach; too close → kite back: a point at optimal distance from the target on our side.
+         // PACK TACTICS (群狼): rotate that approach direction by a per-villager angle so allies come in from
+         // DIFFERENT sides and SURROUND the target instead of stacking — emergent encirclement, stable per
+         // villager (uuid) so they don't jitter between sides.
+         double spread = ((villager.getUUID().hashCode() % 7) - 3) * 0.35; // ~±1.05 rad spread across the pack
+         double cos = Math.cos(spread);
+         double sin = Math.sin(spread);
+         double rnx = nx * cos - nz * sin;
+         double rnz = nx * sin + nz * cos;
+         gx = tp.x - rnx * optimal;
+         gz = tp.z - rnz * optimal;
+      } else {
+         // At range → strafe perpendicular so we keep moving. RANDOM side + random duration so an archer
+         // can't lead the shot (req: unpredictable). Only overridden if a side is clearly more dangerous.
+         if (--this.strafeTimer <= 0) {
+            this.strafeTimer = 6 + villager.getRandom().nextInt(14);
+            this.strafeRight = pickStrafeSide(villager, vp, nx, nz);
+         }
+         double side = this.strafeRight ? 1.0 : -1.0;
+         gx = vp.x + (-nz) * side * 2.5;
+         gz = vp.z + (nx) * side * 2.5;
+      }
+      return findStandable(villager.level(), (int) Math.floor(gx), (int) Math.floor(tp.y), (int) Math.floor(gz));
    }
 
-   private static float allyCrowding(List<MillVillager> allies, MillVillager self, BlockPos cell) {
-      float c = 0.0F;
-      for (MillVillager a : allies) {
-         if (a == self) {
-            continue;
-         }
-         double dsq = a.blockPosition().distSqr(cell);
-         if (dsq < 4.0) {
-            c += (float) (4.0 - dsq); // penalise standing on top of an ally
+   /** RANDOM strafe side (unpredictable to aim at), overridden only when one side is clearly more dangerous. */
+   private static boolean pickStrafeSide(MillVillager villager, net.minecraft.world.phys.Vec3 vp, double nx, double nz) {
+      boolean r = villager.getRandom().nextBoolean();
+      MillInfluenceGrid danger = villager.getAiInfluence();
+      float right = danger.dangerAt((int) Math.floor(vp.x - nz * 2.5), (int) Math.floor(vp.z + nx * 2.5));
+      float left = danger.dangerAt((int) Math.floor(vp.x + nz * 2.5), (int) Math.floor(vp.z - nx * 2.5));
+      if (r && right > left + 4.0F) {
+         return false;
+      }
+      if (!r && left > right + 4.0F) {
+         return true;
+      }
+      return r;
+   }
+
+   /** First standable cell near (x,z), scanning a couple of blocks up/down from the target's height. */
+   private static BlockPos findStandable(Level level, int x, int y, int z) {
+      for (int dy = 2; dy >= -3; dy--) {
+         BlockPos foot = new BlockPos(x, y + dy, z);
+         if (standable(level, foot)) {
+            return foot;
          }
       }
-      return c;
+      return null;
    }
 
    /**
@@ -173,6 +239,53 @@ public final class BehaviourCombat implements MillBehaviour {
    private static boolean isRanged(MillVillager villager) {
       ItemStack main = villager.getMainHandItem();
       return main.getItem() instanceof ProjectileWeaponItem;
+   }
+
+   /** Does this HOSTILE attack at range (so standing in its line of fire gets us shot)? Covers skeletons,
+    *  pillagers/crossbow illagers, and anything holding a (vanilla or modded) projectile weapon. */
+   private static boolean isRangedHostile(LivingEntity e) {
+      if (e instanceof net.minecraft.world.entity.monster.RangedAttackMob) {
+         return true;
+      }
+      return e.getMainHandItem().getItem() instanceof ProjectileWeaponItem;
+   }
+
+   /** Retreat away from a ranged enemy to a standable cell 6-12 blocks back, PREFERRING one the enemy can't
+    *  see (cover) so we leave its line of fire rather than stand and get shot. */
+   private static BlockPos retreatFromRanged(MillVillager villager, LivingEntity target) {
+      net.minecraft.world.phys.Vec3 vp = villager.position();
+      double ax = vp.x - target.getX();
+      double az = vp.z - target.getZ();
+      double len = Math.sqrt(ax * ax + az * az);
+      if (len < 0.01) {
+         return null;
+      }
+      ax /= len;
+      az /= len;
+      Level level = villager.level();
+      BlockPos fallback = null;
+      for (int d = 6; d <= 12; d += 2) {
+         BlockPos cell = findStandable(level, (int) Math.floor(vp.x + ax * d), (int) Math.floor(vp.y), (int) Math.floor(vp.z + az * d));
+         if (cell != null) {
+            if (fallback == null) {
+               fallback = cell;
+            }
+            if (!cellVisibleTo(level, target, cell)) {
+               return cell; // behind cover — out of the enemy's line of fire
+            }
+         }
+      }
+      return fallback; // no cover found — at least back off out of close range
+   }
+
+   /** Approximate whether the enemy's eyes have a clear line to a candidate cell (for picking cover). */
+   private static boolean cellVisibleTo(Level level, LivingEntity enemy, BlockPos cell) {
+      net.minecraft.world.phys.Vec3 from = enemy.getEyePosition();
+      net.minecraft.world.phys.Vec3 to = new net.minecraft.world.phys.Vec3(cell.getX() + 0.5, cell.getY() + 1.0, cell.getZ() + 0.5);
+      net.minecraft.world.phys.BlockHitResult hit = level.clip(new net.minecraft.world.level.ClipContext(
+         from, to, net.minecraft.world.level.ClipContext.Block.COLLIDER,
+         net.minecraft.world.level.ClipContext.Fluid.NONE, enemy));
+      return hit.getType() == net.minecraft.world.phys.HitResult.Type.MISS;
    }
 
    private static void tryRangedAttack(MillVillager villager, LivingEntity target) {

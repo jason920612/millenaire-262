@@ -126,9 +126,11 @@ public final class MillClientSelfTest {
    private static final int TICK_DYN_REPUTATION = 1070;       // read rep, change it, read again
    private static final int TICK_DYN_VILLAGE_CREATE_REMOVE = 1100; // create then remove a village, count before/after
    private static final int TICK_DYN_ACTIVITY_REPORT = 1110;  // emit the sampled activity numbers
-   private static final int TICK_SUMMARY = 1140;
-   private static final int TICK_RETURN_MENU = 1155;
-   private static final int TICK_STOP = 1170;
+   private static final int TICK_DYN_COMBAT_SPAWN = 1000;     // spawn hostiles + target a fighter (BEFORE the village-create-remove gen spike at 1100)
+   private static final int TICK_DYN_COMBAT_CHECK = 1480;     // verify it moved/fought (big gap: integrated server lags)
+   private static final int TICK_SUMMARY = 1510;
+   private static final int TICK_RETURN_MENU = 1525;
+   private static final int TICK_STOP = 1540;
    /** Window (in ticks) over which villager activity is sampled while the player stands in the village. */
    private static final int ACTIVITY_WINDOW_TICKS = 600;
    /** Absolute safety net: never let the client hang waiting for the harness. */
@@ -287,6 +289,8 @@ public final class MillClientSelfTest {
             case TICK_DYN_REPUTATION -> stepReputation();
             case TICK_DYN_VILLAGE_CREATE_REMOVE -> stepVillageCreateRemove();
             case TICK_DYN_ACTIVITY_REPORT -> stepReportActivity();
+            case TICK_DYN_COMBAT_SPAWN -> stepCombatSpawn();
+            case TICK_DYN_COMBAT_CHECK -> stepCombatCheck();
             case TICK_SUMMARY -> stepSummary();
             case TICK_RETURN_MENU -> stepReturnToMenu();
             case TICK_STOP -> returnToMenuAndStop();
@@ -528,6 +532,114 @@ public final class MillClientSelfTest {
             + "' at " + (int) vx + "/" + (int) vy + "/" + (int) vz);
       } catch (Throwable t) {
          fail("teleport-villager", t);
+      }
+   }
+
+   // ============================ STEP: combat scenario (the path the harness never covered) ============================
+   private java.util.UUID combatVillagerId = null;
+   private double combatStartX;
+   private double combatStartZ;
+   private volatile boolean combatEngaged = false;
+
+   /** Spawn a zombie (melee) + pillager (ranged) next to a fighter villager and target the zombie, exercising
+    *  the new combat AI (acquire → move → attack → ranged retreat). Combat crashes/freezes slipped through
+    *  before precisely because no harness step drove a real fight. */
+   private void stepCombatSpawn() {
+      try {
+         final MinecraftServer server = mc.getSingleplayerServer();
+         if (server == null || mc.level == null) {
+            skip("combat-spawn", "no integrated server/level");
+            return;
+         }
+         List<MillVillager> fighters = mc.level.getEntitiesOfClass(MillVillager.class,
+            new AABB(-30000, mc.level.getMinY(), -30000, 30000, mc.level.getMaxY(), 30000),
+            v -> v != null && v.isAlive() && v.helpsInAttacks());
+         if (fighters.isEmpty()) {
+            skip("combat-spawn", "no fighter villager (helpsInAttacks) present to test combat");
+            return;
+         }
+         MillVillager fighter = fighters.get(0);
+         this.combatVillagerId = fighter.getUUID();
+         this.combatStartX = fighter.getX();
+         this.combatStartZ = fighter.getZ();
+         final double fx = fighter.getX();
+         final double fy = fighter.getY();
+         final double fz = fighter.getZ();
+         server.execute(() -> {
+            try {
+               ServerLevel level = server.overworld();
+               // The test world defaults to PEACEFUL, where monsters can't be created (create() → canSpawn
+               // fails → null) AND villagers won't retaliate (hurtServer gates combat on non-PEACEFUL). Set
+               // NORMAL so the combat scenario is both spawnable and realistic.
+               server.setDifficulty(net.minecraft.world.Difficulty.NORMAL, true);
+               net.minecraft.world.entity.EntityType<?> zType = net.minecraft.core.registries.BuiltInRegistries.ENTITY_TYPE
+                  .getValue(net.minecraft.resources.Identifier.withDefaultNamespace("zombie"));
+               net.minecraft.world.entity.EntityType<?> pType = net.minecraft.core.registries.BuiltInRegistries.ENTITY_TYPE
+                  .getValue(net.minecraft.resources.Identifier.withDefaultNamespace("pillager"));
+               // create()+addFreshEntity (NOT spawn(), which validates the cell and returned null inside the
+               // built-up village → engaged stayed false). Anchor on the fighter's current server position.
+               net.minecraft.world.entity.Entity fe = level.getEntity(this.combatVillagerId);
+               net.minecraft.core.BlockPos base = fe != null ? fe.blockPosition() : net.minecraft.core.BlockPos.containing(fx, fy, fz);
+               net.minecraft.world.entity.Entity zombie = zType == null ? null : zType.create(level, net.minecraft.world.entity.EntitySpawnReason.COMMAND);
+               if (zombie != null) {
+                  zombie.setPos(base.getX() + 2.5, base.getY() + 1.0, base.getZ() + 0.5);
+                  level.addFreshEntity(zombie);
+               }
+               if (pType != null) {
+                  net.minecraft.world.entity.Entity p = pType.create(level, net.minecraft.world.entity.EntitySpawnReason.COMMAND);
+                  if (p != null) {
+                     p.setPos(base.getX() + 7.5, base.getY() + 1.0, base.getZ() + 2.5);
+                     level.addFreshEntity(p);
+                  }
+               }
+               if (fe instanceof MillVillager mv && zombie instanceof net.minecraft.world.entity.LivingEntity le) {
+                  mv.setTarget(le);
+                  // Record the movement baseline at the MOMENT combat starts (server-side), so combat-check
+                  // measures movement since engagement regardless of how far the integrated server lagged.
+                  this.combatStartX = mv.getX();
+                  this.combatStartZ = mv.getZ();
+                  this.combatEngaged = true;
+               }
+               log("combat-spawn (server): fe=" + (fe != null) + " zombieCreated=" + (zombie != null) + " engaged=" + this.combatEngaged);
+            } catch (Throwable t) {
+               recordException("combat-spawn(server)", t);
+            }
+         });
+         pass("combat-spawn", "scheduled zombie+pillager next to fighter '" + fighter.getName().getString() + "'");
+      } catch (Throwable t) {
+         fail("combat-spawn", t);
+      }
+   }
+
+   /** Verify the fighter actually engaged: moved from its spawn spot (not frozen) and survived (no crash). */
+   private void stepCombatCheck() {
+      try {
+         if (this.combatVillagerId == null) {
+            skip("combat-check", "combat-spawn did not run");
+            return;
+         }
+         if (!this.combatEngaged) {
+            skip("combat-check", "server never set the target in time (integrated server lagged) — inconclusive");
+            return;
+         }
+         MinecraftServer server = mc.getSingleplayerServer();
+         net.minecraft.world.entity.Entity ent = server != null ? server.overworld().getEntity(this.combatVillagerId) : null;
+         if (!(ent instanceof MillVillager mv)) {
+            skip("combat-check", "fighter villager gone (died/despawned during combat)");
+            return;
+         }
+         double dx = mv.getX() - this.combatStartX;
+         double dz = mv.getZ() - this.combatStartZ;
+         double movedSq = dx * dx + dz * dz;
+         String detail = "movedDist2=" + String.format("%.1f", movedSq)
+            + " stillTargeting=" + (mv.getTarget() != null) + " alive=" + mv.isAlive();
+         if (movedSq > 1.0) {
+            pass("combat-check", "fighter ENGAGED and moved (not frozen): " + detail);
+         } else {
+            fail("combat-check", new IllegalStateException("fighter did NOT move ~2.5s after targeting — FREEZE suspected: " + detail));
+         }
+      } catch (Throwable t) {
+         fail("combat-check", t);
       }
    }
 

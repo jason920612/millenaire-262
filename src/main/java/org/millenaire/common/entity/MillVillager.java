@@ -461,11 +461,11 @@ public abstract class MillVillager extends PathfinderMob implements IAStarPathed
     */
    private void updateNewAiDanger() {
       if (--this.aiGridCooldown <= 0) {
-         this.aiGridCooldown = 20;
+         this.aiGridCooldown = 10;
          // Use getEntities(except, AABB, predicate) NOT getEntitiesOfClass: the latter goes through
          // ClassInstanceMultiMap's per-class cache (computeIfAbsent), which is not reentrancy-safe during the
          // entity tick loop and was throwing ConcurrentModificationException. getEntities iterates the section
-         // lists directly. We then keep only living hostiles.
+         // lists directly. Enemy covers ALL hostiles incl. raiders/pillagers/zombies.
          java.util.List<net.minecraft.world.entity.LivingEntity> hostiles = new java.util.ArrayList<>();
          for (net.minecraft.world.entity.Entity e : this.level().getEntities(this, this.getBoundingBox().inflate(24.0),
             e -> e instanceof net.minecraft.world.entity.monster.Enemy && e.isAlive())) {
@@ -477,6 +477,34 @@ public abstract class MillVillager extends PathfinderMob implements IAStarPathed
          int bz = this.getBlockZ();
          this.aiInfluence = org.millenaire.common.ai.MillInfluenceGrid.build(
             bx, bz, bx, bz, hostiles, org.millenaire.common.ai.MillInfluenceGrid.DEFAULT_RADIUS);
+
+         // PROACTIVE threat detection: a combat villager with no target engages the nearest hostile within
+         // ~16 blocks — react to an approaching/aiming hostile (incl. pillagers/raiders) BEFORE being hit,
+         // and rally the village. Prefer hostiles already aiming at a villager (clear attack intent).
+         if (this.helpsInAttacks() && this.getTarget() == null && !hostiles.isEmpty()) {
+            net.minecraft.world.entity.LivingEntity best = null;
+            double bestScore = Double.MAX_VALUE;
+            for (net.minecraft.world.entity.LivingEntity h : hostiles) {
+               double d = this.distanceToSqr(h);
+               if (d > 16.0 * 16.0) {
+                  continue;
+               }
+               boolean aimingAtVillager = h instanceof net.minecraft.world.entity.Mob m
+                  && m.getTarget() instanceof MillVillager;
+               double score = aimingAtVillager ? d - 64.0 : d; // bias toward those already threatening us
+               if (score < bestScore) {
+                  bestScore = score;
+                  best = h;
+               }
+            }
+            if (best != null) {
+               this.setTarget(best);
+               this.clearGoal(); // drop the work goal (and its stopMoving) so combat movement isn't frozen
+               if (this.getTownHall() != null) {
+                  this.getTownHall().callForHelp(best);
+               }
+            }
+         }
       }
       if (this.getNavigation() instanceof org.millenaire.common.ai.MillPathNavigation nav) {
          nav.configureCost(this.aiInfluence, 1.0F, 2.0F);
@@ -889,7 +917,9 @@ public abstract class MillVillager extends PathfinderMob implements IAStarPathed
 
                   if (goal.isStillValid(this)) {
                      this.allowRandomMoves = goal.allowRandomMoves();
-                     if (this.stopMoving) {
+                     // Don't let a goal's stopMoving freeze the nav while the new AI is fighting a target.
+                     if (this.stopMoving
+                        && !(org.millenaire.common.config.MillConfigValues.NewAI && this.getTarget() != null)) {
                         this.getNavigation().stop();
                         this.pathEntity = null;
                      }
@@ -2034,7 +2064,9 @@ public abstract class MillVillager extends PathfinderMob implements IAStarPathed
    }
 
    public boolean isVillagerSleeping() {
-      return this.shouldLieDown;
+      // A villager with a combat target is never "asleep" — it wakes to fight (fixes lying-in-bed-while-
+      // fighting). The night sleep goal can keep re-setting shouldLieDown, so gate the query on the target.
+      return this.shouldLieDown && this.getTarget() == null;
    }
 
    public boolean isVisitor() {
@@ -2376,23 +2408,29 @@ public abstract class MillVillager extends PathfinderMob implements IAStarPathed
 
                if (this.getTarget() != null) {
                   this.shouldLieDown = false;
-                  this.attackEntity(this.getTarget());
-                  // attackEntity may clear the target (kill/flee), so re-read it and null-check before
-                  // calling onGround() — the 1.12 code re-read getTarget() each line and NPE'd here every
-                  // tick once the target died ("Error in onUpdate()").
-                  LivingEntity currentTarget = this.getTarget();
-                  if (currentTarget != null) {
-                     if (currentTarget.onGround()) {
-                        this.setPathDestPoint(new Point(currentTarget), 1);
-                     } else {
-                        Point posToAttack = new Point(currentTarget);
+                  // Under NewAI the combat BEHAVIOUR owns attacking + movement. The legacy attackEntity +
+                  // setPathDestPoint(target) here re-stopped the navigation EVERY tick (setPathDestPoint calls
+                  // getNavigation().stop() whenever the moving target's point changes by > tolerance), which
+                  // froze the villager mid-step → "呆呆看著". Skip the legacy attack/move under NewAI.
+                  if (!org.millenaire.common.config.MillConfigValues.NewAI) {
+                     this.attackEntity(this.getTarget());
+                     // attackEntity may clear the target (kill/flee), so re-read it and null-check before
+                     // calling onGround() — the 1.12 code re-read getTarget() each line and NPE'd here every
+                     // tick once the target died ("Error in onUpdate()").
+                     LivingEntity currentTarget = this.getTarget();
+                     if (currentTarget != null) {
+                        if (currentTarget.onGround()) {
+                           this.setPathDestPoint(new Point(currentTarget), 1);
+                        } else {
+                           Point posToAttack = new Point(currentTarget);
 
-                        while (posToAttack.y > 0.0 && posToAttack.isBlockPassable(this.level())) {
-                           posToAttack = posToAttack.getBelow();
-                        }
+                           while (posToAttack.y > 0.0 && posToAttack.isBlockPassable(this.level())) {
+                              posToAttack = posToAttack.getBelow();
+                           }
 
-                        if (posToAttack != null) {
-                           this.setPathDestPoint(posToAttack.getAbove(), 3);
+                           if (posToAttack != null) {
+                              this.setPathDestPoint(posToAttack.getAbove(), 3);
+                           }
                         }
                      }
                   }
@@ -2400,7 +2438,11 @@ public abstract class MillVillager extends PathfinderMob implements IAStarPathed
             }
 
             if (this.getTarget() != null) {
-               this.setGoalDestPoint(new Point(this.getTarget()));
+               // setGoalDestPoint feeds the legacy stuck/stop tracking — skip under NewAI (the new navigation
+               // drives movement); still equip the weapon so combat looks/works right.
+               if (!org.millenaire.common.config.MillConfigValues.NewAI) {
+                  this.setGoalDestPoint(new Point(this.getTarget()));
+               }
                this.heldItem = this.getWeapon();
                this.heldItemOffHand = ItemStack.EMPTY;
                if (this.goalKey != null && !Goal.goals.get(this.goalKey).isFightingGoal()) {
@@ -2543,7 +2585,9 @@ public abstract class MillVillager extends PathfinderMob implements IAStarPathed
                this.updatePathIfNeeded(this.getPathDestPoint());
             }
 
-            if (this.stopMoving || this.pathPlannerJPS.isBusy()) {
+            // Legacy: stop the nav when "stopMoving" or the JPS planner is busy. Under NewAI the new engine
+            // owns the navigation (and the JPS planner is gated off), so this would just freeze combat/movement.
+            if (!org.millenaire.common.config.MillConfigValues.NewAI && (this.stopMoving || this.pathPlannerJPS.isBusy())) {
                this.getNavigation().stop();
                this.pathEntity = null;
             }

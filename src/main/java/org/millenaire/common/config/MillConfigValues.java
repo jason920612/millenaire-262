@@ -69,6 +69,10 @@ public class MillConfigValues {
     *  MillPathNavigation run ALONGSIDE the legacy goal/movement so we can switch villagers over per phase
     *  without breaking the working mod. Default off until the rewrite is proven. */
    public static boolean NewAI = true;
+   /** Opt-in flag for the value-field navigation rewrite (org.millenaire.common.ai.nav) — the principled
+    *  "one objective, layered solvers" replacement for the heuristic movement behaviours. Default off; flipped
+    *  on per phase as it is built + harness-validated. See Millenaire/AI-NAV-REWRITE-PLAN.md. */
+   public static boolean ValueFieldNav = false;
    public static boolean displayNames = true;
    public static boolean displayStart = true;
    public static final String NEOL = System.getProperty("line.separator");

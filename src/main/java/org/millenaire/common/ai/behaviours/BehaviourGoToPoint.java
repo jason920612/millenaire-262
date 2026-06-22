@@ -65,6 +65,7 @@ public final class BehaviourGoToPoint implements MillBehaviour {
          if (this.nav3d != null) {
             this.nav3d.reset();
          }
+         villager.activeNav3d = null;
          return false; // arrived / working in place → done
       }
       // (Re)issue movement only when idle. Use the navigation's OWN A* (MillPathNavigation + the danger-aware
@@ -79,6 +80,9 @@ public final class BehaviourGoToPoint implements MillBehaviour {
          if (this.nav3d == null) {
             this.nav3d = new org.millenaire.common.ai.nav.Mill3DNavigator();
          }
+         // Publish the active navigator so MillVillager.tick's door-open driver can read its next path nodes
+         // and open wooden doors / fence gates on approach (the new-nav replacement for pathEntity).
+         villager.activeNav3d = this.nav3d;
          this.nav3d.navigateTo(villager, new net.minecraft.core.BlockPos(d.getiX(), d.getiY(), d.getiZ()), SPEED);
       } else if (villager.getNavigation().isDone()) {
          // ValueFieldNav OFF → legacy vanilla navigation.
@@ -117,6 +121,7 @@ public final class BehaviourGoToPoint implements MillBehaviour {
       if (this.nav3d != null) {
          this.nav3d.reset();
       }
+      villager.activeNav3d = null;
    }
 
    /**

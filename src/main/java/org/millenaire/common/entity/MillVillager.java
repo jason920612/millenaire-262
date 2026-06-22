@@ -232,6 +232,13 @@ public abstract class MillVillager extends PathfinderMob implements IAStarPathed
    public String dialogueTargetFirstName = null;
    public String dialogueTargetLastName = null;
    private Point doorToClose = null;
+   /**
+    * NewAI/ValueFieldNav only: the 3D navigator currently driving this villager's movement (owned by
+    * {@link org.millenaire.common.ai.behaviours.BehaviourGoToPoint}). The door-open driver reads its next
+    * path nodes to open wooden doors / fence gates on approach — the new-nav replacement for {@code pathEntity}
+    * (which the new AI never sets), so villagers can leave their houses. Cleared when the behaviour stops.
+    */
+   public org.millenaire.common.ai.nav.Mill3DNavigator activeNav3d = null;
    public int visitorNbNights = 0;
    public int foreignMerchantStallId = -1;
    public boolean lastAttackByPlayer = false;
@@ -1919,6 +1926,98 @@ public abstract class MillVillager extends PathfinderMob implements IAStarPathed
       }
    }
 
+   /**
+    * NewAI/ValueFieldNav door + fence-gate driver — the faithful 1.12 {@link #handleDoorsAndFenceGates} logic
+    * (open on approach, remember it, close behind once passed), but sourcing the current/next path point from
+    * the active {@link org.millenaire.common.ai.nav.Mill3DNavigator} instead of {@code pathEntity} (which the
+    * new AI never populates, so the legacy method was a permanent no-op — villagers stayed walled inside their
+    * houses). Iron doors are never touched (villagers can't open them). Same close-trigger as 1.12: the door is
+    * closed once the villager is no longer pathing through it.
+    */
+   private void handleDoorsAndFenceGatesNewNav() {
+      org.millenaire.common.ai.nav.Mill3DNavigator nav = this.activeNav3d;
+      Point current = null;
+      Point next = null;
+      if (nav != null) {
+         net.minecraft.core.BlockPos c = nav.currentNode();
+         net.minecraft.core.BlockPos n = nav.upcomingNode();
+         if (c != null) {
+            current = new Point(c.getX(), c.getY(), c.getZ());
+         }
+         if (n != null) {
+            next = new Point(n.getX(), n.getY(), n.getZ());
+         }
+      }
+
+      // Close the remembered door/gate once we are no longer pathing through it (current/next node no longer
+      // on it, or no active path at all) — mirrors the 1.12 "past target" close trigger.
+      if (this.doorToClose != null) {
+         boolean stillCrossing = current != null && this.doorToClose.sameBlock(current)
+            || next != null && this.doorToClose.sameBlock(next);
+         if (!stillCrossing) {
+            if (BlockItemUtilities.isWoodenDoor(this.getBlock(this.doorToClose))) {
+               if ((Boolean)this.doorToClose.getBlockActualState(this.level()).getValue(DoorBlock.OPEN)) {
+                  this.toggleDoor(this.doorToClose);
+                  if (MillConfigValues.LogPathing >= 2) {
+                     MillLog.minor(this, "NewNav door closed at " + this.doorToClose);
+                  }
+               }
+
+               for (Point nearbyDoor : new Point[]{
+                  this.doorToClose.getNorth(), this.doorToClose.getSouth(), this.doorToClose.getEast(), this.doorToClose.getWest()
+               }) {
+                  if (BlockItemUtilities.isWoodenDoor(this.getBlock(nearbyDoor))
+                     && (Boolean)nearbyDoor.getBlockActualState(this.level()).getValue(DoorBlock.OPEN)) {
+                     this.toggleDoor(nearbyDoor);
+                  }
+               }
+
+               this.doorToClose = null;
+            } else if (BlockItemUtilities.isFenceGate(this.getBlock(this.doorToClose))) {
+               if (this.closeFenceGate(this.doorToClose.getiX(), this.doorToClose.getiY(), this.doorToClose.getiZ())) {
+                  this.doorToClose = null;
+               }
+            } else {
+               this.doorToClose = null;
+            }
+         }
+      }
+
+      // Open the wooden door / fence gate the villager is walking toward (current node first, then the look-ahead
+      // node so it is already open when reached) and remember it to close behind.
+      Point doorPoint = null;
+      if (current != null && BlockItemUtilities.isWoodenDoor(this.getBlock(current))) {
+         doorPoint = current;
+      } else if (next != null && BlockItemUtilities.isWoodenDoor(this.getBlock(next))) {
+         doorPoint = next;
+      }
+
+      if (doorPoint != null) {
+         if (!(Boolean)doorPoint.getBlockActualState(this.level()).getValue(DoorBlock.OPEN)) {
+            this.toggleDoor(doorPoint);
+            if (MillConfigValues.LogPathing >= 2) {
+               MillLog.minor(this, "NewNav door opened at " + doorPoint);
+            }
+         }
+         this.doorToClose = doorPoint;
+      } else {
+         Point gatePoint = null;
+         if (next != null && BlockItemUtilities.isFenceGate(this.getBlock(next))) {
+            gatePoint = next;
+         } else if (current != null && BlockItemUtilities.isFenceGate(this.getBlock(current))) {
+            gatePoint = current;
+         }
+
+         if (gatePoint != null) {
+            this.openFenceGate(gatePoint.getiX(), gatePoint.getiY(), gatePoint.getiZ());
+            if (MillConfigValues.LogPathing >= 2) {
+               MillLog.minor(this, "NewNav fence gate opened at " + gatePoint);
+            }
+            this.doorToClose = gatePoint;
+         }
+      }
+   }
+
    private void handleLeaveClearing() {
       if (this.pathEntity != null && this.pathEntity.getNodeCount() > 0) {
          List<Point> pointsToCheck = new ArrayList<>();
@@ -2671,7 +2770,14 @@ public abstract class MillVillager extends PathfinderMob implements IAStarPathed
                this.handleLeaveClearing();
             }
 
-            this.handleDoorsAndFenceGates();
+            // Under NewAI the navigation is driven by the 3D navigator (pathEntity is never set), so the
+            // legacy pathEntity-based door logic is a no-op — drive doors from the new nav's path nodes
+            // instead so villagers can open doors and leave their houses. Otherwise keep the 1.12 path.
+            if (org.millenaire.common.config.MillConfigValues.NewAI) {
+               this.handleDoorsAndFenceGatesNewNav();
+            } else {
+               this.handleDoorsAndFenceGates();
+            }
             if (System.currentTimeMillis() - this.timeSinceLastPathingTimeDisplay > 10000L) {
                if (this.pathingTime > 500L) {
                   if (this.getPathDestPoint() != null) {

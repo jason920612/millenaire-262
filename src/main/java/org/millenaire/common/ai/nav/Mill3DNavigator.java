@@ -95,6 +95,28 @@ public final class Mill3DNavigator {
       this.index = 0;
    }
 
+   /**
+    * The path node the navigator is currently steering toward (the next waypoint), or {@code null} if there is
+    * no active path. The door-open driver uses this (plus {@link #upcomingNode}) to find a wooden door / fence
+    * gate the villager is about to walk through and open it ahead of time — the new-nav replacement for the old
+    * pathEntity current/next-target-point lookups.
+    */
+   public BlockPos currentNode() {
+      if (this.path == null || this.path.isEmpty()) {
+         return null;
+      }
+      return this.path.get(Math.min(this.index, this.path.size() - 1));
+   }
+
+   /** The node one step beyond {@link #currentNode} (look-ahead for opening a door before reaching it). */
+   public BlockPos upcomingNode() {
+      if (this.path == null || this.path.isEmpty()) {
+         return null;
+      }
+      int i = Math.min(this.index + 1, this.path.size() - 1);
+      return this.path.get(i);
+   }
+
    private boolean farFromPath(BlockPos here) {
       if (this.path == null || this.index >= this.path.size()) {
          return false;

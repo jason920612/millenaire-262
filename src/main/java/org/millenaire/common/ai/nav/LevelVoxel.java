@@ -29,9 +29,20 @@ public final class LevelVoxel implements Voxel {
       }
       BlockPos p = new BlockPos(x, y, z);
       BlockState s = this.level.getBlockState(p);
-      boolean solid = !s.getCollisionShape(this.level, p).isEmpty();
+      // 1.12 parity (AStarStatic.isPassableBlock, canUseDoors): Mill villagers can OPEN wooden doors and
+      // fence gates, so they must NOT be treated as solid walls by the pathfinder — the villager walks
+      // through the doorway and opens it (the door-open driver runs as it approaches). This holds regardless
+      // of the door's open/closed state, because a CLOSED wooden door has a non-empty collision shape and
+      // would otherwise wall off the doorway. IRON doors stay solid (villagers can't open them, as in 1.12).
+      boolean solid = passableDoorOrGate(s.getBlock()) ? false : !s.getCollisionShape(this.level, p).isEmpty();
       this.cache.put(key, solid);
       return solid;
+   }
+
+   /** Wooden door or fence gate — passable to a Mill villager (it opens them). Iron doors are NOT included. */
+   static boolean passableDoorOrGate(net.minecraft.world.level.block.Block block) {
+      return org.millenaire.common.utilities.BlockItemUtilities.isWoodenDoor(block)
+         || org.millenaire.common.utilities.BlockItemUtilities.isFenceGate(block);
    }
 
    @Override
@@ -42,8 +53,15 @@ public final class LevelVoxel implements Voxel {
          return cached;
       }
       BlockPos p = new BlockPos(x, y, z);
-      net.minecraft.world.phys.shapes.VoxelShape shape = this.level.getBlockState(p).getCollisionShape(this.level, p);
-      // Collision top above one full block (fence/wall/gate = 1.5) → can't be jumped onto/over.
+      BlockState s = this.level.getBlockState(p);
+      // A passable fence GATE has a 1.5-high collision shape, but the villager walks THROUGH it (opening it),
+      // so it must not be treated as an un-climbable tall obstacle to route around. Same for wooden doors.
+      if (passableDoorOrGate(s.getBlock())) {
+         this.tallCache.put(key, false);
+         return false;
+      }
+      net.minecraft.world.phys.shapes.VoxelShape shape = s.getCollisionShape(this.level, p);
+      // Collision top above one full block (fence/wall = 1.5) → can't be jumped onto/over.
       boolean tall = !shape.isEmpty() && shape.max(net.minecraft.core.Direction.Axis.Y) > 1.0;
       this.tallCache.put(key, tall);
       return tall;

@@ -41,6 +41,19 @@ public final class MillCrash {
    }
 
    /**
+    * Like {@link #fail(String, String)} but CHAINS the original {@code cause} so the crash report shows the
+    * real origin stack trace (not just this wrapper). Catch sites should prefer this — pass the caught
+    * exception as {@code cause} instead of appending its text to {@code detail}, otherwise the underlying
+    * location is lost.
+    */
+   public static RuntimeException fail(String subsystem, String detail, Throwable cause) {
+      String message = MARKER + subsystem + ": " + detail;
+      IllegalStateException ex = new IllegalStateException(message, cause);
+      MillLog.printException(MARKER + subsystem + ": " + detail, cause);
+      return ex;
+   }
+
+   /**
     * Returns {@code value} if non-null; otherwise crashes loudly.
     *
     * @param value     the value that must not be null

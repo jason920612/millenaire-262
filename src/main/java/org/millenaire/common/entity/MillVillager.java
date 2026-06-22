@@ -2692,11 +2692,9 @@ public abstract class MillVillager extends PathfinderMob implements IAStarPathed
                this.nbPathFailure = 0;
             }
          } catch (MillLog.MillenaireException var8) {
-            throw MillCrash.fail("Entity",
-               "MillVillager.tick goal/pathing body failed for " + this.getVillagerName() + ": " + var8.getMessage());
+            throw MillCrash.fail("Entity", "MillVillager.tick goal/pathing body failed for " + this.getVillagerName(), var8);
          } catch (Exception var9) {
-            throw MillCrash.fail("Entity",
-               "MillVillager.tick goal/pathing body failed for " + this.getVillagerName() + ": " + var9);
+            throw MillCrash.fail("Entity", "MillVillager.tick goal/pathing body failed for " + this.getVillagerName(), var9);
          }
 
          if (Math.abs(this.level().getOverworldClockTime() + this.hashCode()) % 10L == 5L) {
@@ -2715,7 +2713,7 @@ public abstract class MillVillager extends PathfinderMob implements IAStarPathed
             }
          }
       } catch (Exception var10) {
-         throw MillCrash.fail("Entity", "MillVillager.tick() failed for villager " + this + ": " + var10);
+         throw MillCrash.fail("Entity", "MillVillager.tick() failed for villager " + this, var10);
       }
 
       if (this.getTownHall() != null) {

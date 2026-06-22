@@ -1171,7 +1171,16 @@ public class Culture {
          if (d != null) {
             return d;
          } else {
-            d = this.mainLanguage.getDialogue(v1, v2);
+            // Guard mainLanguage like the OTHER THREE branches above (fallbackLanguage/fallbackLanguageServer/
+            // mainLanguageServer are all null-checked). When a culture's local language failed to load it is
+            // null here; the unguarded call NPE'd the whole villager tick — and pre-fail-fast that NPE was
+            // swallowed, silently aborting the tick so the villager never completed ANY goal (e.g. chopping).
+            // This method's contract is to return null when no dialogue is available, so a null language just
+            // yields "no dialogue this tick", consistent with the surrounding branches.
+            if (this.mainLanguage != null) {
+               d = this.mainLanguage.getDialogue(v1, v2);
+            }
+
             if (d != null) {
                return d;
             } else {

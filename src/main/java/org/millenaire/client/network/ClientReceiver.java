@@ -123,7 +123,7 @@ public class ClientReceiver {
       } catch (Exception packetHandlingError) {
          // A swallowed packet-handler error is a silent client/server desync: the handler aborted partway,
          // leaving the client view inconsistent with the server's. Crash loudly instead of logging-and-continuing.
-         throw MillCrash.fail("Net", "ClientReceiver.processPacket failed handling an incoming Mill packet: " + packetHandlingError);
+         throw MillCrash.fail("Net", "ClientReceiver.processPacket failed handling an incoming Mill packet", packetHandlingError);
       }
    }
 

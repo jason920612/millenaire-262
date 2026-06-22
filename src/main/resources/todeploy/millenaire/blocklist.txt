@@ -752,8 +752,8 @@ signwallBottom;millenaire:panel;facing=west;true;0/0/221;anywood;;7
 signwallLeft;millenaire:panel;facing=north;true;0/0/222;anywood;;7
 signwallRight;millenaire:panel;facing=south;true;0/0/223;anywood;;7
 
-torchTop;minecraft:wall_torch;facing=east;true;255/255/1;anywood;;1
-torchBottom;minecraft:wall_torch;facing=west;true;255/255/2;anywood;;1
+torchTop;minecraft:wall_torch;facing=west;true;255/255/1;anywood;;1
+torchBottom;minecraft:wall_torch;facing=east;true;255/255/2;anywood;;1
 torchLeft;minecraft:wall_torch;facing=south;true;255/255/3;anywood;;1
 torchRight;minecraft:wall_torch;facing=north;true;255/255/4;anywood;;1
 torchStanding;minecraft:torch;;true;255/255/5;anywood;;1

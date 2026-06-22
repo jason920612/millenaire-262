@@ -208,35 +208,6 @@ public final class InvItem implements Comparable<InvItem> {
       this.checkValidity();
    }
 
-   private InvItem(String s) {
-      this.special = 0;
-      if (s.split("/").length > 2) {
-         int id = Integer.parseInt(s.split("/")[0]);
-         if (BuiltInRegistries.ITEM.byId(id) == null) {
-            MillLog.printException("Tried creating InvItem with null id from string: " + s, new Exception());
-            this.item = null;
-         } else {
-            this.item = BuiltInRegistries.ITEM.byId(id);
-         }
-
-         if (BuiltInRegistries.BLOCK.byId(id) == null) {
-            this.block = null;
-         } else {
-            this.block = BuiltInRegistries.BLOCK.byId(id);
-         }
-
-         this.meta = Integer.parseInt(s.split("/")[1]);
-         this.staticStack = this.item != null ? new ItemStack(this.item, 1) : ItemStack.EMPTY;
-      } else {
-         this.staticStack = null;
-         this.item = null;
-         this.block = null;
-         this.meta = 0;
-      }
-
-      this.staticStackArray = new ItemStack[]{this.staticStack};
-      this.checkValidity();
-   }
 
    private void checkValidity() {
       if (this.block == Blocks.AIR) {

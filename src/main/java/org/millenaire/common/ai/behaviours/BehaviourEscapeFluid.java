@@ -33,26 +33,24 @@ public final class BehaviourEscapeFluid implements MillBehaviour {
    @Override
    public boolean tick(MillVillager villager) {
       if (!villager.isInWater() && !villager.isInLava()) {
-         villager.setJumping(false);
-         villager.setSwimming(false);
+         villager.setSprinting(false);
          villager.getNavigation().stop();
          return false; // safely out — done
       }
       // The 3D pathfinder needs solid ground that deep water lacks (water isn't a standable node), so it can't
-      // route us out — SWIM DIRECTLY toward the nearest shore via the MoveControl instead of pathing.
+      // route us out — SWIM DIRECTLY toward the nearest shore via the (amphibious) MoveControl instead of pathing.
       villager.getNavigation().stop();
       if (this.shore == null || villager.blockPosition().closerThan(this.shore, 1.5)) {
          this.shore = nearestShore(villager);
       }
-      // Real swimming: rise to the surface (vanilla only swims up while 'jumping'), take the streamlined swim
-      // pose while submerged, and head straight at the shore.
-      if (villager.isUnderWater()) {
-         villager.setSwimming(true);
-         villager.setDeltaMovement(villager.getDeltaMovement().add(0.0, 0.04, 0.0)); // climb toward the surface
+      // PLAYER-LIKE swim: sprinting while submerged makes vanilla updateSwimming() set the SWIMMING pose +
+      // animation (same as a swimming player), and MillAmphibiousMoveControl then pitches the body and thrusts
+      // in real 3D toward the target — so it actually swims up/forward to the shore, not just bobs.
+      if (villager.isInWater()) {
+         villager.setSprinting(true);
       }
-      villager.setJumping(true); // vanilla jumpInLiquid → surface + stay afloat
       double sx = this.shore != null ? this.shore.getX() + 0.5 : villager.getX();
-      double sy = this.shore != null ? this.shore.getY() : villager.getY() + 1.0;
+      double sy = this.shore != null ? this.shore.getY() + 0.5 : villager.getY() + 2.0; // aim up if no shore found
       double sz = this.shore != null ? this.shore.getZ() + 0.5 : villager.getZ();
       villager.getMoveControl().setWantedPosition(sx, sy, sz, SPEED);
 
@@ -67,8 +65,7 @@ public final class BehaviourEscapeFluid implements MillBehaviour {
    @Override
    public void onStop(MillVillager villager) {
       this.shore = null;
-      villager.setJumping(false);
-      villager.setSwimming(false);
+      villager.setSprinting(false);
    }
 
    /** Nearest dry, standable, fluid-free cell (preferring the closest) — the shore to climb out onto. */

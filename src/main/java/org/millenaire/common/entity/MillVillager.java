@@ -384,6 +384,9 @@ public abstract class MillVillager extends PathfinderMob implements IAStarPathed
       }
 
       this.getAttribute(Attributes.MOVEMENT_SPEED).setBaseValue(0.5);
+      // Amphibious movement: real 3D, player-like swimming (pitch up/down + thrust) while in water, identical
+      // vanilla ground movement otherwise — so a villager in water swims to the surface/shore instead of bobbing.
+      this.moveControl = new org.millenaire.common.ai.nav.MillAmphibiousMoveControl(this, 85, 10, 2.0F);
       if (MillConfigValues.LogVillagerSpawn >= 3) {
          Exception e = new Exception();
          MillLog.printException("Creating villager " + this + " in world: " + world, e);

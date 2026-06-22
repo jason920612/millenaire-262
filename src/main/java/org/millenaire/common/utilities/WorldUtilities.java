@@ -347,37 +347,11 @@ public class WorldUtilities {
     * default state. Without this, incrementing writes like nether-wart growth reset the block to age 0.
     */
    public static BlockState legacyMetaToBlockState(Block block, int meta) {
-      BlockState state = block.defaultBlockState();
-      if (meta <= 0) {
-         return state;
-      }
-      try {
-         var AGE3 = net.minecraft.world.level.block.state.properties.BlockStateProperties.AGE_3;
-         var AGE7 = net.minecraft.world.level.block.state.properties.BlockStateProperties.AGE_7;
-         var MOIST = net.minecraft.world.level.block.state.properties.BlockStateProperties.MOISTURE;
-         var AXIS = net.minecraft.world.level.block.state.properties.BlockStateProperties.AXIS;
-         if (state.hasProperty(AGE3)) {
-            return state.setValue(AGE3, Math.min(meta, 3));
-         }
-         if (state.hasProperty(AGE7)) {
-            return state.setValue(AGE7, Math.min(meta, 7));
-         }
-         if (state.hasProperty(MOIST)) {
-            return state.setValue(MOIST, Math.min(meta & 7, 7));
-         }
-         if (state.hasProperty(AXIS)) {
-            net.minecraft.core.Direction.Axis axis = (meta & 12) == 4
-               ? net.minecraft.core.Direction.Axis.X
-               : (meta & 12) == 8 ? net.minecraft.core.Direction.Axis.Z : net.minecraft.core.Direction.Axis.Y;
-            return state.setValue(AXIS, axis);
-         }
-      } catch (Exception metaMappingException) {
-         // FAIL-FAST: every setValue above is guarded by hasProperty and range-clamped, so a throw here
-         // means an unexpected property mismatch that would silently reset the block (e.g. nether-wart to
-         // age 0) - the exact corruption this method exists to prevent. Surface it loudly.
-         throw MillCrash.fail("World", "failed to apply legacy meta " + meta + " to block " + block + ": " + metaMappingException);
-      }
-      return state;
+      // M3: routed through the unified conversion protocol. The declarative legacy-blocks.txt table
+      // covers the fixed-variant families (logs/slabs/stairs/ladders/torches/beds); the unbounded numeric
+      // families (crop/wart age, farmland moisture, generic pillar axis) are applied property-driven.
+      // Behaviour-identical to the former ad-hoc meta switch — see MillConvert.blockState(Block, int).
+      return org.millenaire.common.convert.MillConvert.blockState(block, meta);
    }
 
    /** 1.12 BlockLever.EnumOrientation index for a 26.2 lever state. */

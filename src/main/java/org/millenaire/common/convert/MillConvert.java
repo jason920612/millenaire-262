@@ -235,13 +235,101 @@ public final class MillConvert {
    // 3. Table-backed conversions (API shape only; data lands in M2)
    // ------------------------------------------------------------------------------------------------
 
-   /** Maps a 1.12 (name, meta) block to a modern placement + optional cost. */
+   /**
+    * Maps a 1.12 {@code (name, meta)} block to a modern placement + optional cost.
+    *
+    * <p>Resolution order, both branches identical to the 1.12 {@code Block.getStateFromMeta(meta)} the
+    * former {@code WorldUtilities.legacyMetaToBlockState} reproduced:</p>
+    * <ol>
+    *   <li><b>Fixed-variant families</b> (logs/slabs/stairs/ladders/torches/beds): the exact
+    *       {@code name:meta} pair is looked up in the declarative {@code legacy-blocks.txt} table.</li>
+    *   <li><b>Unbounded numeric families</b> (crop {@code AGE_7}, nether-wart {@code AGE_3}, farmland
+    *       {@code MOISTURE}, generic pillar {@code AXIS}): the meta is applied property-driven via
+    *       {@link #applyNumericMeta}, since their meta space cannot be enumerated by name.</li>
+    * </ol>
+    *
+    * <p>Fail-fast: a {@code (name, meta)} that is in neither branch (i.e. an unknown legacy block or a
+    * meta the family does not support) crashes loudly via {@link MillCrash} naming it — never a silent
+    * AIR fallback.</p>
+    */
    public static BlockSpec legacyBlockToSpec(LegacyBlock legacy) {
       BlockSpec spec = LegacyTables.get().blocks.get(legacy);
-      if (spec == null) {
-         throw MillCrash.fail("Convert", legacy + " not yet in conversion table");
+      if (spec != null) {
+         return spec;
       }
-      return spec;
+      // Not a fixed-variant entry: resolve the modern block by name and apply the meta property-driven.
+      Block block = resolveBlock(legacy.name(), legacy.name() + ":" + legacy.meta());
+      BlockState state = applyNumericMeta(block, legacy.meta(), legacy.toString());
+      return new BlockSpec(state, Optional.of(new ItemSpec(state.getBlock().asItem(), new Count(1))));
+   }
+
+   /**
+    * Convenience: the resolved modern {@link BlockState} for a 1.12 {@code (name, meta)} block. This is
+    * the single entry point the building system / {@code WorldUtilities} use in place of the former
+    * ad-hoc meta switch.
+    */
+   public static BlockState blockState(String name, int meta) {
+      return legacyBlockToSpec(new LegacyBlock(name, meta)).state();
+   }
+
+   /**
+    * The single entry point {@code WorldUtilities.setBlockAndMetadata} uses when it already holds a
+    * resolved modern {@link Block} (the building system stores 26.2 blocks, not legacy names) and a 1.12
+    * meta. Tries the declarative fixed-variant table by the block's registry name first, then falls back
+    * to the property-driven numeric families. Behaviour-identical to the former
+    * {@code WorldUtilities.legacyMetaToBlockState}.
+    */
+   public static BlockState blockState(Block block, int meta) {
+      Identifier id = BuiltInRegistries.BLOCK.getKey(block);
+      if (id != null) {
+         LegacyBlock byName = new LegacyBlock(id.getPath(), meta);
+         BlockSpec spec = LegacyTables.get().blocks.get(byName);
+         if (spec != null) {
+            return spec.state();
+         }
+      }
+      return applyNumericMeta(block, meta, block + ":" + meta);
+   }
+
+   /**
+    * Applies an unbounded numeric 1.12 meta to a block's matching modern property. Covers exactly the
+    * families the former {@code WorldUtilities.legacyMetaToBlockState} did: crop {@code AGE_3} /
+    * {@code AGE_7}, farmland {@code MOISTURE}, and generic pillar {@code AXIS} (meta&12: Y=0, X=4, Z=8).
+    * A {@code meta <= 0} keeps the default state (the 1.12 fast path). Any meta on a block with none of
+    * these properties keeps the default state too — matching 1.12, where {@code getStateFromMeta} on a
+    * block whose meta is unused returns the default.
+    */
+   private static BlockState applyNumericMeta(Block block, int meta, String spec) {
+      BlockState state = block.defaultBlockState();
+      if (meta <= 0) {
+         return state;
+      }
+      var AGE3 = net.minecraft.world.level.block.state.properties.BlockStateProperties.AGE_3;
+      var AGE7 = net.minecraft.world.level.block.state.properties.BlockStateProperties.AGE_7;
+      var MOIST = net.minecraft.world.level.block.state.properties.BlockStateProperties.MOISTURE;
+      var AXIS = net.minecraft.world.level.block.state.properties.BlockStateProperties.AXIS;
+      try {
+         if (state.hasProperty(AGE3)) {
+            return state.setValue(AGE3, Math.min(meta, 3));
+         }
+         if (state.hasProperty(AGE7)) {
+            return state.setValue(AGE7, Math.min(meta, 7));
+         }
+         if (state.hasProperty(MOIST)) {
+            return state.setValue(MOIST, Math.min(meta & 7, 7));
+         }
+         if (state.hasProperty(AXIS)) {
+            net.minecraft.core.Direction.Axis axis = (meta & 12) == 4
+               ? net.minecraft.core.Direction.Axis.X
+               : (meta & 12) == 8 ? net.minecraft.core.Direction.Axis.Z : net.minecraft.core.Direction.Axis.Y;
+            return state.setValue(AXIS, axis);
+         }
+      } catch (Exception metaMappingException) {
+         // FAIL-FAST: every setValue above is guarded by hasProperty and range-clamped, so a throw here
+         // means an unexpected property mismatch that would silently reset the block — surface it loudly.
+         throw MillCrash.fail("Convert", spec + ": failed to apply legacy meta " + meta + ": " + metaMappingException);
+      }
+      return state;
    }
 
    /** Maps a 1.12 (name, meta) item to a modern {@link ItemStack} of the requested count. */

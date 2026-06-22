@@ -1,0 +1,93 @@
+// Declarative legacy 1.12 (block-name, metadata) -> modern 26.2 BlockState conversion table.
+//
+// This is the data behind MillConvert.legacyBlockToSpec / MillConvert.blockState(name, meta). It
+// replaces the ad-hoc meta switch that used to live in WorldUtilities.legacyMetaToBlockState. Each
+// line is a golden mapping whose right-hand side is a MillConvert dot-spec (parsed by
+// dotSpecToBlockState). The left-hand side is the 1.12 block REGISTRY NAME (no "minecraft:" prefix
+// needed) plus the 1.12 metadata int the vanilla Block.getStateFromMeta(meta) decoded.
+//
+// Format:  <legacy_name>:<meta> = <dot-spec>
+//
+// 1.12 evidence: each meta value is the exact int vanilla Block.getMetaFromState produced (and that
+// WorldUtilities.blockStateToLegacyMeta, validated in earlier milestones, reproduces). Comments cite
+// the vanilla bit-packing per family.
+//
+// Only the FIXED-VARIANT families (where 1.12 packed a discrete variant/orientation in low meta bits
+// and 26.2 made each a distinct block or enum value) are enumerated here. Unbounded numeric families
+// (crop AGE_7, nether-wart AGE_3, farmland MOISTURE) are NOT enumerated: their meta is a plain integer
+// applied property-driven by MillConvert.applyAgeLikeMeta. Those are covered by the golden tests too.
+
+// ---- Logs / pillars: meta&12 = axis (Y=0, X=4, Z=8); low bits were the wood variant (now distinct blocks)
+// blockStateToLegacyMeta: AXIS X->4, Z->8, Y->0.
+oak_log:0 = oak_log.axis(y)
+oak_log:4 = oak_log.axis(x)
+oak_log:8 = oak_log.axis(z)
+spruce_log:0 = spruce_log.axis(y)
+spruce_log:4 = spruce_log.axis(x)
+spruce_log:8 = spruce_log.axis(z)
+birch_log:0 = birch_log.axis(y)
+birch_log:4 = birch_log.axis(x)
+birch_log:8 = birch_log.axis(z)
+jungle_log:0 = jungle_log.axis(y)
+jungle_log:4 = jungle_log.axis(x)
+jungle_log:8 = jungle_log.axis(z)
+acacia_log:0 = acacia_log.axis(y)
+acacia_log:4 = acacia_log.axis(x)
+acacia_log:8 = acacia_log.axis(z)
+dark_oak_log:0 = dark_oak_log.axis(y)
+dark_oak_log:4 = dark_oak_log.axis(x)
+dark_oak_log:8 = dark_oak_log.axis(z)
+
+// ---- Slab: 1.12 BlockSlab top-half bit = 8 (variant bits removed; variants are distinct blocks now)
+// blockStateToLegacyMeta: SLAB_TYPE TOP->8, BOTTOM->0.
+oak_slab:0 = oak_slab.type(bottom)
+oak_slab:8 = oak_slab.type(top)
+spruce_slab:0 = spruce_slab.type(bottom)
+spruce_slab:8 = spruce_slab.type(top)
+stone_slab:0 = stone_slab.type(bottom)
+stone_slab:8 = stone_slab.type(top)
+cobblestone_slab:0 = cobblestone_slab.type(bottom)
+cobblestone_slab:8 = cobblestone_slab.type(top)
+sandstone_slab:0 = sandstone_slab.type(bottom)
+sandstone_slab:8 = sandstone_slab.type(top)
+brick_slab:0 = brick_slab.type(bottom)
+brick_slab:8 = brick_slab.type(top)
+
+// ---- Stairs: 1.12 BlockStairs meta = 4*(half==TOP) | (5 - facing.get3DDataValue())
+// EnumFacing 3D ids: DOWN0 UP1 NORTH2 SOUTH3 WEST4 EAST5. So 5-id: EAST=0 WEST=1 SOUTH=2 NORTH=3.
+// blockStateToLegacyMeta reproduces this exactly.
+oak_stairs:0 = oak_stairs.facing(east).half(bottom)
+oak_stairs:1 = oak_stairs.facing(west).half(bottom)
+oak_stairs:2 = oak_stairs.facing(south).half(bottom)
+oak_stairs:3 = oak_stairs.facing(north).half(bottom)
+oak_stairs:4 = oak_stairs.facing(east).half(top)
+oak_stairs:5 = oak_stairs.facing(west).half(top)
+oak_stairs:6 = oak_stairs.facing(south).half(top)
+oak_stairs:7 = oak_stairs.facing(north).half(top)
+
+// ---- Ladder: 1.12 BlockLadder meta = facing.get3DDataValue() (NORTH=2 SOUTH=3 WEST=4 EAST=5)
+// blockStateToLegacyMeta: facing.get3DDataValue().
+ladder:2 = ladder.facing(north)
+ladder:3 = ladder.facing(south)
+ladder:4 = ladder.facing(west)
+ladder:5 = ladder.facing(east)
+
+// ---- Torch: 1.12 standing=5; wall EAST=1 WEST=2 SOUTH=3 NORTH=4. 26.2 split standing torch (no
+// facing) from wall_torch (facing). blockStateToLegacyMeta encodes wall EAST1 WEST2 SOUTH3 NORTH4,
+// standing torch -> 5. The 1.12 single "torch" name decoded by meta to either.
+torch:5 = torch
+torch:1 = wall_torch.facing(east)
+torch:2 = wall_torch.facing(west)
+torch:3 = wall_torch.facing(south)
+torch:4 = wall_torch.facing(north)
+
+// ---- Bed: 1.12 BlockBed meta = facing.get2DDataValue() | (head? 8). 2D ids: SOUTH0 WEST1 NORTH2 EAST3.
+// blockStateToLegacyMeta: i = facing.get2DDataValue(); HEAD -> |8.
+red_bed:0 = red_bed.facing(south).part(foot)
+red_bed:1 = red_bed.facing(west).part(foot)
+red_bed:2 = red_bed.facing(north).part(foot)
+red_bed:3 = red_bed.facing(east).part(foot)
+red_bed:8 = red_bed.facing(south).part(head)
+red_bed:9 = red_bed.facing(west).part(head)
+red_bed:10 = red_bed.facing(north).part(head)
+red_bed:11 = red_bed.facing(east).part(head)

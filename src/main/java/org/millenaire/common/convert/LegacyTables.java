@@ -3,6 +3,9 @@ package org.millenaire.common.convert;
 import java.io.BufferedReader;
 import java.io.File;
 import java.io.IOException;
+import java.io.InputStream;
+import java.io.InputStreamReader;
+import java.nio.charset.StandardCharsets;
 import java.util.HashMap;
 import java.util.Map;
 import java.util.Optional;
@@ -56,11 +59,62 @@ public final class LegacyTables {
       return Holder.INSTANCE;
    }
 
+   /** Classpath location of the declarative legacy (name,meta)->dot-spec block table. */
+   private static final String LEGACY_BLOCKS_RESOURCE = "/assets/millenaire/convert/legacy-blocks.txt";
+
    private static LegacyTables load() {
-      // The simple legacy block/item axes are not data-driven yet (no caller routes through them); they
-      // stay empty and their table-backed lookups fail-fast. The plan-colour table is loaded separately
-      // from blocklist.txt via loadPlanColours().
-      return new LegacyTables(Map.of(), Map.of());
+      // The fixed-variant legacy block axis (logs/slabs/stairs/doors/torches/beds/ladders) is data-driven
+      // from legacy-blocks.txt: each "name:meta = dot-spec" line is parsed once into a BlockSpec. Unbounded
+      // numeric families (crop/wart age, farmland moisture) are NOT in the map — they are applied
+      // property-driven by MillConvert. The legacy item axis has no caller yet and stays empty (fail-fast).
+      return new LegacyTables(loadLegacyBlocks(), Map.of());
+   }
+
+   /**
+    * Parses the declarative {@code legacy-blocks.txt} classpath resource into the
+    * {@link LegacyBlock}{@code (name, meta)} -> {@link BlockSpec} table. Each non-comment line is
+    * {@code name:meta = dot-spec}; the dot-spec is resolved by {@link MillConvert#dotSpecToBlockState}.
+    *
+    * <p>Fail-fast: a missing resource, a malformed line, an unparseable meta or an unresolvable dot-spec
+    * crashes loudly via {@link MillCrash} naming the offending line — never a silent skip.</p>
+    */
+   private static Map<LegacyBlock, BlockSpec> loadLegacyBlocks() {
+      Map<LegacyBlock, BlockSpec> table = new HashMap<>();
+      InputStream in = LegacyTables.class.getResourceAsStream(LEGACY_BLOCKS_RESOURCE);
+      if (in == null) {
+         throw MillCrash.fail("Convert", "legacy block table resource missing: " + LEGACY_BLOCKS_RESOURCE);
+      }
+      try (BufferedReader reader = new BufferedReader(new InputStreamReader(in, StandardCharsets.UTF_8))) {
+         String line;
+         while ((line = reader.readLine()) != null) {
+            String trimmed = line.trim();
+            if (trimmed.isEmpty() || trimmed.startsWith("//")) {
+               continue;
+            }
+            int eq = trimmed.indexOf('=');
+            MillCrash.check(eq > 0, "Convert", "legacy-blocks line <" + trimmed + "> has no '=' separator");
+            String key = trimmed.substring(0, eq).trim();
+            String dot = trimmed.substring(eq + 1).trim();
+
+            int colon = key.lastIndexOf(':');
+            MillCrash.check(colon > 0, "Convert", "legacy-blocks key <" + key + "> is not name:meta");
+            String name = key.substring(0, colon).trim();
+            int meta;
+            try {
+               meta = Integer.parseInt(key.substring(colon + 1).trim());
+            } catch (NumberFormatException e) {
+               throw MillCrash.fail("Convert", "legacy-blocks key <" + key + "> has non-numeric meta");
+            }
+
+            BlockState state = MillConvert.dotSpecToBlockState(new DotSpec(dot));
+            BlockSpec spec = new BlockSpec(state, Optional.of(new ItemSpec(state.getBlock().asItem(), new Count(1))));
+            BlockSpec previous = table.put(new LegacyBlock(name, meta), spec);
+            MillCrash.check(previous == null, "Convert", "legacy-blocks duplicate key <" + key + ">");
+         }
+      } catch (IOException e) {
+         throw MillCrash.fail("Convert", "reading legacy-blocks table: " + e);
+      }
+      return Map.copyOf(table);
    }
 
    // ------------------------------------------------------------------------------------------------

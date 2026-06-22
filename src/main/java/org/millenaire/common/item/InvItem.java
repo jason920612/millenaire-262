@@ -13,8 +13,8 @@ import net.minecraft.world.level.block.Blocks;
 import net.minecraft.world.item.Item;
 import net.minecraft.world.item.ItemStack;
 import net.minecraft.core.registries.BuiltInRegistries;
-import net.minecraft.resources.Identifier;
 import org.millenaire.common.block.MillBlocks;
+import org.millenaire.common.convert.MillConvert;
 import org.millenaire.common.forge.Mill;
 import org.millenaire.common.utilities.LanguageUtilities;
 import org.millenaire.common.utilities.MillCommonUtilities;
@@ -111,25 +111,14 @@ public final class InvItem implements Comparable<InvItem> {
                if (line.trim().length() > 0 && !line.startsWith("//")) {
                   String[] temp = line.trim().split(";");
                   if (temp.length > 2) {
-                     // itemlist.txt carries 1.12 camelCase registry ids (e.g. millenaire:normanAxe), but
-                     // 26.2 registry ids (and our items) are all lowercase, and Identifier rejects [A-Z].
-                     // Lowercase the id so the legacy content resolves to the registered item/block.
-                     String registryId = temp[1].toLowerCase(java.util.Locale.ROOT);
-                     Item item = BuiltInRegistries.ITEM.getValue(Identifier.parse(registryId));
-                     if (item != null) {
-                        INVITEMS_BY_NAME.put(temp[0], createInvItem(item, Integer.parseInt(temp[2])));
-                     } else {
-                        Block block = BuiltInRegistries.BLOCK.getValue(Identifier.parse(registryId));
-                        if (block == null) {
-                           // FAIL-FAST: an itemlist.txt good naming an unknown item/block id was silently
-                           // dropped (1.12 logged-and-continued), then referenced later as "unknown good".
-                           throw MillCrash.fail("InvItem", "itemlist.txt good '" + temp[0] + "' names unknown id '" + temp[1] + "'");
-                        } else if (block.asItem() == null) {
-                           throw MillCrash.fail("InvItem", "itemlist.txt good '" + temp[0] + "' uses block with no item: " + line);
-                        } else {
-                           INVITEMS_BY_NAME.put(temp[0], createInvItem(block, Integer.parseInt(temp[2])));
-                        }
-                     }
+                     // The 1.12 (name, meta) -> 26.2 Item resolution is now centralised in the conversion
+                     // protocol: MillConvert.legacyItem looks up the declarative legacy-items.txt flattening
+                     // table (dye;N->*_dye, wool;N->*_wool, ...) and otherwise resolves the (lowercased)
+                     // registry id directly, falling back to a block's item. Behaviour-identical to the
+                     // former ad-hoc ITEM.getValue / BLOCK.getValue branch, and fail-fast on an unknown id.
+                     int meta = Integer.parseInt(temp[2]);
+                     Item item = MillConvert.legacyItem(temp[1], meta);
+                     INVITEMS_BY_NAME.put(temp[0], createInvItem(item, meta));
                   }
                }
             } catch (IllegalStateException crash) {

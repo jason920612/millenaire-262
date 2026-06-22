@@ -15,6 +15,7 @@ import java.util.Optional;
 
 import net.minecraft.core.registries.BuiltInRegistries;
 import net.minecraft.resources.Identifier;
+import net.minecraft.world.item.Item;
 import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.level.block.Block;
 import net.minecraft.world.level.block.Blocks;
@@ -332,13 +333,78 @@ public final class MillConvert {
       return state;
    }
 
-   /** Maps a 1.12 (name, meta) item to a modern {@link ItemStack} of the requested count. */
+   /**
+    * Maps a 1.12 {@code (name, meta)} item to a modern {@link ItemStack} of the requested count. This is
+    * the single entry point that replaced the ad-hoc {@code BuiltInRegistries.ITEM.getValue} /
+    * {@code BLOCK.getValue} resolution in {@code InvItem.loadInvItemList}.
+    *
+    * <p>Resolution order, behaviour-identical to pre-M4:</p>
+    * <ol>
+    *   <li><b>Flattened-variant families</b> (dye/wool/carpet/glass-pane/planks/sapling/log + 1:1
+    *       renames): the exact {@code name:meta} pair is looked up in the declarative
+    *       {@code legacy-items.txt} table, which maps it to the distinct 26.2 registry id.</li>
+    *   <li><b>Plain items</b> (not in the table): the {@code name} is resolved directly against the live
+    *       item registry; the meta is irrelevant to the registry id (it is carried on the InvItem as a
+    *       logical variant — e.g. Mill {@code stone_deco}/{@code wood_deco} — or as the {@code -1}
+    *       wildcard). The 1.12 itemlist.txt id is lowercased for the modern registry (Identifier rejects
+    *       upper-case), matching {@code loadInvItemList}.</li>
+    * </ol>
+    *
+    * <p>Fail-fast: a {@code name} that resolves to neither a table entry nor a registered item/block
+    * crashes loudly via {@link MillCrash} naming it — never a silent AIR/empty stack.</p>
+    */
    public static ItemStack legacyItemToStack(LegacyItem legacy) {
-      ItemSpec spec = LegacyTables.get().items.get(legacy);
-      if (spec == null) {
-         throw MillCrash.fail("Convert", legacy + " not yet in conversion table");
+      Item item = legacyItem(legacy.name(), legacy.meta());
+      return new ItemStack(item, legacy.count().value());
+   }
+
+   /**
+    * Resolves a 1.12 {@code (name, meta)} item to its modern {@link Item}, without a count. Used by both
+    * {@link #legacyItemToStack(LegacyItem)} and {@code InvItem} when it needs only the resolved item.
+    */
+   public static Item legacyItem(String name, int meta) {
+      // The legacy-items.txt flattening table keys on the bare 1.12 name (no "minecraft:" namespace, the
+      // same convention as legacy-blocks.txt); itemlist.txt writes the vanilla ids with the prefix, so
+      // strip a leading "minecraft:" for the table-key match. Mod-namespaced legacy ids (millenaire:...)
+      // are never flattened (they resolve by name), so only the vanilla namespace is normalised.
+      String tableName = name.startsWith("minecraft:") ? name.substring("minecraft:".length()) : name;
+      // Count is not part of the resolution; key the table lookup with a placeholder count.
+      ItemSpec spec = LegacyTables.get().items.get(new LegacyItem(tableName, meta, new Count(0)));
+      if (spec != null) {
+         return spec.item();
       }
-      return new ItemStack(spec.item(), legacy.count().value());
+      // Not a flattened-variant entry: the modern registry id is the (lowercased) legacy name itself.
+      return resolveItemByName(name, name + ":" + meta);
+   }
+
+   /**
+    * Resolves a modern registry id (the right-hand side of a {@code legacy-items.txt} line, already a
+    * 26.2 id) to its {@link Item}. Tries the item registry, then the block registry's item, failing fast
+    * on an id that is neither.
+    */
+   static Item resolveItem(String modernId, String context) {
+      return resolveItemByName(modernId, context);
+   }
+
+   private static Item resolveItemByName(String name, String context) {
+      // 1.12 itemlist.txt carries camelCase ids (e.g. millenaire:normanAxe); 26.2 registry ids are all
+      // lower-case and Identifier rejects [A-Z]. Lowercase so the legacy content resolves — exactly what
+      // InvItem.loadInvItemList did before delegating here.
+      String id = name.toLowerCase(java.util.Locale.ROOT);
+      Identifier key = Identifier.parse(id);
+      Item item = BuiltInRegistries.ITEM.getValue(key);
+      if (item != net.minecraft.world.item.Items.AIR) {
+         return item;
+      }
+      // Not a registered item id: try as a block id and take its BlockItem (1.12 fell back to Block too).
+      Block block = BuiltInRegistries.BLOCK.getValue(key);
+      if (block != Blocks.AIR) {
+         Item blockItem = block.asItem();
+         if (blockItem != net.minecraft.world.item.Items.AIR) {
+            return blockItem;
+         }
+      }
+      throw MillCrash.fail("Convert", context + ": unknown legacy item/block id '" + name + "'");
    }
 
    /**

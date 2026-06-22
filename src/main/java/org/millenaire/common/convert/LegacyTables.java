@@ -61,13 +61,65 @@ public final class LegacyTables {
 
    /** Classpath location of the declarative legacy (name,meta)->dot-spec block table. */
    private static final String LEGACY_BLOCKS_RESOURCE = "/assets/millenaire/convert/legacy-blocks.txt";
+   /** Classpath location of the declarative legacy (name,meta)->modern item-id flattening table. */
+   private static final String LEGACY_ITEMS_RESOURCE = "/assets/millenaire/convert/legacy-items.txt";
 
    private static LegacyTables load() {
       // The fixed-variant legacy block axis (logs/slabs/stairs/doors/torches/beds/ladders) is data-driven
       // from legacy-blocks.txt: each "name:meta = dot-spec" line is parsed once into a BlockSpec. Unbounded
       // numeric families (crop/wart age, farmland moisture) are NOT in the map — they are applied
-      // property-driven by MillConvert. The legacy item axis has no caller yet and stays empty (fail-fast).
-      return new LegacyTables(loadLegacyBlocks(), Map.of());
+      // property-driven by MillConvert. The legacy item axis is data-driven from legacy-items.txt: each
+      // "name:meta = modern-item-id" line is the 1.12->26.2 flattening (dye;N->*_dye, wool;N->*_wool, ...).
+      return new LegacyTables(loadLegacyBlocks(), loadLegacyItems());
+   }
+
+   /**
+    * Parses the declarative {@code legacy-items.txt} classpath resource into the
+    * {@link LegacyItem}{@code (name, meta)} -> {@link ItemSpec} table. Each non-comment line is
+    * {@code name:meta = modern-item-id}; the right-hand side is resolved against the live item registry.
+    *
+    * <p>The {@link LegacyItem} key's {@link Count} is irrelevant for the table (count is supplied
+    * per-lookup), so entries are keyed with a {@code Count(0)} placeholder and looked up with the same.</p>
+    *
+    * <p>Fail-fast: a missing resource, a malformed line, an unparseable meta, a duplicate key or an
+    * unresolvable (AIR) modern item id crashes loudly via {@link MillCrash} naming the offending line.</p>
+    */
+   private static Map<LegacyItem, ItemSpec> loadLegacyItems() {
+      Map<LegacyItem, ItemSpec> table = new HashMap<>();
+      InputStream in = LegacyTables.class.getResourceAsStream(LEGACY_ITEMS_RESOURCE);
+      if (in == null) {
+         throw MillCrash.fail("Convert", "legacy item table resource missing: " + LEGACY_ITEMS_RESOURCE);
+      }
+      try (BufferedReader reader = new BufferedReader(new InputStreamReader(in, StandardCharsets.UTF_8))) {
+         String line;
+         while ((line = reader.readLine()) != null) {
+            String trimmed = line.trim();
+            if (trimmed.isEmpty() || trimmed.startsWith("//")) {
+               continue;
+            }
+            int eq = trimmed.indexOf('=');
+            MillCrash.check(eq > 0, "Convert", "legacy-items line <" + trimmed + "> has no '=' separator");
+            String key = trimmed.substring(0, eq).trim();
+            String modernId = trimmed.substring(eq + 1).trim();
+
+            int colon = key.lastIndexOf(':');
+            MillCrash.check(colon > 0, "Convert", "legacy-items key <" + key + "> is not name:meta");
+            String name = key.substring(0, colon).trim();
+            int meta;
+            try {
+               meta = Integer.parseInt(key.substring(colon + 1).trim());
+            } catch (NumberFormatException e) {
+               throw MillCrash.fail("Convert", "legacy-items key <" + key + "> has non-numeric meta");
+            }
+
+            Item item = MillConvert.resolveItem(modernId, trimmed);
+            ItemSpec previous = table.put(new LegacyItem(name, meta, new Count(0)), new ItemSpec(item, new Count(0)));
+            MillCrash.check(previous == null, "Convert", "legacy-items duplicate key <" + key + ">");
+         }
+      } catch (IOException e) {
+         throw MillCrash.fail("Convert", "reading legacy-items table: " + e);
+      }
+      return Map.copyOf(table);
    }
 
    /**

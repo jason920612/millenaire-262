@@ -1,0 +1,162 @@
+// Declarative legacy 1.12 (item-name, metadata) -> modern 26.2 item registry-id conversion table.
+//
+// This is the data behind MillConvert.legacyItemToStack(LegacyItem). It captures the 1.12 -> 26.2
+// item FLATTENING: in 1.12 a single item id carried a metadata/damage value that selected a variant
+// (dye;4 = blue dye, wool;15 = black wool, planks;2 = birch planks, ...). In 26.2 each variant became
+// a distinct registry id (blue_dye, black_wool, birch_planks, ...) and item metadata is gone.
+//
+// Format:  <legacy_name>:<meta> = <modern_item_id>
+//   - <legacy_name> is the 1.12 item/block REGISTRY NAME without the "minecraft:" prefix.
+//   - <meta>        is the 1.12 metadata int the variant was selected by.
+//   - <modern_item_id> is the 26.2 registry id (with namespace) the (name, meta) pair resolves to.
+//
+// 1.12 evidence: the right-hand side is exactly what Millénaire's hand-migrated 26.2 itemlist.txt names
+// for the same good key, and the left-hand (name, meta) is the original 1.12 itemlist.txt entry for that
+// same key (decompiled/todeploy/millenaire/itemlist.txt). Each line below is therefore the verbatim
+// 1.12->26.2 mapping pre-M4 InvItem.loadInvItemList produced.
+//
+// Only (name, meta) pairs whose modern id DIFFERS from a plain registry lookup of <legacy_name> need an
+// entry: a plain item (meta 0, name unchanged 1.12->26.2 like "minecraft:diamond") is resolved directly
+// by name and is NOT listed here. Mill custom items that kept their meta as a live in-item variant in
+// 26.2 (stone_deco / wood_deco / extended_mud_brick / stained_glass / sod / bannerpattern) are likewise
+// NOT here: their meta is carried on the InvItem, the name resolves directly, and the variant is a
+// blockstate/data discriminator -- not a distinct registry id.
+
+// ---- Dye: 1.12 EnumDyeColor meta -> distinct *_dye items (Item.getDamage selected the colour). -------
+dye:0 = minecraft:black_dye
+dye:1 = minecraft:red_dye
+dye:2 = minecraft:green_dye
+dye:3 = minecraft:brown_dye
+dye:4 = minecraft:blue_dye
+dye:5 = minecraft:purple_dye
+dye:6 = minecraft:cyan_dye
+dye:7 = minecraft:light_gray_dye
+dye:8 = minecraft:gray_dye
+dye:9 = minecraft:pink_dye
+dye:10 = minecraft:lime_dye
+dye:11 = minecraft:yellow_dye
+dye:12 = minecraft:light_blue_dye
+dye:13 = minecraft:magenta_dye
+dye:14 = minecraft:orange_dye
+dye:15 = minecraft:white_dye
+
+// ---- Wool: 1.12 meta = (15 - EnumDyeColor.getMetadata) packing -> distinct *_wool blocks. ------------
+wool:0 = minecraft:white_wool
+wool:1 = minecraft:orange_wool
+wool:2 = minecraft:magenta_wool
+wool:3 = minecraft:light_blue_wool
+wool:4 = minecraft:yellow_wool
+wool:5 = minecraft:lime_wool
+wool:6 = minecraft:pink_wool
+wool:7 = minecraft:gray_wool
+wool:8 = minecraft:light_gray_wool
+wool:9 = minecraft:cyan_wool
+wool:10 = minecraft:purple_wool
+wool:11 = minecraft:blue_wool
+wool:12 = minecraft:brown_wool
+wool:13 = minecraft:green_wool
+wool:14 = minecraft:red_wool
+wool:15 = minecraft:black_wool
+
+// ---- Carpet: 1.12 meta = EnumDyeColor.getMetadata -> distinct *_carpet blocks. ----------------------
+carpet:0 = minecraft:white_carpet
+carpet:1 = minecraft:orange_carpet
+carpet:2 = minecraft:magenta_carpet
+carpet:3 = minecraft:light_blue_carpet
+carpet:4 = minecraft:yellow_carpet
+carpet:5 = minecraft:lime_carpet
+carpet:6 = minecraft:pink_carpet
+carpet:7 = minecraft:gray_carpet
+carpet:8 = minecraft:light_gray_carpet
+carpet:9 = minecraft:cyan_carpet
+carpet:10 = minecraft:purple_carpet
+carpet:11 = minecraft:blue_carpet
+carpet:12 = minecraft:brown_carpet
+carpet:13 = minecraft:green_carpet
+carpet:14 = minecraft:red_carpet
+carpet:15 = minecraft:black_carpet
+
+// ---- Stained glass pane: 1.12 meta = EnumDyeColor.getMetadata -> distinct *_stained_glass_pane. -----
+stained_glass_pane:0 = minecraft:white_stained_glass_pane
+stained_glass_pane:1 = minecraft:orange_stained_glass_pane
+stained_glass_pane:2 = minecraft:magenta_stained_glass_pane
+stained_glass_pane:3 = minecraft:light_blue_stained_glass_pane
+stained_glass_pane:4 = minecraft:yellow_stained_glass_pane
+stained_glass_pane:5 = minecraft:lime_stained_glass_pane
+stained_glass_pane:6 = minecraft:pink_stained_glass_pane
+stained_glass_pane:7 = minecraft:gray_stained_glass_pane
+stained_glass_pane:8 = minecraft:light_gray_stained_glass_pane
+stained_glass_pane:9 = minecraft:cyan_stained_glass_pane
+stained_glass_pane:10 = minecraft:purple_stained_glass_pane
+stained_glass_pane:11 = minecraft:blue_stained_glass_pane
+stained_glass_pane:12 = minecraft:brown_stained_glass_pane
+stained_glass_pane:13 = minecraft:green_stained_glass_pane
+stained_glass_pane:14 = minecraft:red_stained_glass_pane
+stained_glass_pane:15 = minecraft:black_stained_glass_pane
+
+// ---- Planks: 1.12 BlockPlanks.EnumType meta -> distinct *_planks blocks. -----------------------------
+planks:0 = minecraft:oak_planks
+planks:1 = minecraft:spruce_planks
+planks:2 = minecraft:birch_planks
+planks:3 = minecraft:jungle_planks
+planks:4 = minecraft:acacia_planks
+planks:5 = minecraft:dark_oak_planks
+
+// ---- Sapling: 1.12 BlockSapling.EnumType meta -> distinct *_sapling blocks. --------------------------
+sapling:0 = minecraft:oak_sapling
+sapling:1 = minecraft:spruce_sapling
+sapling:2 = minecraft:birch_sapling
+sapling:3 = minecraft:jungle_sapling
+sapling:4 = minecraft:acacia_sapling
+sapling:5 = minecraft:dark_oak_sapling
+
+// ---- Log / log2: 1.12 wood-variant meta -> distinct *_log blocks. log holds oak/spruce/birch/jungle,
+// log2 holds acacia/dark_oak. meta -1 ("any wood") keeps the legacy oak_log id (the InvItem meta -1
+// wildcard is preserved on the InvItem, not the resolved item). ---------------------------------------
+log:-1 = minecraft:oak_log
+log:0 = minecraft:oak_log
+log:1 = minecraft:spruce_log
+log:2 = minecraft:birch_log
+log:3 = minecraft:jungle_log
+log2:0 = minecraft:acacia_log
+log2:1 = minecraft:dark_oak_log
+
+// ---- Red flower (BlockFlower.EnumFlowerType) -> distinct flower items. -------------------------------
+// 1.12 red_flower meta: 0 POPPY, 1 BLUE_ORCHID, ... 7 PINK_TULIP. Millenaire used 0/1/7.
+red_flower:0 = minecraft:poppy
+red_flower:1 = minecraft:blue_orchid
+red_flower:7 = minecraft:pink_tulip
+
+// ---- Yellow flower: the single 1.12 yellow_flower (meta 0) is the dandelion. -------------------------
+yellow_flower:0 = minecraft:dandelion
+
+// ---- Stone variants: 1.12 BlockStone.EnumType meta 3 = diorite, 4 = polished (smooth) diorite. -------
+stone:3 = minecraft:diorite
+stone:4 = minecraft:polished_diorite
+
+// ---- Stone brick: 1.12 BlockStoneBrick.EnumType meta 0 = stone_bricks, 3 = chiseled. -----------------
+stonebrick:0 = minecraft:stone_bricks
+stonebrick:3 = minecraft:chiseled_stone_bricks
+
+// ---- Dirt: 1.12 BlockDirt.DirtType meta 1 = coarse dirt (distinct block in 26.2). -------------------
+dirt:1 = minecraft:coarse_dirt
+
+// ---- Coal: 1.12 ItemCoal meta 1 = charcoal (distinct item in 26.2). ---------------------------------
+coal:1 = minecraft:charcoal
+
+// ---- Fish: 1.12 ItemFishFood meta 0 = raw cod; cooked_fish meta 0 = cooked cod. ---------------------
+fish:0 = minecraft:cod
+cooked_fish:0 = minecraft:cooked_cod
+
+// ---- Bed: 1.12 single bed item, meta = EnumDyeColor.getMetadata; Mill used 14 = red bed. ------------
+bed:14 = minecraft:red_bed
+
+// ---- Banner: 1.12 single banner item, meta = base colour; Mill used 15 = white banner. --------------
+banner:15 = minecraft:white_banner
+
+// ---- 1:1 renames (1.12 id removed/renamed in 26.2; meta 0). -----------------------------------------
+brick_block:0 = minecraft:bricks
+noteblock:0 = minecraft:note_block
+fence:0 = minecraft:oak_fence
+sign:0 = minecraft:oak_sign
+reeds:0 = minecraft:sugar_cane

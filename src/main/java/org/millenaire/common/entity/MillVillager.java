@@ -80,6 +80,7 @@ import org.millenaire.common.utilities.BlockItemUtilities;
 import org.millenaire.common.utilities.BlockStateUtilities;
 import org.millenaire.common.utilities.DevModUtilities;
 import org.millenaire.common.utilities.MillCommonUtilities;
+import org.millenaire.common.utilities.MillCrash;
 import org.millenaire.common.utilities.MillLog;
 import org.millenaire.common.utilities.Point;
 import org.millenaire.common.utilities.ThreadSafeUtilities;
@@ -301,10 +302,9 @@ public abstract class MillVillager extends PathfinderMob implements IAStarPathed
    }
 
    public static MillVillager createVillager(VillagerRecord villagerRecord, Level world, Point spawnPos, boolean respawn) {
-      if (world.isClientSide() || !(world instanceof ServerLevel)) {
-         MillLog.printException("Tried creating a villager in client world: " + world, new Exception());
-         return null;
-      } else if (villagerRecord == null) {
+      MillCrash.check(!world.isClientSide() && world instanceof ServerLevel, "Entity",
+         "MillVillager.createVillager called on a client/non-server world: " + world + " (villager creation is server-only)");
+      if (villagerRecord == null) {
          MillLog.error(villagerRecord, "Tried creating villager from a null record");
          return null;
       } else if (villagerRecord.getType() == null) {
@@ -367,7 +367,9 @@ public abstract class MillVillager extends PathfinderMob implements IAStarPathed
             MillLog.minor(null, "readVillagerPacket for unknown villager: " + villager_id);
          }
       } catch (IOException var3) {
-         MillLog.printException(var3);
+         // Phase-2 FLAG (spawn/update-data READ): optional fields are handled by the readNullable* helpers;
+         // a thrown IOException is a genuine buffer/parse failure, not optional-on-client data. Surface it.
+         throw MillCrash.fail("Entity", "MillVillager.readVillagerPacket: villager update-packet parse failed: " + var3);
       }
    }
 
@@ -534,10 +536,11 @@ public abstract class MillVillager extends PathfinderMob implements IAStarPathed
          AS_PathEntity path = AStarStatic.translateAStarPathtoPathEntity(this.level(), this.pathCalculatedSinceLastTick, this.getPathingConfig());
          this.registerNewPath(path);
       } catch (Exception var2) {
-         MillLog.printException("Exception when finding JPS path:", var2);
+         throw MillCrash.fail("Entity",
+            "MillVillager.applyPathCalculatedSinceLastTick: JPS path translate/register failed for " + this + ": " + var2);
+      } finally {
+         this.pathCalculatedSinceLastTick = null;
       }
-
-      this.pathCalculatedSinceLastTick = null;
    }
 
    public boolean attackEntity(Entity entity) {
@@ -2111,7 +2114,8 @@ public abstract class MillVillager extends PathfinderMob implements IAStarPathed
          try {
             goal.unreachableDestination(this);
          } catch (Exception var4) {
-            MillLog.printException(this + ": Exception in handling unreachable dest for goal " + this.goalKey, var4);
+            throw MillCrash.fail("Entity",
+               "MillVillager.jumpToDest: goal.unreachableDestination failed for goal " + this.goalKey + " on " + this + ": " + var4);
          }
       }
    }
@@ -2688,12 +2692,11 @@ public abstract class MillVillager extends PathfinderMob implements IAStarPathed
                this.nbPathFailure = 0;
             }
          } catch (MillLog.MillenaireException var8) {
-            Mill.proxy.sendChatAdmin(this.getVillagerName() + ": Error in onUpdate(). Check millenaire.log.");
-            MillLog.error(this, var8.getMessage());
+            throw MillCrash.fail("Entity",
+               "MillVillager.tick goal/pathing body failed for " + this.getVillagerName() + ": " + var8.getMessage());
          } catch (Exception var9) {
-            Mill.proxy.sendChatAdmin(this.getVillagerName() + ": Error in onUpdate(). Check millenaire.log.");
-            MillLog.error(this, "Exception in Villager.onUpdate(): ");
-            MillLog.printException(var9);
+            throw MillCrash.fail("Entity",
+               "MillVillager.tick goal/pathing body failed for " + this.getVillagerName() + ": " + var9);
          }
 
          if (Math.abs(this.level().getOverworldClockTime() + this.hashCode()) % 10L == 5L) {
@@ -2712,7 +2715,7 @@ public abstract class MillVillager extends PathfinderMob implements IAStarPathed
             }
          }
       } catch (Exception var10) {
-         MillLog.printException("Exception in onUpdate() of villager: " + this, var10);
+         throw MillCrash.fail("Entity", "MillVillager.tick() failed for villager " + this + ": " + var10);
       }
 
       if (this.getTownHall() != null) {
@@ -2952,11 +2955,14 @@ public abstract class MillVillager extends PathfinderMob implements IAStarPathed
    public void readSpawnData(ByteBuf ds) {
       FriendlyByteBuf data = new FriendlyByteBuf(ds);
 
+      // Phase-2 FLAG (spawn-data): the client genuinely receives this packet, but optional fields are already
+      // handled by the readNullable* helpers returning null. A thrown IOException is a real buffer/parse failure
+      // that would leave the villager half-initialised; swallowing it hid that. Surface it.
       try {
          this.setVillagerId(data.readLong());
          this.readVillagerStreamdata(data);
       } catch (IOException var4) {
-         MillLog.printException("Error in readSpawnData for villager " + this, var4);
+         throw MillCrash.fail("Entity", "MillVillager.readSpawnData: spawn-packet parse failed for " + this + ": " + var4);
       }
    }
 
@@ -3018,11 +3024,16 @@ public abstract class MillVillager extends PathfinderMob implements IAStarPathed
          this.merchantSells.clear();
 
          for (int i = 0; i < nbMerchantSells; i++) {
+            // Phase-2 FLAG (spawn-data): a swallow here desyncs the rest of the FriendlyByteBuf (the int read
+            // after the good would be skipped), corrupting every subsequent field. readNullableGoods throwing
+            // is a real resolve bug, not optional-on-client data, so surface it.
             try {
                TradeGood g = StreamReadWrite.readNullableGoods(data, culture);
                this.merchantSells.put(g, data.readInt());
             } catch (MillLog.MillenaireException var9) {
-               MillLog.printException(var9);
+               throw MillCrash.fail("Entity",
+                  "MillVillager.readVillagerStreamdata: failed reading merchant-sell good (culture="
+                     + (culture != null ? culture.key : "null") + ") for " + this + ": " + var9);
             }
          }
       }
@@ -3054,9 +3065,9 @@ public abstract class MillVillager extends PathfinderMob implements IAStarPathed
          try {
             this.getNavigation().moveTo(millToVanillaPath(path), 0.5);
          } catch (Exception var4) {
-            MillLog.major(null, "Goal : " + this.goalKey);
-            MillLog.major(null, "Path to : " + this.pathDestPoint.x + "/" + this.pathDestPoint.y + "/" + this.pathDestPoint.z);
-            MillLog.printException(this + ": Pathing error detected", var4);
+            throw MillCrash.fail("Entity",
+               "MillVillager.registerNewPath: navigation.moveTo failed for goal " + this.goalKey
+                  + " path to " + this.pathDestPoint + " on " + this + ": " + var4);
          }
 
          this.pathEntity = path;
@@ -3104,7 +3115,7 @@ public abstract class MillVillager extends PathfinderMob implements IAStarPathed
          data.writeInt(3);
          this.writeVillagerStreamData(data, false);
       } catch (IOException var3) {
-         MillLog.printException(this + ": Error in sendVillagerPacket", var3);
+         throw MillCrash.fail("Entity", "MillVillager.sendVillagerPacket: stream-data write failed for " + this + ": " + var3);
       }
 
       ServerSender.sendPacketToPlayersInRange(data, this.level(), this.getPos(), 100);
@@ -3252,7 +3263,10 @@ public abstract class MillVillager extends PathfinderMob implements IAStarPathed
                   if (g.isPossible(this)) {
                      possible++;
                   }
-               } catch (Exception ignored) {
+               } catch (Exception e) {
+                  throw MillCrash.fail("Entity",
+                     "MillVillager.setNextGoal debug loop: goal.isPossible threw for goal "
+                        + (g != null ? g.key : "null") + " on " + this + ": " + e);
                }
             }
          }
@@ -3855,7 +3869,7 @@ public abstract class MillVillager extends PathfinderMob implements IAStarPathed
          this.prevPoint = this.getPos();
          this.handleDoorsAndFenceGates();
       } catch (Exception var6) {
-         MillLog.printException("Error in hired onUpdate():", var6);
+         throw MillCrash.fail("Entity", "MillVillager.updateHired failed for " + this + ": " + var6);
       }
    }
 
@@ -3999,15 +4013,20 @@ public abstract class MillVillager extends PathfinderMob implements IAStarPathed
             }
          }
       } catch (Exception var4) {
-         MillLog.printException("Exception when attempting to save villager " + this, var4);
+         // Phase-2 FLAG (save/NBT-adjacent): this is the WRITE side, not a missing-field READ. A swallow here
+         // silently drops the villager from the save (data loss), so surface it. (Field-by-field missing-READ
+         // compat remains Phase 4's concern and is NOT fatalised here.)
+         throw MillCrash.fail("Entity", "MillVillager.addAdditionalSaveData: save write failed for " + this + ": " + var4);
       }
    }
 
    public void writeSpawnData(ByteBuf ds) {
+      // Phase-2 FLAG (spawn-data WRITE, server-side): an IOException serialising our own state is a real bug,
+      // never optional. Surface it instead of sending a truncated spawn packet.
       try {
          this.writeVillagerStreamData(ds, true);
       } catch (IOException var3) {
-         MillLog.printException("Error in writeSpawnData for villager " + this, var3);
+         throw MillCrash.fail("Entity", "MillVillager.writeSpawnData: spawn-data write failed for " + this + ": " + var3);
       }
    }
 

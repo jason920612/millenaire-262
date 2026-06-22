@@ -23,6 +23,7 @@ import org.millenaire.common.config.MillConfigValues;
 import org.millenaire.common.item.MillItems;
 import org.millenaire.common.utilities.BlockItemUtilities;
 import org.millenaire.common.utilities.MillCommonUtilities;
+import org.millenaire.common.utilities.MillCrash;
 import org.millenaire.common.utilities.MillLog;
 import org.millenaire.common.utilities.Point;
 import org.millenaire.common.utilities.WorldUtilities;
@@ -163,8 +164,7 @@ public class EntityWallDecoration extends HangingEntity {
          case 9: return MillItems.WALLCARPETMEDIUM;
          case 10: return MillItems.WALLCARPETLARGE;
          default:
-            MillLog.error(this, "Unknown walldecoration type: " + this.type);
-            return null;
+            throw MillCrash.fail("Entity", "EntityWallDecoration.getDropItem: unknown walldecoration type " + this.type + " at " + this.pos);
       }
    }
 

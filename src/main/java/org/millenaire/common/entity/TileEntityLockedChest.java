@@ -28,6 +28,7 @@ import org.millenaire.common.forge.Mill;
 import org.millenaire.common.network.ServerSender;
 import org.millenaire.common.network.StreamReadWrite;
 import org.millenaire.common.utilities.LanguageUtilities;
+import org.millenaire.common.utilities.MillCrash;
 import org.millenaire.common.utilities.MillLog;
 import org.millenaire.common.utilities.Point;
 import org.millenaire.common.village.Building;
@@ -90,7 +91,7 @@ public class TileEntityLockedChest extends BaseContainerBlockEntity implements W
 					}
 				}
 			} catch (Exception var7) {
-				MillLog.printException(te + ": Error in readUpdatePacket", var7);
+				throw MillCrash.fail("Entity", "TileEntityLockedChest.readUpdatePacket: content-sync parse failed for " + te + ": " + var7);
 			}
 		}
 	}
@@ -156,10 +157,8 @@ public class TileEntityLockedChest extends BaseContainerBlockEntity implements W
 	// --- Mill locking logic ---
 
 	public boolean isLockedFor(Player player) {
-		if (player == null) {
-			MillLog.printException("Null player", new Exception());
-			return true;
-		} else if (!this.loaded && this.level.isClientSide()) {
+		MillCrash.check(player != null, "Entity", "TileEntityLockedChest.isLockedFor called with a null player at " + this.getBlockPos());
+		if (!this.loaded && this.level.isClientSide()) {
 			return true;
 		} else if (this.buildingPos == null) {
 			return false;
@@ -168,14 +167,10 @@ public class TileEntityLockedChest extends BaseContainerBlockEntity implements W
 		} else if (this.serverDevMode) {
 			return false;
 		} else {
-			MillWorldData mw = Mill.getMillWorld(this.level);
-			if (mw == null) {
-				MillLog.printException("Null MillWorldData", new Exception());
-				return true;
-			} else {
-				Building building = mw.getBuilding(this.buildingPos);
-				return building == null || building.lockedForPlayer(player);
-			}
+			MillWorldData mw = MillCrash.need(Mill.getMillWorld(this.level), "Entity",
+				"MillWorldData in TileEntityLockedChest.isLockedFor at " + this.getBlockPos());
+			Building building = mw.getBuilding(this.buildingPos);
+			return building == null || building.lockedForPlayer(player);
 		}
 	}
 

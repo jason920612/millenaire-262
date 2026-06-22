@@ -15,6 +15,7 @@ import org.millenaire.common.annotedparameters.ParametersManager;
 import org.millenaire.common.forge.Mill;
 import org.millenaire.common.item.InvItem;
 import org.millenaire.common.utilities.MillCommonUtilities;
+import org.millenaire.common.utilities.MillCrash;
 import org.millenaire.common.utilities.MillLog;
 import org.millenaire.common.utilities.virtualdir.VirtualDir;
 import org.millenaire.common.village.Building;
@@ -166,7 +167,7 @@ public class VillagerConfig {
                field.set(newConfig, new HashMap(map));
             }
          } catch (Exception var7) {
-            MillLog.printException("Exception when duplicating maps: " + field, var7);
+            throw MillCrash.fail("Entity", "VillagerConfig.copyDefault: failed duplicating default map for field " + field + ": " + var7);
          }
       }
 
@@ -285,7 +286,7 @@ public class VillagerConfig {
                }
             }
          } catch (Exception var10) {
-            MillLog.printException("Exception when creating sorted list for field: " + field, var10);
+            throw MillCrash.fail("Entity", "VillagerConfig: failed creating sorted list for field " + field + ": " + var10);
          }
       }
    }

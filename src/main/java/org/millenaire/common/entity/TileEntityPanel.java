@@ -25,6 +25,7 @@ import org.millenaire.client.book.TextBook;
 import org.millenaire.client.gui.text.GuiText;
 import org.millenaire.common.forge.Mill;
 import org.millenaire.common.utilities.LanguageUtilities;
+import org.millenaire.common.utilities.MillCrash;
 import org.millenaire.common.utilities.MillLog;
 import org.millenaire.common.utilities.Point;
 import org.millenaire.common.village.Building;
@@ -194,7 +195,9 @@ public class TileEntityPanel extends BlockEntity {
             output.store("Lines_" + i, CompoundTag.CODEC, this.untranslatedLines.get(i).writeToNBT(new CompoundTag()));
          }
       } catch (Exception var3) {
-         MillLog.printException("Error writing panel", var3);
+         // Phase-2 FLAG (save/NBT WRITE): swallowing here silently corrupts/loses the panel on save. WRITE
+         // failures are real bugs (not missing-field READ compat, which stays Phase 4). Surface it.
+         throw MillCrash.fail("Entity", "TileEntityPanel.saveAdditional: panel NBT write failed at " + this.getBlockPos() + ": " + var3);
       }
    }
 

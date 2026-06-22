@@ -55,12 +55,21 @@ public final class BehaviourGoToPoint implements MillBehaviour {
          villager.getNavigation().stop();
          return false; // arrived → done
       }
-      // (Re)issue a path only when idle; if the planner can't reach it directly, plan a NEW ROUTE around it.
+      // (Re)issue movement only when idle.
       if (villager.getNavigation().isDone()) {
-         boolean pathed = villager.getNavigation().moveTo(d.getiX() + 0.5, d.getiY(), d.getiZ() + 0.5, SPEED);
-         if (!pathed) {
-            startDetour(villager, d);
-            return true;
+         // ValueFieldNav: follow the SHARED flow field toward the goal (one cached field per hot destination,
+         // O(1) per villager — the hundreds-of-agents TPS win). Fall back to direct pathing on a field miss.
+         net.minecraft.core.BlockPos step = org.millenaire.common.config.MillConfigValues.ValueFieldNav
+            ? org.millenaire.common.ai.nav.MillNav.stepToward(villager, new net.minecraft.core.BlockPos(d.getiX(), d.getiY(), d.getiZ()))
+            : null;
+         if (step != null) {
+            villager.getNavigation().moveTo(step.getX() + 0.5, step.getY(), step.getZ() + 0.5, SPEED);
+         } else {
+            boolean pathed = villager.getNavigation().moveTo(d.getiX() + 0.5, d.getiY(), d.getiZ() + 0.5, SPEED);
+            if (!pathed) {
+               startDetour(villager, d); // can't path straight there → plan a new route around the blockage
+               return true;
+            }
          }
       }
       // Stuck detection: no progress → drop the stuck path and re-pathfind; if still stuck, RE-ROUTE via a

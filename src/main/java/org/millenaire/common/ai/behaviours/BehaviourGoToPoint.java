@@ -12,8 +12,11 @@ import org.millenaire.common.utilities.Point;
  */
 public final class BehaviourGoToPoint implements MillBehaviour {
    private static final double SPEED = 0.5;
-   /** How close (blocks) counts as "arrived". */
-   private static final double ARRIVE = 1.6;
+   /** How close (HORIZONTAL blocks) counts as "arrived". Matches the goal-action gate, which tests
+    *  {@code target.horizontalDistanceTo(villager) < goal.range} — a HORIZONTAL distance, not 3-D. A work
+    *  target (a log up the trunk, a 2-high crop) sits above the villager, so the old 3-D 1.6 check never
+    *  succeeded for an adjacent villager → it jittered at the tree forever and the action never completed. */
+   private static final double ARRIVE = 2.0;
    private double lastX = Double.NaN;
    private double lastZ;
    private int stuckTicks;
@@ -51,10 +54,18 @@ public final class BehaviourGoToPoint implements MillBehaviour {
             return true;
          }
       }
-      double dist = villager.getPos().distanceTo(d);
-      if (dist <= ARRIVE) {
+      // HORIZONTAL distance (Y-agnostic) so a villager standing beside a tall work block (log up the trunk, a
+      // 2-high crop) registers as arrived and SETTLES, letting the goal perform its action in place. Also stop
+      // once the goal itself has entered its stand-still working state (stopMoving) — under NewAI nothing else
+      // honours it, so without this the villager keeps being nudged toward an unreachable point and the action
+      // (e.g. chopping) never completes.
+      double dist = d.horizontalDistanceTo(villager);
+      if (villager.stopMoving || dist <= ARRIVE) {
          villager.getNavigation().stop();
-         return false; // arrived → done
+         if (this.nav3d != null) {
+            this.nav3d.reset();
+         }
+         return false; // arrived / working in place → done
       }
       // (Re)issue movement only when idle. Use the navigation's OWN A* (MillPathNavigation + the danger-aware
       // MillNodeEvaluator, which extends vanilla WalkNodeEvaluator): it has full 3D awareness (step-ups,

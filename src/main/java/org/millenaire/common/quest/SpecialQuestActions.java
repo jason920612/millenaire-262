@@ -19,6 +19,7 @@ import org.millenaire.common.forge.Mill;
 import org.millenaire.common.network.ServerSender;
 import org.millenaire.common.utilities.BlockItemUtilities;
 import org.millenaire.common.utilities.MillCommonUtilities;
+import org.millenaire.common.utilities.MillCrash;
 import org.millenaire.common.utilities.MillLog;
 import org.millenaire.common.utilities.Point;
 import org.millenaire.common.utilities.WorldUtilities;
@@ -523,8 +524,10 @@ public class SpecialQuestActions {
                indianCQHandleContinuousExplore(mw, player, worldTime, MillConfigValues.questBiomeForest, Mill.ENTITY_ZOMBIE, 2, 15);
                indianCQHandleContinuousExplore(mw, player, worldTime, MillConfigValues.questBiomeDesert, Mill.ENTITY_SKELETON, 2, 15);
                indianCQHandleContinuousExplore(mw, player, worldTime, MillConfigValues.questBiomeMountain, Mill.ENTITY_SPIDER, 2, 10);
-            } catch (Exception var7) {
-               MillLog.printException("Error while handling Indian Creation Quest exploration:", var7);
+            } catch (Exception explorationException) {
+               // FAIL-FAST: 1.12 caught only reflection (IllegalAccess/IllegalArgument) exceptions from the
+               // mob-spawn helpers; a failure here means a broken entity/registry reference, not normal flow.
+               throw MillCrash.fail("Quest", "failed to handle Indian Creation Quest exploration tick: " + explorationException);
             }
          }
 

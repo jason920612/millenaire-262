@@ -371,7 +371,11 @@ public class WorldUtilities {
                : (meta & 12) == 8 ? net.minecraft.core.Direction.Axis.Z : net.minecraft.core.Direction.Axis.Y;
             return state.setValue(AXIS, axis);
          }
-      } catch (Exception ignored) {
+      } catch (Exception metaMappingException) {
+         // FAIL-FAST: every setValue above is guarded by hasProperty and range-clamped, so a throw here
+         // means an unexpected property mismatch that would silently reset the block (e.g. nether-wart to
+         // age 0) - the exact corruption this method exists to prevent. Surface it loudly.
+         throw MillCrash.fail("World", "failed to apply legacy meta " + meta + " to block " + block + ": " + metaMappingException);
       }
       return state;
    }
@@ -676,7 +680,9 @@ public class WorldUtilities {
       } else if (soundMill.equals("sand")) {
          playSoundBlockPlaced(world, p, Blocks.SAND, volume);
       } else {
-         MillLog.printException("Tried to play unknown sound: " + soundMill, new Exception());
+         // FAIL-FAST: a building referenced a sound name that maps to nothing (1.12 logged a synthetic
+         // exception and silently played nothing). An unknown sound id is corrupt content; surface it.
+         throw MillCrash.fail("World", "playSoundByMillName: unknown sound name '" + soundMill + "'");
       }
    }
 
@@ -737,8 +743,9 @@ public class WorldUtilities {
          }
 
          if (block == null) {
-            MillLog.printException("Trying to set null block", new Exception());
-            return false;
+            // FAIL-FAST: a caller asked to place a null block (1.12 logged-and-returned-false). A null block
+            // reference is a programming/content bug that silently skips the write; surface it loudly.
+            throw MillCrash.fail("World", "setBlockAndMetadata called with null block at " + x + "/" + y + "/" + z);
          } else {
             BlockState state = legacyMetaToBlockState(block, metadata); // apply the legacy meta to the matching BlockState property (crop/wart age, farmland moisture, log axis) instead of ignoring it
             if (notify) {

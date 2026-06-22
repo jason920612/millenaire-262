@@ -12,6 +12,7 @@ import org.millenaire.common.entity.MillVillager;
 import org.millenaire.common.forge.Mill;
 import org.millenaire.common.goal.Goal;
 import org.millenaire.common.utilities.MillCommonUtilities;
+import org.millenaire.common.utilities.MillCrash;
 import org.millenaire.common.utilities.MillLog;
 import org.millenaire.common.utilities.virtualdir.VirtualDir;
 import org.millenaire.common.village.Building;
@@ -192,12 +193,20 @@ public abstract class GoalGeneric extends Goal implements ParametersManager.Defa
 
                      goals.put(key, goal);
                   }
-               } catch (Exception var9) {
-                  MillLog.printException(var9);
+               } catch (IllegalStateException crash) {
+                  throw crash; // already a fail-fast crash; propagate unchanged
+               } catch (Exception goalFileException) {
+                  // FAIL-FAST: a malformed generic-goal txt silently dropped the goal (1.12 logged-and-
+                  // continued), so villagers later can't perform a configured goal. Crash at the corruption.
+                  throw MillCrash.fail("Goal", "failed to load generic goal file '" + file.getName() + "': " + goalFileException);
                }
             }
-         } catch (Exception var10) {
-            MillLog.printException("Exception when loading generic goal type:", var10);
+         } catch (IllegalStateException crash) {
+            throw crash; // already a fail-fast crash from an inner file; propagate unchanged
+         } catch (Exception goalTypeException) {
+            // FAIL-FAST: the GOAL_TYPE reflection / directory listing failed; a whole goal type silently
+            // dropped. This masks a code/content bug, so surface it loudly.
+            throw MillCrash.fail("Goal", "failed to load generic goal type for " + genericGoalClass.getName() + ": " + goalTypeException);
          }
       }
    }

@@ -30,6 +30,7 @@ import org.millenaire.common.network.ServerSender;
 import org.millenaire.common.quest.QuestInstance;
 import org.millenaire.common.quest.SpecialQuestActions;
 import org.millenaire.common.utilities.MillCommonUtilities;
+import org.millenaire.common.utilities.MillCrash;
 import org.millenaire.common.utilities.MillLog;
 import org.millenaire.common.utilities.Point;
 import org.millenaire.common.utilities.WorldUtilities;
@@ -107,8 +108,10 @@ public class GuiActions {
                   if (ent.hasVisitors) {
                      ent.getVisitorManager().update(true);
                   }
-               } catch (Exception var6) {
-                  MillLog.printException(var6);
+               } catch (Exception summoningWandException) {
+                  // FAIL-FAST: a summoning-wand admin action (rush builds / merchant move / visitor update)
+                  // mutates authoritative village state; a swallow hides a real failure mid-mutation.
+                  throw MillCrash.fail("UI", "summoning-wand action failed for building " + ent + ": " + summoningWandException);
                }
 
                return;
@@ -267,8 +270,10 @@ public class GuiActions {
       if (customBuilding != null) {
          try {
             townHall.addCustomBuilding(customBuilding, pos);
-         } catch (Exception var6) {
-            MillLog.printException("Exception when creation custom building: " + planKey, var6);
+         } catch (Exception customBuildingException) {
+            // FAIL-FAST: adding the custom building mutates the town hall's project list; a swallow leaves
+            // the building half-registered and hides the cause. Surface it loudly.
+            throw MillCrash.fail("UI", "failed to create custom building '" + planKey + "': " + customBuildingException);
          }
       }
    }

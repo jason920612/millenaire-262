@@ -182,12 +182,14 @@ public class ItemMockBanner extends BlockItem {
             if (bannerEntity instanceof TileEntityMockBanner) {
                // Store a banner stack carrying the preset base colour + pattern layers (built as data
                // components by makeBanner) so the BE / its renderer have the full design, mirroring the
-               // 1.12 BlockEntityTag/Base path. Falls back to the held stack if the design fails to parse.
-               ItemStack designed = itemstack.copy();
+               // 1.12 BlockEntityTag/Base path.
+               ItemStack designed;
                try {
                   designed = makeBanner(this, this.color, net.minecraft.nbt.TagParser.parseCompoundFully(BANNER_DESIGNS[this.bannerDesign]));
-               } catch (Exception ignored) {
-                  // keep the held-stack copy
+               } catch (Exception bannerDesignException) {
+                  // FAIL-FAST: BANNER_DESIGNS is a compile-time constant; a parse failure means a malformed
+                  // hardcoded design that would silently place a blank banner for every banner of this type.
+                  throw org.millenaire.common.utilities.MillCrash.fail("Item", "failed to parse hardcoded banner design index " + this.bannerDesign + ": " + bannerDesignException);
                }
                ((TileEntityMockBanner)bannerEntity).setItemValues(designed, true);
             }

@@ -11,6 +11,7 @@ import org.millenaire.common.entity.MillVillager;
 import org.millenaire.common.goal.Goal;
 import org.millenaire.common.pathing.atomicstryker.AStarConfig;
 import org.millenaire.common.utilities.MillCommonUtilities;
+import org.millenaire.common.utilities.MillCrash;
 import org.millenaire.common.utilities.MillLog;
 import org.millenaire.common.utilities.Point;
 import org.millenaire.common.utilities.WorldUtilities;
@@ -176,8 +177,10 @@ public class GoalGenericGatherBlocks extends GoalGeneric {
       if (this.isDestPossibleSpecific(villager, villager.getGoalBuildingDest())) {
          try {
             villager.setGoalInformation(this.getDestination(villager));
-         } catch (MillLog.MillenaireException var4) {
-            MillLog.printException(var4);
+         } catch (MillLog.MillenaireException destException) {
+            // FAIL-FAST: failing to recompute the gather destination left the villager's goal state stale
+            // (1.12 logged-and-continued). Surface the navigation corruption loudly.
+            throw MillCrash.fail("Goal", "failed to recompute gather-blocks destination for " + villager + ": " + destException);
          }
 
          return false;

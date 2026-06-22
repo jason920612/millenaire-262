@@ -469,9 +469,11 @@ public class BlockItemUtilities {
 
             reader.close();
             return true;
-         } catch (Exception var6) {
-            MillLog.printException(var6);
-            return false;
+         } catch (Exception blockTypesException) {
+            // FAIL-FAST: a parse error left the block-category lists (forbidden/ground/danger/water/path
+            // materials, used by pathfinding) empty or partial. 1.12 returned false (a generic startup
+            // error). Surface the real cause instead of a vague boolean.
+            throw MillCrash.fail("BlockTypes", "failed to read blocktypes file " + file.getName() + ": " + blockTypesException);
          }
       }
    }

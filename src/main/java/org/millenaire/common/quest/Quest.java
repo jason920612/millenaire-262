@@ -12,6 +12,7 @@ import org.millenaire.common.culture.VillagerType;
 import org.millenaire.common.forge.Mill;
 import org.millenaire.common.item.InvItem;
 import org.millenaire.common.utilities.MillCommonUtilities;
+import org.millenaire.common.utilities.MillCrash;
 import org.millenaire.common.utilities.MillLog;
 import org.millenaire.common.utilities.Point;
 import org.millenaire.common.utilities.virtualdir.VirtualDir;
@@ -145,8 +146,10 @@ public class Quest {
                      try {
                         QuestStep.QuestStepRelationChange relationChange = QuestStep.QuestStepRelationChange.parseString(value);
                         step.relationChanges.add(relationChange);
-                     } catch (Exception var9) {
-                        MillLog.error(null, "Error when loading relationchange: " + var9.getMessage() + " when loading quest " + file.getName() + ": " + value);
+                     } catch (Exception relationChangeException) {
+                        // FAIL-FAST: a malformed relationchange line silently dropped the relation effect
+                        // (1.12 logged-and-continued), corrupting the quest's reward logic. Crash loudly.
+                        throw MillCrash.fail("Quest", "failed to parse relationchange '" + value + "' in quest " + file.getName() + ": " + relationChangeException);
                      }
                   } else if (key.equals("settagsuccess")) {
                      step.setVillagerTagsSuccess.add(value.split(","));
@@ -203,9 +206,12 @@ public class Quest {
 
             return q;
          }
-      } catch (Exception var10) {
-         MillLog.printException(var10);
-         return null;
+      } catch (IllegalStateException crash) {
+         throw crash; // already a fail-fast crash from an inner line; propagate unchanged
+      } catch (Exception questLoadException) {
+         // FAIL-FAST: a quest file failed to parse and was silently dropped (1.12 logged-and-returned-null),
+         // so the quest is missing at runtime with no trace. Crash at the corrupt content.
+         throw MillCrash.fail("Quest", "failed to load quest file " + file.getName() + ": " + questLoadException);
       }
    }
 

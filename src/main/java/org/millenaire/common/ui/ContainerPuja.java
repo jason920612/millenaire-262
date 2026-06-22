@@ -12,6 +12,7 @@ import net.minecraft.world.item.ShovelItem;
 import net.minecraft.world.item.ItemStack;
 import org.millenaire.common.item.MillItems;
 import org.millenaire.common.ui.MillMenus;
+import org.millenaire.common.utilities.MillCrash;
 import org.millenaire.common.utilities.MillLog;
 import org.millenaire.common.village.Building;
 
@@ -41,8 +42,10 @@ public class ContainerPuja extends AbstractContainerMenu {
          for (int j = 0; j < 9; j++) {
             this.addSlot(new Slot(playerInventory, j, 8 + j * 18, 164));
          }
-      } catch (Exception var5) {
-         MillLog.printException("Exception in ContainerPuja(): ", var5);
+      } catch (Exception pujaContainerException) {
+         // FAIL-FAST: a swallow here leaves the puja container half-built (missing slots) and hides the
+         // real cause (e.g. a null temple.pujas shrine). Surface it instead of opening a broken GUI.
+         throw MillCrash.fail("UI", "failed to build ContainerPuja for temple " + temple + ": " + pujaContainerException);
       }
    }
 

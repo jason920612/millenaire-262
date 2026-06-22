@@ -19,6 +19,7 @@ import org.millenaire.common.forge.CommonProxy;
 import org.millenaire.common.forge.Mill;
 import org.millenaire.common.utilities.LanguageUtilities;
 import org.millenaire.common.utilities.MillCommonUtilities;
+import org.millenaire.common.utilities.MillCrash;
 import org.millenaire.common.utilities.MillLog;
 import org.millenaire.common.world.UserProfile;
 
@@ -45,8 +46,9 @@ public class ClientProxy extends CommonProxy {
    @Override
    public String getBlockName(Block block, int meta) {
       if (block == null) {
-         MillLog.printException(new MillLog.MillenaireException("Trying to get the name of a null block."));
-         return null;
+         // FAIL-FAST: a null block to name is a caller bug; returning a null name (1.12 behaviour) just
+         // moves the NPE downstream into tooltip/GUI rendering. Surface it at the source.
+         throw MillCrash.fail("Client", "getBlockName called with null block");
       } else {
          return new ItemStack(block).getHoverName().getString();
       }
@@ -78,8 +80,9 @@ public class ClientProxy extends CommonProxy {
    @Override
    public String getItemName(Item item, int meta) {
       if (item == null) {
-         MillLog.printException(new MillLog.MillenaireException("Trying to get the name of a null item."));
-         return null;
+         // FAIL-FAST: a null item to name is a caller bug; returning a null name (1.12 behaviour) just
+         // moves the NPE downstream into tooltip/GUI rendering. Surface it at the source.
+         throw MillCrash.fail("Client", "getItemName called with null item");
       } else {
          return new ItemStack(item).getHoverName().getString();
       }

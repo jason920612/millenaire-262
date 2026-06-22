@@ -6,6 +6,7 @@ import org.millenaire.common.config.MillConfigValues;
 import org.millenaire.common.forge.Mill;
 import org.millenaire.common.network.ServerSender;
 import org.millenaire.common.network.StreamReadWrite;
+import org.millenaire.common.utilities.MillCrash;
 import org.millenaire.common.utilities.MillLog;
 import org.millenaire.common.utilities.Point;
 import org.millenaire.common.village.Building;
@@ -66,8 +67,10 @@ public class MillMapInfo {
 
       try {
          townHall.rebuildRegionMapper(true);
-      } catch (MillLog.MillenaireException var9) {
-         MillLog.printException(var9);
+      } catch (MillLog.MillenaireException regionMapperException) {
+         // FAIL-FAST: a swallow here leaves regionMapper null and the village map renders wrong region data
+         // with no trace (1.12 logged-and-continued). This is a synchronous build, not an async chunk race.
+         throw MillCrash.fail("UI", "failed to rebuild region mapper for map of " + townHall + ": " + regionMapperException);
       }
 
       if (townHall.regionMapper != null) {

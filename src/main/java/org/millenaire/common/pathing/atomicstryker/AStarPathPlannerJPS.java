@@ -5,6 +5,7 @@ import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import net.minecraft.world.level.Level;
 import org.millenaire.common.config.MillConfigValues;
+import org.millenaire.common.utilities.MillCrash;
 import org.millenaire.common.utilities.MillLog;
 import org.millenaire.common.utilities.ThreadSafeUtilities;
 
@@ -59,8 +60,11 @@ public class AStarPathPlannerJPS {
          this.worker.isRunning = true;
          this.pathCalculationStartTime = System.currentTimeMillis();
          executorService.submit(this.worker);
-      } catch (Exception var5) {
-         MillLog.printException(var5);
+      } catch (Exception pathSubmitException) {
+         // FAIL-FAST: the worker was marked isRunning=true but submit failed, so the planner is stuck
+         // "busy" with a task that never runs (silent pathfinding hang). Surface the rejection loudly.
+         this.accesslock = false;
+         throw MillCrash.fail("Pathing", "failed to submit A* path worker to executor: " + pathSubmitException);
       }
 
       this.accesslock = false;

@@ -21,6 +21,7 @@ import org.millenaire.common.goal.Goal;
 import org.millenaire.common.item.InvItem;
 import org.millenaire.common.utilities.BlockItemUtilities;
 import org.millenaire.common.utilities.MillCommonUtilities;
+import org.millenaire.common.utilities.MillCrash;
 import org.millenaire.common.utilities.MillLog;
 import org.millenaire.common.utilities.Point;
 import org.millenaire.common.village.Building;
@@ -186,8 +187,10 @@ public class GoalGenericPlantCrop extends GoalGeneric {
          if (this.isDestPossibleSpecific(villager, villager.getGoalBuildingDest())) {
             try {
                villager.setGoalInformation(this.getDestination(villager));
-            } catch (MillLog.MillenaireException var6) {
-               MillLog.printException(var6);
+            } catch (MillLog.MillenaireException destException) {
+               // FAIL-FAST: failing to recompute the plant destination left the villager's goal state stale
+               // (1.12 logged-and-continued). Surface the navigation corruption loudly.
+               throw MillCrash.fail("Goal", "failed to recompute plant-crop destination for " + villager + ": " + destException);
             }
 
             return false;

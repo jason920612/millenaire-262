@@ -7,6 +7,7 @@ import java.util.Collections;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import org.millenaire.common.utilities.MillCrash;
 import org.millenaire.common.utilities.MillLog;
 
 public class VirtualDir {
@@ -59,9 +60,10 @@ public class VirtualDir {
 
       try {
          return new VirtualDir(childSourceDir);
-      } catch (Exception var5) {
-         MillLog.printException(var5);
-         return null;
+      } catch (Exception childDirException) {
+         // FAIL-FAST: returning a null child VirtualDir (1.12 behaviour) masks the real failure and NPEs
+         // later deep in content loading. Surface the construction failure at its source.
+         throw MillCrash.fail("VirtualDir", "failed to create child directory '" + childDirectory + "': " + childDirException);
       }
    }
 

@@ -155,8 +155,10 @@ public class MillenaireMod implements ModInitializer {
 			try {
 				java.util.Random rand = new java.util.Random(world.getSeed() + cx * 341873128712L + cz * 132897987541L);
 				new WorldGenVillage().generate(rand, cx, cz, world);
-			} catch (Exception e) {
-				org.millenaire.common.utilities.MillLog.printException("Deferred village generation failed at chunk " + cx + "/" + cz, e);
+			} catch (Exception villageGenException) {
+				// FAIL-FAST: a swallowed world-gen failure here silently drops a village from the world with
+				// no trace (the queue just moves to the next chunk). Surface the placement failure loudly.
+				throw org.millenaire.common.utilities.MillCrash.fail("WorldGen", "deferred village generation failed at chunk " + cx + "/" + cz + ": " + villageGenException);
 			}
 		}
 	}

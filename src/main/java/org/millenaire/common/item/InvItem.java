@@ -18,6 +18,7 @@ import org.millenaire.common.block.MillBlocks;
 import org.millenaire.common.forge.Mill;
 import org.millenaire.common.utilities.LanguageUtilities;
 import org.millenaire.common.utilities.MillCommonUtilities;
+import org.millenaire.common.utilities.MillCrash;
 import org.millenaire.common.utilities.MillLog;
 
 public final class InvItem implements Comparable<InvItem> {
@@ -120,21 +121,30 @@ public final class InvItem implements Comparable<InvItem> {
                      } else {
                         Block block = BuiltInRegistries.BLOCK.getValue(Identifier.parse(registryId));
                         if (block == null) {
-                           MillLog.error(null, "Could not load good: " + temp[1]);
+                           // FAIL-FAST: an itemlist.txt good naming an unknown item/block id was silently
+                           // dropped (1.12 logged-and-continued), then referenced later as "unknown good".
+                           throw MillCrash.fail("InvItem", "itemlist.txt good '" + temp[0] + "' names unknown id '" + temp[1] + "'");
                         } else if (block.asItem() == null) {
-                           MillLog.error(null, "Tried to create good from block with no item: " + line);
+                           throw MillCrash.fail("InvItem", "itemlist.txt good '" + temp[0] + "' uses block with no item: " + line);
                         } else {
                            INVITEMS_BY_NAME.put(temp[0], createInvItem(block, Integer.parseInt(temp[2])));
                         }
                      }
                   }
                }
-            } catch (Exception var6) {
-               MillLog.printException("Exception while reading line: " + line, var6);
+            } catch (IllegalStateException crash) {
+               throw crash; // already a fail-fast crash; propagate unchanged
+            } catch (Exception lineException) {
+               // FAIL-FAST: a malformed itemlist.txt line silently dropped a good definition (1.12 logged-
+               // and-continued); the missing good surfaces later as an "unknown good" failure. Crash here.
+               throw MillCrash.fail("InvItem", "failed to read itemlist.txt line '" + line + "': " + lineException);
             }
          }
-      } catch (IOException var7) {
-         MillLog.printException(var7);
+      } catch (IllegalStateException crash) {
+         throw crash; // already a fail-fast crash from an inner line; propagate unchanged
+      } catch (IOException itemListException) {
+         // FAIL-FAST: the whole itemlist.txt failed to read; every Mill good silently absent. Crash loudly.
+         throw MillCrash.fail("InvItem", "failed to read itemlist file " + file + ": " + itemListException);
       }
    }
 

@@ -7,6 +7,7 @@ import java.util.List;
 import java.util.Map;
 import net.minecraft.world.entity.player.Player;
 import org.millenaire.common.config.MillConfigValues;
+import org.millenaire.common.utilities.MillCrash;
 import org.millenaire.common.utilities.MillLog;
 
 public class MillAdvancements {
@@ -104,8 +105,10 @@ public class MillAdvancements {
          if (field.getType() == GenericAdvancement.class) {
             try {
                MILL_ADVANCEMENTS.add((GenericAdvancement)field.get(null));
-            } catch (Exception var5) {
-               MillLog.printException("Exception will using reflection to list advancements:", var5);
+            } catch (Exception advancementReflectException) {
+               // FAIL-FAST: reflecting a static GenericAdvancement field cannot fail unless the class is
+               // mis-defined; a swallow silently drops an advancement. Crash on the code/registry bug.
+               throw MillCrash.fail("Advancements", "failed to enumerate advancement field " + field.getName() + ": " + advancementReflectException);
             }
          }
       }

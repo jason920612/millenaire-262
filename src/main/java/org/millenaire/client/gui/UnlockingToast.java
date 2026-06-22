@@ -27,7 +27,10 @@ import org.millenaire.common.utilities.MillLog;
  */
 @Environment(EnvType.CLIENT)
 public class UnlockingToast implements Toast {
-   private static final Identifier TEXTURE_TOASTS = Identifier.withDefaultNamespace("textures/gui/toasts.png");
+   // 26.2: the old textures/gui/toasts.png atlas (drawn via u/v offsets) was split into GUI SPRITES; the toast
+   // background is now the "toast/advancement" sprite drawn with blitSprite (see vanilla AdvancementToast).
+   // Using the old atlas blit produced a missing-texture (magenta) toast background.
+   private static final Identifier BACKGROUND_SPRITE = Identifier.withDefaultNamespace("toast/advancement");
    private final BuildingPlanSet planSet;
    private final VillageType villageType;
    private final VillagerType villagerType;
@@ -130,7 +133,7 @@ public class UnlockingToast implements Toast {
             }
          }
 
-         graphics.blit(RenderPipelines.GUI_TEXTURED, TEXTURE_TOASTS, 0, 0, 0.0F, 32.0F, 160, 32, 256, 256);
+         graphics.blitSprite(RenderPipelines.GUI_TEXTURED, BACKGROUND_SPRITE, 0, 0, this.width(), this.height());
          if (title != null) {
             graphics.text(font, title, 30, 7, -11534256, false);
          }

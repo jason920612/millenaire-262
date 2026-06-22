@@ -10,8 +10,7 @@ import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.item.component.CustomData;
 import net.minecraft.world.level.Level;
 
-import org.millenaire.common.utilities.MillCommonUtilities;
-import org.millenaire.common.utilities.WorldUtilities;
+import org.millenaire.common.utilities.VillageInventory;
 
 /**
  * Coin purse — stores/withdraws deniers (bronze/silver/gold). 1.12 stored three ints in the stack's
@@ -86,11 +85,11 @@ public class ItemPurse extends ItemMill {
          int DENIERs = tag.getIntOr(ML_PURSE_DENIER, 0);
          int DENIERargent = tag.getIntOr(ML_PURSE_DENIERARGENT, 0);
          int DENIERor = tag.getIntOr(ML_PURSE_DENIEROR, 0);
-         int result = MillCommonUtilities.putItemsInChest(player.getInventory(), MillItems.DENIER, DENIERs);
+         int result = VillageInventory.putItemsInChest(player.getInventory(), MillItems.DENIER, DENIERs);
          tag.putInt(ML_PURSE_DENIER, DENIERs - result);
-         result = MillCommonUtilities.putItemsInChest(player.getInventory(), MillItems.DENIER_ARGENT, DENIERargent);
+         result = VillageInventory.putItemsInChest(player.getInventory(), MillItems.DENIER_ARGENT, DENIERargent);
          tag.putInt(ML_PURSE_DENIERARGENT, DENIERargent - result);
-         result = MillCommonUtilities.putItemsInChest(player.getInventory(), MillItems.DENIER_OR, DENIERor);
+         result = VillageInventory.putItemsInChest(player.getInventory(), MillItems.DENIER_OR, DENIERor);
          tag.putInt(ML_PURSE_DENIEROR, DENIERor - result);
          tag.putInt(ML_PURSE_RAND, player.level().isClientSide() ? 0 : 1);
          setTag(purse, tag);
@@ -114,9 +113,9 @@ public class ItemPurse extends ItemMill {
    }
 
    private void storeDeniersInPurse(ItemStack purse, Player player) {
-      int deniers = WorldUtilities.getItemsFromChest(player.getInventory(), MillItems.DENIER, 0, Integer.MAX_VALUE);
-      int deniersargent = WorldUtilities.getItemsFromChest(player.getInventory(), MillItems.DENIER_ARGENT, 0, Integer.MAX_VALUE);
-      int deniersor = WorldUtilities.getItemsFromChest(player.getInventory(), MillItems.DENIER_OR, 0, Integer.MAX_VALUE);
+      int deniers = VillageInventory.getItemsFromChest(player.getInventory(), MillItems.DENIER, 0, Integer.MAX_VALUE);
+      int deniersargent = VillageInventory.getItemsFromChest(player.getInventory(), MillItems.DENIER_ARGENT, 0, Integer.MAX_VALUE);
+      int deniersor = VillageInventory.getItemsFromChest(player.getInventory(), MillItems.DENIER_OR, 0, Integer.MAX_VALUE);
       int total = this.totalDeniers(purse) + deniers + deniersargent * 64 + deniersor * 64 * 64;
       int new_denier = total % 64;
       int new_deniers_argent = (total - new_denier) / 64 % 64;

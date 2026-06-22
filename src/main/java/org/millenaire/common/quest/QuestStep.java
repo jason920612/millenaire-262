@@ -9,7 +9,7 @@ import net.minecraft.world.item.ItemStack;
 import org.millenaire.common.forge.Mill;
 import org.millenaire.common.item.InvItem;
 import org.millenaire.common.utilities.LanguageUtilities;
-import org.millenaire.common.utilities.MillCommonUtilities;
+import org.millenaire.common.utilities.VillageInventory;
 import org.millenaire.common.world.MillWorldData;
 import org.millenaire.common.world.UserProfile;
 
@@ -102,7 +102,7 @@ public class QuestStep {
 
             diff = this.requiredGood.get(item) - nbenchanted;
          } else if (item.special != 2) {
-            diff = this.requiredGood.get(item) - MillCommonUtilities.countChestItems(player.getInventory(), item.getItem(), item.meta);
+            diff = this.requiredGood.get(item) - VillageInventory.countChestItems(player.getInventory(), item.getItem(), item.meta);
          } else {
             int nbenchanted = 0;
 

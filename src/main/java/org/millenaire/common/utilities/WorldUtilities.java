@@ -13,12 +13,8 @@ import net.minecraft.world.entity.EntityType;
 import net.minecraft.world.entity.Mob;
 import net.minecraft.world.entity.item.ItemEntity;
 import net.minecraft.world.entity.ExperienceOrb;
-import net.minecraft.world.entity.player.Inventory;
 import net.minecraft.world.level.block.Blocks;
-import net.minecraft.world.Container;
-import net.minecraft.world.item.Item;
 import net.minecraft.world.item.ItemStack;
-import net.minecraft.world.level.block.entity.FurnaceBlockEntity;
 import net.minecraft.world.level.levelgen.Heightmap;
 import net.minecraft.core.Direction;
 import net.minecraft.resources.Identifier;
@@ -28,7 +24,6 @@ import net.minecraft.sounds.SoundEvent;
 import net.minecraft.world.phys.AABB;
 import net.minecraft.core.BlockPos;
 import net.minecraft.world.level.Level;
-import org.millenaire.common.entity.TileEntityFirePit;
 import org.millenaire.common.item.InvItem;
 
 public class WorldUtilities {
@@ -319,91 +314,6 @@ public class WorldUtilities {
 
    public static Entity getEntityByUUID(Level world, UUID uuid) {
       return world.getEntity(uuid);
-   }
-
-   public static int getItemsFromChest(Container chest, Block block, int meta, int toTake) {
-      return getItemsFromChest(chest, block.asItem(), meta, toTake);
-   }
-
-   public static int getItemsFromChest(Container chest, BlockState blockState, int toTake) {
-      return getItemsFromChest(chest, blockState.getBlock(), 0, toTake);
-   }
-
-   public static int getItemsFromChest(Container chest, Item item, int meta, int toTake) {
-      if (chest == null) {
-         return 0;
-      } else {
-         int nb = 0;
-         int maxSlot = chest.getContainerSize() - 1;
-         if (chest instanceof Inventory) {
-            maxSlot -= 4;
-         }
-
-         for (int i = maxSlot; i >= 0 && nb < toTake; i--) {
-            ItemStack stack = chest.getItem(i);
-            if (stack != null && stack.getItem() == item) {
-               if (stack.getCount() <= toTake - nb) {
-                  nb += stack.getCount();
-                  chest.setItem(i, ItemStack.EMPTY);
-               } else {
-                  chest.removeItem(i, toTake - nb);
-                  nb = toTake;
-               }
-            }
-
-            if (item == Blocks.OAK_LOG.asItem()
-               && meta == -1
-               && stack != null
-               && stack.getItem() == Blocks.ACACIA_LOG.asItem()) {
-               if (stack.getCount() <= toTake - nb) {
-                  nb += stack.getCount();
-                  chest.setItem(i, ItemStack.EMPTY);
-               } else {
-                  chest.removeItem(i, toTake - nb);
-                  nb = toTake;
-               }
-            }
-         }
-
-         return nb;
-      }
-   }
-
-   public static int getItemsFromFirePit(TileEntityFirePit firepit, Item item, int toTake) {
-      if (firepit == null) {
-         return 0;
-      } else {
-         int taken = 0;
-
-         for (int stackNb = 0; stackNb < 3; stackNb++) {
-            ItemStack stack = firepit.getItem(4 + stackNb);
-            if (taken < toTake && stack != null && stack.getItem() == item) {
-               taken += firepit.removeItem(4 + stackNb, toTake).getCount();
-            }
-         }
-
-         return taken;
-      }
-   }
-
-   public static int getItemsFromFurnace(FurnaceBlockEntity furnace, Item item, int toTake) {
-      if (furnace == null) {
-         return 0;
-      } else {
-         int nb = 0;
-         ItemStack stack = furnace.getItem(2);
-         if (stack != null && stack.getItem() == item) {
-            if (stack.getCount() <= toTake - nb) {
-               nb += stack.getCount();
-               furnace.setItem(2, ItemStack.EMPTY);
-            } else {
-               furnace.removeItem(2, toTake - nb);
-               nb = toTake;
-            }
-         }
-
-         return nb;
-      }
    }
 
    public static Direction guessPanelFacing(Level world, Point p) {

@@ -15,7 +15,7 @@ import org.millenaire.common.entity.MillVillager;
 import org.millenaire.common.item.InvItem;
 import org.millenaire.common.network.ServerSender;
 import org.millenaire.common.utilities.LanguageUtilities;
-import org.millenaire.common.utilities.MillCommonUtilities;
+import org.millenaire.common.utilities.VillageInventory;
 import org.millenaire.common.utilities.MillRandom;
 import org.millenaire.common.utilities.MillCrash;
 import org.millenaire.common.utilities.MillLog;
@@ -250,13 +250,13 @@ public class QuestInstance {
       for (InvItem item : this.getCurrentStep().requiredGood.keySet()) {
          if (item.special == 0) {
             villager.addToInv(item.getItem(), item.meta, this.getCurrentStep().requiredGood.get(item));
-            WorldUtilities.getItemsFromChest(player.getInventory(), item.getItem(), item.meta, this.getCurrentStep().requiredGood.get(item));
+            VillageInventory.getItemsFromChest(player.getInventory(), item.getItem(), item.meta, this.getCurrentStep().requiredGood.get(item));
          }
       }
 
       for (InvItem itemx : this.getCurrentStep().rewardGoods.keySet()) {
          int nbLeft = this.getCurrentStep().rewardGoods.get(itemx)
-            - MillCommonUtilities.putItemsInChest(player.getInventory(), itemx.getItem(), itemx.meta, this.getCurrentStep().rewardGoods.get(itemx));
+            - VillageInventory.putItemsInChest(player.getInventory(), itemx.getItem(), itemx.meta, this.getCurrentStep().rewardGoods.get(itemx));
          if (!this.world.isClientSide() && nbLeft > 0) {
             ItemEntity entItem = WorldUtilities.spawnItem(this.world, villager.getPos(), new ItemStack(itemx.getItem(), nbLeft), 0.0F);
             if (entItem.getItem().getItem() instanceof InvItem.IItemInitialEnchantmens) {
@@ -268,7 +268,7 @@ public class QuestInstance {
       }
 
       if (this.getCurrentStep().rewardMoney > 0) {
-         MillCommonUtilities.changeMoney(player.getInventory(), this.getCurrentStep().rewardMoney, player);
+         VillageInventory.changeMoney(player.getInventory(), this.getCurrentStep().rewardMoney, player);
          reward = reward + " " + this.getCurrentStep().rewardMoney + " deniers";
       }
 
@@ -310,7 +310,7 @@ public class QuestInstance {
       }
 
       // 26.2 PORT FIX: the reward goods/money above were inserted into the player inventory server-side
-      // via MillCommonUtilities.putItemsInChest / changeMoney (direct Container.setItem mutation, outside
+      // via VillageInventory.putItemsInChest / changeMoney (direct Container.setItem mutation, outside
       // any container-click flow). Unlike the working trade path (ContainerTrade.handleTradeAction, which
       // calls broadcastChanges() after putItemsInChest), completeStep did NOT push the inventory change to
       // the client, so accepting a quest appeared to grant nothing (the client's optimistic add was

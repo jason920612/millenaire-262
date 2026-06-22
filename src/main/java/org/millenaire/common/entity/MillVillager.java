@@ -80,6 +80,7 @@ import org.millenaire.common.utilities.BlockItemUtilities;
 import org.millenaire.common.utilities.BlockStateUtilities;
 import org.millenaire.common.utilities.DevModUtilities;
 import org.millenaire.common.utilities.MillCommonUtilities;
+import org.millenaire.common.utilities.VillageInventory;
 import org.millenaire.common.utilities.MillRandom;
 import org.millenaire.common.utilities.MillCrash;
 import org.millenaire.common.utilities.MillLog;
@@ -2929,7 +2930,7 @@ public abstract class MillVillager extends PathfinderMob implements IAStarPathed
 
       net.minecraft.nbt.CompoundTag invWrapper = input.read("inventoryNew", net.minecraft.nbt.CompoundTag.CODEC).orElse(null);
       if (invWrapper != null) {
-         MillCommonUtilities.readInventory(invWrapper.getListOrEmpty("l"), this.inventory);
+         VillageInventory.readInventory(invWrapper.getListOrEmpty("l"), this.inventory);
       }
       this.previousBlock = net.minecraft.core.registries.BuiltInRegistries.BLOCK.byId(input.getIntOr("previousBlock", 0));
       this.previousBlockMeta = input.getIntOr("previousBlockMeta", 0);
@@ -4032,7 +4033,7 @@ public abstract class MillVillager extends PathfinderMob implements IAStarPathed
             output.putBoolean("dialogueChat", this.dialogueChat);
          }
 
-         ListTag nbttaglist = MillCommonUtilities.writeInventory(this.inventory);
+         ListTag nbttaglist = VillageInventory.writeInventory(this.inventory);
          net.minecraft.nbt.CompoundTag invWrapper = new net.minecraft.nbt.CompoundTag();
          invWrapper.put("l", nbttaglist);
          output.store("inventoryNew", net.minecraft.nbt.CompoundTag.CODEC, invWrapper);

@@ -17,7 +17,7 @@ import org.millenaire.common.block.BlockSod;
 import org.millenaire.common.block.MillBlocks;
 import org.millenaire.common.forge.MillRegistry;
 import org.millenaire.common.network.ServerSender;
-import org.millenaire.common.utilities.MillCommonUtilities;
+import org.millenaire.common.utilities.VillageInventory;
 import org.millenaire.common.utilities.Point;
 import org.millenaire.common.utilities.WorldUtilities;
 
@@ -54,7 +54,7 @@ public class ItemUlu extends ItemMill {
          // so iterate the SOD wood variants and pick the first whose matching vanilla plank is present.
          BlockSod.WoodType chosenWood = null;
          for (BlockSod.WoodType woodType : BlockSod.WoodType.values()) {
-            if (MillCommonUtilities.countChestItems(player.getInventory(), plankBlockFor(woodType), 0) > 0) {
+            if (VillageInventory.countChestItems(player.getInventory(), plankBlockFor(woodType), 0) > 0) {
                chosenWood = woodType;
                break;
             }
@@ -74,7 +74,7 @@ public class ItemUlu extends ItemMill {
          int resUseCount = tag.getIntOr("resUseCount", 0);
          if (resUseCount == 0) {
             // 1.12 consumed one coarse dirt + one plank only when starting a fresh batch of 3 uses.
-            if (MillCommonUtilities.countChestItems(player.getInventory(), Blocks.COARSE_DIRT, 0) == 0) {
+            if (VillageInventory.countChestItems(player.getInventory(), Blocks.COARSE_DIRT, 0) == 0) {
                if (!world.isClientSide()) {
                   ServerSender.sendTranslatedSentence(player, '6', "ui.ulunodirt");
                }
@@ -82,8 +82,8 @@ public class ItemUlu extends ItemMill {
                return InteractionResult.PASS;
             }
 
-            WorldUtilities.getItemsFromChest(player.getInventory(), Blocks.COARSE_DIRT, 0, 1);
-            WorldUtilities.getItemsFromChest(player.getInventory(), plankBlockFor(chosenWood), 0, 1);
+            VillageInventory.getItemsFromChest(player.getInventory(), Blocks.COARSE_DIRT, 0, 1);
+            VillageInventory.getItemsFromChest(player.getInventory(), plankBlockFor(chosenWood), 0, 1);
             resUseCount = 3;
          } else {
             resUseCount--;
@@ -131,17 +131,17 @@ public class ItemUlu extends ItemMill {
       ItemStack uluIS = player.getItemInHand(hand);
       if (world.getBlockState(pos).getBlock() == Blocks.SNOW_BLOCK) {
          world.setBlockAndUpdate(pos, Blocks.AIR.defaultBlockState());
-         MillCommonUtilities.putItemsInChest(player.getInventory(), MillBlocks.SNOW_BRICK, 0, 4);
+         VillageInventory.putItemsInChest(player.getInventory(), MillBlocks.SNOW_BRICK, 0, 4);
          uluIS.hurtAndBreak(1, player, hand);
          return InteractionResult.SUCCESS;
       } else if (world.getBlockState(pos).getBlock() == Blocks.SNOW) {
          int snowDepth = world.getBlockState(pos).getValue(SnowLayerBlock.LAYERS);
          world.setBlockAndUpdate(pos, Blocks.AIR.defaultBlockState());
-         MillCommonUtilities.putItemsInChest(player.getInventory(), MillBlocks.SNOW_BRICK, 0, (snowDepth + 1) / 2);
+         VillageInventory.putItemsInChest(player.getInventory(), MillBlocks.SNOW_BRICK, 0, (snowDepth + 1) / 2);
          uluIS.hurtAndBreak(1, player, hand);
          return InteractionResult.SUCCESS;
       } else if (world.getBlockState(pos).getBlock() == Blocks.ICE) {
-         MillCommonUtilities.putItemsInChest(player.getInventory(), MillBlocks.ICE_BRICK, 0, 4);
+         VillageInventory.putItemsInChest(player.getInventory(), MillBlocks.ICE_BRICK, 0, 4);
          world.setBlockAndUpdate(pos, Blocks.AIR.defaultBlockState());
          uluIS.hurtAndBreak(1, player, hand);
          return InteractionResult.SUCCESS;

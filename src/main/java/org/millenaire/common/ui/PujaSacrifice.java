@@ -19,7 +19,7 @@ import org.millenaire.common.config.MillConfigValues;
 import org.millenaire.common.entity.MillVillager;
 import org.millenaire.common.item.MillItems;
 import org.millenaire.common.utilities.LanguageUtilities;
-import org.millenaire.common.utilities.MillCommonUtilities;
+import org.millenaire.common.utilities.VillageInventory;
 import org.millenaire.common.utilities.MillLog;
 import org.millenaire.common.village.Building;
 
@@ -508,7 +508,7 @@ public class PujaSacrifice implements Container {
    }
 
    private boolean startPuja() {
-      int money = MillCommonUtilities.countMoney(this);
+      int money = VillageInventory.countMoney(this);
       if (money == 0) {
          return false;
       } else if (this.offeringNeeded != 0 && this.offeringProgress < this.offeringNeeded) {

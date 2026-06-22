@@ -29,36 +29,36 @@ public class DevModUtilities {
    private static HashMap<Player, Integer> autoMoveTarget = new HashMap<>();
 
    public static void fillInFreeGoods(Player player) {
-      MillCommonUtilities.putItemsInChest(player.getInventory(), MillItems.JAPANESE_BLUE_LEGGINGS, 1);
-      MillCommonUtilities.putItemsInChest(player.getInventory(), MillItems.JAPANESE_BLUE_BOOTS, 1);
-      MillCommonUtilities.putItemsInChest(player.getInventory(), MillItems.JAPANESE_BLUE_HELMET, 1);
-      MillCommonUtilities.putItemsInChest(player.getInventory(), MillItems.JAPANESE_BLUE_CHESTPLATE, 1);
-      MillCommonUtilities.putItemsInChest(player.getInventory(), MillItems.JAPANESE_RED_LEGGINGS, 1);
-      MillCommonUtilities.putItemsInChest(player.getInventory(), MillItems.JAPANESE_RED_BOOTS, 1);
-      MillCommonUtilities.putItemsInChest(player.getInventory(), MillItems.JAPANESE_RED_HELMET, 1);
-      MillCommonUtilities.putItemsInChest(player.getInventory(), MillItems.JAPANESE_RED_CHESTPLATE, 1);
-      MillCommonUtilities.putItemsInChest(player.getInventory(), MillItems.JAPANESE_GUARD_LEGGINGS, 1);
-      MillCommonUtilities.putItemsInChest(player.getInventory(), MillItems.JAPANESE_GUARD_BOOTS, 1);
-      MillCommonUtilities.putItemsInChest(player.getInventory(), MillItems.JAPANESE_GUARD_HELMET, 1);
-      MillCommonUtilities.putItemsInChest(player.getInventory(), MillItems.JAPANESE_GUARD_CHESTPLATE, 1);
-      MillCommonUtilities.putItemsInChest(player.getInventory(), MillItems.SUMMONING_WAND, 1);
-      MillCommonUtilities.putItemsInChest(player.getInventory(), MillItems.AMULET_SKOLL_HATI, 1);
-      MillCommonUtilities.putItemsInChest(player.getInventory(), Items.CLOCK, 1);
-      MillCommonUtilities.putItemsInChest(player.getInventory(), MillItems.NORMAN_AXE, 1);
-      MillCommonUtilities.putItemsInChest(player.getInventory(), MillItems.NORMAN_PICKAXE, 1);
-      MillCommonUtilities.putItemsInChest(player.getInventory(), MillItems.NORMAN_SHOVEL, 1);
-      MillCommonUtilities.putItemsInChest(player.getInventory(), Blocks.GOLD_BLOCK, 0, 64);
-      MillCommonUtilities.putItemsInChest(player.getInventory(), Blocks.OAK_LOG, 64);
-      MillCommonUtilities.putItemsInChest(player.getInventory(), Items.COAL, 64);
-      MillCommonUtilities.putItemsInChest(player.getInventory(), Blocks.COBBLESTONE, 128);
-      MillCommonUtilities.putItemsInChest(player.getInventory(), Blocks.STONE, 512);
-      MillCommonUtilities.putItemsInChest(player.getInventory(), Blocks.SAND, 128);
-      MillCommonUtilities.putItemsInChest(player.getInventory(), Blocks.WOOL.pick(net.minecraft.world.item.DyeColor.WHITE), 64);
-      MillCommonUtilities.putItemsInChest(player.getInventory(), MillItems.CALVA, 0, 2);
-      MillCommonUtilities.putItemsInChest(player.getInventory(), MillItems.CHICKEN_CURRY, 2);
-      MillCommonUtilities.putItemsInChest(player.getInventory(), MillItems.RICE, 0, 64);
-      MillCommonUtilities.putItemsInChest(player.getInventory(), MillItems.MAIZE, 0, 64);
-      MillCommonUtilities.putItemsInChest(player.getInventory(), MillItems.TURMERIC, 0, 64);
+      VillageInventory.putItemsInChest(player.getInventory(), MillItems.JAPANESE_BLUE_LEGGINGS, 1);
+      VillageInventory.putItemsInChest(player.getInventory(), MillItems.JAPANESE_BLUE_BOOTS, 1);
+      VillageInventory.putItemsInChest(player.getInventory(), MillItems.JAPANESE_BLUE_HELMET, 1);
+      VillageInventory.putItemsInChest(player.getInventory(), MillItems.JAPANESE_BLUE_CHESTPLATE, 1);
+      VillageInventory.putItemsInChest(player.getInventory(), MillItems.JAPANESE_RED_LEGGINGS, 1);
+      VillageInventory.putItemsInChest(player.getInventory(), MillItems.JAPANESE_RED_BOOTS, 1);
+      VillageInventory.putItemsInChest(player.getInventory(), MillItems.JAPANESE_RED_HELMET, 1);
+      VillageInventory.putItemsInChest(player.getInventory(), MillItems.JAPANESE_RED_CHESTPLATE, 1);
+      VillageInventory.putItemsInChest(player.getInventory(), MillItems.JAPANESE_GUARD_LEGGINGS, 1);
+      VillageInventory.putItemsInChest(player.getInventory(), MillItems.JAPANESE_GUARD_BOOTS, 1);
+      VillageInventory.putItemsInChest(player.getInventory(), MillItems.JAPANESE_GUARD_HELMET, 1);
+      VillageInventory.putItemsInChest(player.getInventory(), MillItems.JAPANESE_GUARD_CHESTPLATE, 1);
+      VillageInventory.putItemsInChest(player.getInventory(), MillItems.SUMMONING_WAND, 1);
+      VillageInventory.putItemsInChest(player.getInventory(), MillItems.AMULET_SKOLL_HATI, 1);
+      VillageInventory.putItemsInChest(player.getInventory(), Items.CLOCK, 1);
+      VillageInventory.putItemsInChest(player.getInventory(), MillItems.NORMAN_AXE, 1);
+      VillageInventory.putItemsInChest(player.getInventory(), MillItems.NORMAN_PICKAXE, 1);
+      VillageInventory.putItemsInChest(player.getInventory(), MillItems.NORMAN_SHOVEL, 1);
+      VillageInventory.putItemsInChest(player.getInventory(), Blocks.GOLD_BLOCK, 0, 64);
+      VillageInventory.putItemsInChest(player.getInventory(), Blocks.OAK_LOG, 64);
+      VillageInventory.putItemsInChest(player.getInventory(), Items.COAL, 64);
+      VillageInventory.putItemsInChest(player.getInventory(), Blocks.COBBLESTONE, 128);
+      VillageInventory.putItemsInChest(player.getInventory(), Blocks.STONE, 512);
+      VillageInventory.putItemsInChest(player.getInventory(), Blocks.SAND, 128);
+      VillageInventory.putItemsInChest(player.getInventory(), Blocks.WOOL.pick(net.minecraft.world.item.DyeColor.WHITE), 64);
+      VillageInventory.putItemsInChest(player.getInventory(), MillItems.CALVA, 0, 2);
+      VillageInventory.putItemsInChest(player.getInventory(), MillItems.CHICKEN_CURRY, 2);
+      VillageInventory.putItemsInChest(player.getInventory(), MillItems.RICE, 0, 64);
+      VillageInventory.putItemsInChest(player.getInventory(), MillItems.MAIZE, 0, 64);
+      VillageInventory.putItemsInChest(player.getInventory(), MillItems.TURMERIC, 0, 64);
    }
 
    public static void runAutoMove(Level world) {

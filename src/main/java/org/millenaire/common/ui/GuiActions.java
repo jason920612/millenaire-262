@@ -29,7 +29,7 @@ import org.millenaire.common.item.MillItems;
 import org.millenaire.common.network.ServerSender;
 import org.millenaire.common.quest.QuestInstance;
 import org.millenaire.common.quest.SpecialQuestActions;
-import org.millenaire.common.utilities.MillCommonUtilities;
+import org.millenaire.common.utilities.VillageInventory;
 import org.millenaire.common.utilities.MillRandom;
 import org.millenaire.common.utilities.MillCrash;
 import org.millenaire.common.utilities.MillLog;
@@ -170,7 +170,7 @@ public class GuiActions {
    public static void hireExtend(Player player, MillVillager villager) {
       villager.hiredBy = player.getName().getString();
       villager.hiredUntil += 24000L;
-      MillCommonUtilities.changeMoney(player.getInventory(), -villager.getHireCost(player), player);
+      VillageInventory.changeMoney(player.getInventory(), -villager.getHireCost(player), player);
    }
 
    public static void hireHire(Player player, MillVillager villager) {
@@ -182,7 +182,7 @@ public class GuiActions {
       }
 
       MillAdvancements.HIRED.grant(player);
-      MillCommonUtilities.changeMoney(player.getInventory(), -villager.getHireCost(player), player);
+      VillageInventory.changeMoney(player.getInventory(), -villager.getHireCost(player), player);
    }
 
    public static void hireRelease(Player player, MillVillager villager) {
@@ -434,14 +434,14 @@ public class GuiActions {
    public static void villageChiefPerformBuilding(Player player, MillVillager chief, String planKey) {
       BuildingPlan plan = chief.getTownHall().culture.getBuildingPlanSet(planKey).getRandomStartingPlan();
       chief.getTownHall().buildingsBought.add(planKey);
-      MillCommonUtilities.changeMoney(player.getInventory(), -plan.price, player);
+      VillageInventory.changeMoney(player.getInventory(), -plan.price, player);
       ServerSender.sendTranslatedSentence(player, 'f', "ui.housebought", chief.getVillagerName(), plan.nativeName);
    }
 
    public static void villageChiefPerformCrop(Player player, MillVillager chief, String value) {
       UserProfile profile = Mill.getMillWorld(player.level()).getProfile(player);
       profile.setTag("cropplanting_" + value);
-      MillCommonUtilities.changeMoney(player.getInventory(), -512, player);
+      VillageInventory.changeMoney(player.getInventory(), -512, player);
       Item crop = net.minecraft.core.registries.BuiltInRegistries.ITEM.getValue(net.minecraft.resources.Identifier.fromNamespaceAndPath("millenaire", value));
       ServerSender.sendTranslatedSentence(player, 'f', "ui.croplearned", chief.getVillagerName(), "ui.crop." + net.minecraft.core.registries.BuiltInRegistries.ITEM.getKey(crop).getPath());
    }
@@ -475,7 +475,7 @@ public class GuiActions {
    public static void villageChiefPerformHuntingDrop(Player player, MillVillager chief, String value) {
       UserProfile profile = Mill.getMillWorld(player.level()).getProfile(player);
       profile.setTag("huntingdrop_" + value);
-      MillCommonUtilities.changeMoney(player.getInventory(), -512, player);
+      VillageInventory.changeMoney(player.getInventory(), -512, player);
       Item drop = net.minecraft.core.registries.BuiltInRegistries.ITEM.getValue(net.minecraft.resources.Identifier.fromNamespaceAndPath("millenaire", value));
       ServerSender.sendTranslatedSentence(
          player, 'f', "ui.huntingdroplearned", chief.getVillagerName(), "ui.huntingdrop." + net.minecraft.core.registries.BuiltInRegistries.ITEM.getKey(drop).getPath()
@@ -486,7 +486,7 @@ public class GuiActions {
       for (int i = 0; i < Mill.getMillWorld(player.level()).villagesList.pos.size(); i++) {
          Point p = Mill.getMillWorld(player.level()).villagesList.pos.get(i);
          if (chief.getTownHall().getPos().sameBlock(p)) {
-            MillCommonUtilities.changeMoney(player.getInventory(), -128, player);
+            VillageInventory.changeMoney(player.getInventory(), -128, player);
             player.getInventory().add(ItemParchment.createParchmentForVillage(chief.getTownHall()));
             ServerSender.sendTranslatedSentence(player, 'f', "ui.scrollbought", chief.getVillagerName());
          }

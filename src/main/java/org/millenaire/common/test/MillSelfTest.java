@@ -38,7 +38,7 @@ import org.millenaire.common.forge.Mill;
 import org.millenaire.common.forge.MillRegistry;
 import org.millenaire.common.item.TradeGood;
 import org.millenaire.common.ui.ContainerTrade;
-import org.millenaire.common.utilities.MillCommonUtilities;
+import org.millenaire.common.utilities.VillageInventory;
 import org.millenaire.common.utilities.MillRandom;
 import org.millenaire.common.utilities.MillLog;
 import org.millenaire.common.utilities.Point;
@@ -866,7 +866,7 @@ public final class MillSelfTest {
 
          // Give the bot a stack of money so a buy can actually execute.
          try {
-            MillCommonUtilities.changeMoney(fakePlayer.getInventory(), 100000, fakePlayer);
+            VillageInventory.changeMoney(fakePlayer.getInventory(), 100000, fakePlayer);
          } catch (Throwable ignored) {
          }
 
@@ -883,9 +883,9 @@ public final class MillSelfTest {
          // BUY: player buys a selling-good from the shop.
          if (selling != null && !selling.isEmpty()) {
             TradeGood g = selling.iterator().next();
-            int moneyBefore = MillCommonUtilities.countMoney(fakePlayer.getInventory());
+            int moneyBefore = VillageInventory.countMoney(fakePlayer.getInventory());
             container.executeTrade(g, true, false, 1, fakePlayer);
-            int moneyAfter = MillCommonUtilities.countMoney(fakePlayer.getInventory());
+            int moneyAfter = VillageInventory.countMoney(fakePlayer.getInventory());
             detail.append(" | BUY good=").append(g.key)
                .append(" moneyDelta=").append(moneyAfter - moneyBefore);
             log("G trade BUY OK: good=" + g.key + " money " + moneyBefore + "->" + moneyAfter);
@@ -902,9 +902,9 @@ public final class MillSelfTest {
                fakePlayer.getInventory().add(give);
             } catch (Throwable ignored) {
             }
-            int moneyBefore = MillCommonUtilities.countMoney(fakePlayer.getInventory());
+            int moneyBefore = VillageInventory.countMoney(fakePlayer.getInventory());
             container.executeTrade(g, false, false, 1, fakePlayer);
-            int moneyAfter = MillCommonUtilities.countMoney(fakePlayer.getInventory());
+            int moneyAfter = VillageInventory.countMoney(fakePlayer.getInventory());
             detail.append(" | SELL good=").append(g.key)
                .append(" moneyDelta=").append(moneyAfter - moneyBefore);
             log("G trade SELL OK: good=" + g.key + " money " + moneyBefore + "->" + moneyAfter);

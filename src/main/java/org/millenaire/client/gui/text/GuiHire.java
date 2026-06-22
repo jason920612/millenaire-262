@@ -13,6 +13,7 @@ import org.millenaire.client.network.ClientSender;
 import org.millenaire.common.entity.MillVillager;
 import org.millenaire.common.utilities.LanguageUtilities;
 import org.millenaire.common.utilities.MillCommonUtilities;
+import org.millenaire.common.utilities.VillageInventory;
 
 public class GuiHire extends GuiText {
    private static final int REPUTATION_NEEDED = 4096;
@@ -58,7 +59,7 @@ public class GuiHire extends GuiText {
       int xStart = (this.width - this.getXSize()) / 2;
       int yStart = (this.height - this.getYSize()) / 2;
       if (this.villager.hiredBy != null) {
-         if (MillCommonUtilities.countMoney(this.player.getInventory()) >= this.villager.getHireCost(this.player)) {
+         if (VillageInventory.countMoney(this.player.getInventory()) >= this.villager.getHireCost(this.player)) {
             this.buttonList
                .add(
                   new GuiText.MillGuiButton(
@@ -75,7 +76,7 @@ public class GuiHire extends GuiText {
             .add(new GuiText.MillGuiButton(0, xStart + this.getXSize() / 2 + 37, yStart + this.getYSize() - 40, 63, 20, LanguageUtilities.string("hire.close")));
       } else {
          if (this.villager.getTownHall().getReputation(this.player) >= 4096
-            && MillCommonUtilities.countMoney(this.player.getInventory()) >= this.villager.getHireCost(this.player)) {
+            && VillageInventory.countMoney(this.player.getInventory()) >= this.villager.getHireCost(this.player)) {
             this.buttonList
                .add(
                   new GuiText.MillGuiButton(1, xStart + this.getXSize() / 2 - 100, yStart + this.getYSize() - 40, 95, 20, LanguageUtilities.string("hire.hire"))

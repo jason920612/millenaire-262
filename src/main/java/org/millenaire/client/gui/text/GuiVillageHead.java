@@ -22,6 +22,7 @@ import org.millenaire.common.forge.Mill;
 import org.millenaire.common.item.MillItems;
 import org.millenaire.common.utilities.LanguageUtilities;
 import org.millenaire.common.utilities.MillCommonUtilities;
+import org.millenaire.common.utilities.VillageInventory;
 import org.millenaire.common.utilities.Point;
 import org.millenaire.common.utilities.VillageUtilities;
 import org.millenaire.common.village.Building;
@@ -134,9 +135,9 @@ public class GuiVillageHead extends GuiText {
                         status = LanguageUtilities.string("ui.alreadyrequested") + ".";
                      } else if (plan.reputation > reputation) {
                         status = LanguageUtilities.string("ui.notavailableyet") + ".";
-                     } else if (plan.price > MillCommonUtilities.countMoney(this.player.getInventory())) {
+                     } else if (plan.price > VillageInventory.countMoney(this.player.getInventory())) {
                         status = LanguageUtilities.string(
-                           "ui.youaremissing", "" + MillCommonUtilities.getShortPrice(plan.price - MillCommonUtilities.countMoney(this.player.getInventory()))
+                           "ui.youaremissing", "" + MillCommonUtilities.getShortPrice(plan.price - VillageInventory.countMoney(this.player.getInventory()))
                         );
                      } else {
                         status = LanguageUtilities.string("ui.available") + ".";
@@ -182,11 +183,11 @@ public class GuiVillageHead extends GuiText {
 
       if (8192 > reputation) {
          text.add(new TextLine(LanguageUtilities.string("ui.scrollsnoreputation")));
-      } else if (128 > MillCommonUtilities.countMoney(this.player.getInventory())) {
+      } else if (128 > VillageInventory.countMoney(this.player.getInventory())) {
          text.add(
             new TextLine(
                LanguageUtilities.string(
-                  "ui.scrollsnotenoughmoney", "" + MillCommonUtilities.getShortPrice(128 - MillCommonUtilities.countMoney(this.player.getInventory()))
+                  "ui.scrollsnotenoughmoney", "" + MillCommonUtilities.getShortPrice(128 - VillageInventory.countMoney(this.player.getInventory()))
                )
             )
          );
@@ -211,13 +212,13 @@ public class GuiVillageHead extends GuiText {
                text.add(new TextLine(LanguageUtilities.string("ui.cropknown", localizedName)));
             } else if (8192 > reputation) {
                text.add(new TextLine(LanguageUtilities.string("ui.cropinsufficientreputation", localizedName)));
-            } else if (512 > MillCommonUtilities.countMoney(this.player.getInventory())) {
+            } else if (512 > VillageInventory.countMoney(this.player.getInventory())) {
                text.add(
                   new TextLine(
                      LanguageUtilities.string(
                         "ui.cropnotenoughmoney",
                         localizedName,
-                        "" + MillCommonUtilities.getShortPrice(512 - MillCommonUtilities.countMoney(this.player.getInventory()))
+                        "" + MillCommonUtilities.getShortPrice(512 - VillageInventory.countMoney(this.player.getInventory()))
                      )
                   )
                );
@@ -246,13 +247,13 @@ public class GuiVillageHead extends GuiText {
                text.add(new TextLine(LanguageUtilities.string("ui.huntingdropknown", localizedName)));
             } else if (8192 > reputation) {
                text.add(new TextLine(LanguageUtilities.string("ui.huntingdropinsufficientreputation", localizedName)));
-            } else if (512 > MillCommonUtilities.countMoney(this.player.getInventory())) {
+            } else if (512 > VillageInventory.countMoney(this.player.getInventory())) {
                text.add(
                   new TextLine(
                      LanguageUtilities.string(
                         "ui.huntingdropnotenoughmoney",
                         localizedName,
-                        "" + MillCommonUtilities.getShortPrice(512 - MillCommonUtilities.countMoney(this.player.getInventory()))
+                        "" + MillCommonUtilities.getShortPrice(512 - VillageInventory.countMoney(this.player.getInventory()))
                      )
                   )
                );

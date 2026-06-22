@@ -18,9 +18,8 @@ import org.millenaire.common.forge.Mill;
 import org.millenaire.common.item.TradeGood;
 import org.millenaire.common.ui.MillMenus;
 import org.millenaire.common.utilities.LanguageUtilities;
-import org.millenaire.common.utilities.MillCommonUtilities;
+import org.millenaire.common.utilities.VillageInventory;
 import org.millenaire.common.utilities.MillLog;
-import org.millenaire.common.utilities.WorldUtilities;
 import org.millenaire.common.village.Building;
 import org.millenaire.common.world.UserProfile;
 
@@ -218,7 +217,7 @@ public class ContainerTrade extends AbstractContainerMenu {
 
          ContainerTrade.MerchantSlot tslotx = this.findMerchantSlot(good);
          if (tslotx != null && tslotx.isProblem() == null) {
-            int playerMoney = MillCommonUtilities.countMoney(serverPlayer.getInventory());
+            int playerMoney = VillageInventory.countMoney(serverPlayer.getInventory());
             if (playerMoney < good.getCalculatedSellingPrice(this.merchant) * nbItems) {
                nbItems = Mth.floor(playerMoney / good.getCalculatedSellingPrice(this.merchant));
             }
@@ -227,8 +226,8 @@ public class ContainerTrade extends AbstractContainerMenu {
                nbItems = this.merchant.getHouse().countGoods(good.item);
             }
 
-            nbItems = MillCommonUtilities.putItemsInChest(serverPlayer.getInventory(), good.item.getItem(), good.item.meta, nbItems);
-            MillCommonUtilities.changeMoney(serverPlayer.getInventory(), -good.getCalculatedSellingPrice(this.merchant) * nbItems, serverPlayer);
+            nbItems = VillageInventory.putItemsInChest(serverPlayer.getInventory(), good.item.getItem(), good.item.meta, nbItems);
+            VillageInventory.changeMoney(serverPlayer.getInventory(), -good.getCalculatedSellingPrice(this.merchant) * nbItems, serverPlayer);
             this.merchant.getHouse().takeGoods(good.item, nbItems);
             Mill.getMillWorld(serverPlayer.level()).getProfile(serverPlayer).adjustLanguage(this.merchant.getCulture().key, nbItems);
          }
@@ -254,7 +253,7 @@ public class ContainerTrade extends AbstractContainerMenu {
       ContainerTrade.TradeSlot tslot = this.findTradeSlot(good, sellingSlot);
       UserProfile profile = this.building.mw.getProfile(serverPlayer);
       if (tslot != null && tslot.isProblem() == null) {
-         int playerMoney = MillCommonUtilities.countMoney(serverPlayer.getInventory());
+         int playerMoney = VillageInventory.countMoney(serverPlayer.getInventory());
          if (sellingSlot) {
             if (playerMoney < good.getCalculatedSellingPrice(this.building, serverPlayer) * nbItems) {
                nbItems = Mth.floor(playerMoney / good.getCalculatedSellingPrice(this.building, serverPlayer));
@@ -264,8 +263,8 @@ public class ContainerTrade extends AbstractContainerMenu {
                nbItems = this.building.countGoods(good.item.getItem(), good.item.meta);
             }
 
-            nbItems = MillCommonUtilities.putItemsInChest(serverPlayer.getInventory(), good.item.getItem(), good.item.meta, nbItems);
-            MillCommonUtilities.changeMoney(serverPlayer.getInventory(), -good.getCalculatedSellingPrice(this.building, serverPlayer) * nbItems, serverPlayer);
+            nbItems = VillageInventory.putItemsInChest(serverPlayer.getInventory(), good.item.getItem(), good.item.meta, nbItems);
+            VillageInventory.changeMoney(serverPlayer.getInventory(), -good.getCalculatedSellingPrice(this.building, serverPlayer) * nbItems, serverPlayer);
             if (!good.autoGenerate) {
                this.building.takeGoods(good.item.getItem(), good.item.meta, nbItems);
             }
@@ -280,14 +279,14 @@ public class ContainerTrade extends AbstractContainerMenu {
             this.building.adjustReputation(serverPlayer, good.getCalculatedSellingPrice(this.building, serverPlayer) * nbItems);
             this.building.getTownHall().adjustLanguage(serverPlayer, nbItems);
          } else {
-            if (MillCommonUtilities.countChestItems(serverPlayer.getInventory(), good.item.getItem(), good.item.meta) < nbItems) {
-               nbItems = MillCommonUtilities.countChestItems(serverPlayer.getInventory(), good.item.getItem(), good.item.meta);
+            if (VillageInventory.countChestItems(serverPlayer.getInventory(), good.item.getItem(), good.item.meta) < nbItems) {
+               nbItems = VillageInventory.countChestItems(serverPlayer.getInventory(), good.item.getItem(), good.item.meta);
             }
 
             nbItems = this.building.storeGoods(good.item.getItem(), good.item.meta, nbItems);
-            WorldUtilities.getItemsFromChest(serverPlayer.getInventory(), good.item.getItem(), good.item.meta, nbItems);
+            VillageInventory.getItemsFromChest(serverPlayer.getInventory(), good.item.getItem(), good.item.meta, nbItems);
             if (!profile.donationActivated) {
-               MillCommonUtilities.changeMoney(serverPlayer.getInventory(), good.getCalculatedBuyingPrice(this.building, serverPlayer) * nbItems, serverPlayer);
+               VillageInventory.changeMoney(serverPlayer.getInventory(), good.getCalculatedBuyingPrice(this.building, serverPlayer) * nbItems, serverPlayer);
             }
 
             if (this.building.getTownHall().controlledBy != null && !this.building.getTownHall().controlledBy.equals(serverPlayer.getUUID())) {
@@ -453,7 +452,7 @@ public class ContainerTrade extends AbstractContainerMenu {
          if (this.merchant.getHouse().countGoods(this.good.item) < 1) {
             return LanguageUtilities.string("ui.outofstock");
          } else {
-            int playerMoney = MillCommonUtilities.countMoney(this.player.getInventory());
+            int playerMoney = VillageInventory.countMoney(this.player.getInventory());
             if (this.merchant.getCulture().getTradeGood(this.good.item) != null) {
                if (playerMoney < this.good.getCalculatedSellingPrice(this.merchant)) {
                   return LanguageUtilities.string("ui.missingdeniers").replace("<0>", "" + (this.good.getCalculatedSellingPrice(this.merchant) - playerMoney));
@@ -554,7 +553,7 @@ public class ContainerTrade extends AbstractContainerMenu {
             )
             : new ItemStack(
                this.good.item.getItem(),
-               Math.max(Math.min(MillCommonUtilities.countChestItems(this.player.getInventory(), this.good.item.getItem(), this.good.item.meta), 99), 1)
+               Math.max(Math.min(VillageInventory.countChestItems(this.player.getInventory(), this.good.item.getItem(), this.good.item.meta), 99), 1)
             );
       }
 
@@ -579,12 +578,12 @@ public class ContainerTrade extends AbstractContainerMenu {
                return LanguageUtilities.string("ui.reputationneeded", this.building.culture.getReputationLevelLabel(this.good.minReputation));
             }
 
-            int playerMoney = MillCommonUtilities.countMoney(this.player.getInventory());
+            int playerMoney = VillageInventory.countMoney(this.player.getInventory());
             if (playerMoney < this.good.getCalculatedSellingPrice(this.building, this.player)) {
                return LanguageUtilities.string("ui.missingdeniers")
                   .replace("<0>", "" + (this.good.getCalculatedSellingPrice(this.building, this.player) - playerMoney));
             }
-         } else if (MillCommonUtilities.countChestItems(this.player.getInventory(), this.good.item.getItem(), this.good.item.meta) == 0) {
+         } else if (VillageInventory.countChestItems(this.player.getInventory(), this.good.item.getItem(), this.good.item.meta) == 0) {
             return LanguageUtilities.string("ui.noneininventory");
          }
 

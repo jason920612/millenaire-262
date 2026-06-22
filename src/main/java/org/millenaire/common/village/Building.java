@@ -103,6 +103,7 @@ import org.millenaire.common.ui.PujaSacrifice;
 import org.millenaire.common.utilities.BlockItemUtilities;
 import org.millenaire.common.utilities.LanguageUtilities;
 import org.millenaire.common.utilities.MillCommonUtilities;
+import org.millenaire.common.utilities.VillageInventory;
 import org.millenaire.common.utilities.MillRandom;
 import org.millenaire.common.utilities.MillFiles;
 import org.millenaire.common.utilities.MillCrash;
@@ -779,7 +780,7 @@ public class Building {
          List<TradeGood> extraGoods = new ArrayList<>();
          if (this.culture.shopBuysOptional.containsKey(this.location.shop)) {
             for (TradeGood g : this.culture.shopBuysOptional.get(this.location.shop)) {
-               if (playerInventory == null || MillCommonUtilities.countChestItems(playerInventory, g.item.getItem(), g.item.meta) > 0) {
+               if (playerInventory == null || VillageInventory.countChestItems(playerInventory, g.item.getItem(), g.item.meta) > 0) {
                   extraGoods.add(g);
                }
             }
@@ -1621,7 +1622,7 @@ public class Building {
 
       for (Point p : this.resManager.chests) {
          TileEntityLockedChest chest = p.getMillChest(this.world);
-         count += MillCommonUtilities.countChestItems(chest, item, meta);
+         count += VillageInventory.countChestItems(chest, item, meta);
       }
 
       return count;
@@ -2204,7 +2205,7 @@ public class Building {
                   int chestId = MillRandom.randomInt(this.resManager.chests.size());
                   TileEntityLockedChest chest = this.resManager.chests.get(chestId).getMillChest(this.world);
                   if (chest != null) {
-                     MillCommonUtilities.putItemsInChest(chest, sg.item.getItem(), sg.item.meta, nb);
+                     VillageInventory.putItemsInChest(chest, sg.item.getItem(), sg.item.meta, nb);
                   }
                }
             }
@@ -4314,9 +4315,9 @@ public class Building {
       }
 
       nbttaglist = nbttagcompound.getListOrEmpty("importedGoodsNew");
-      MillCommonUtilities.readInventory(nbttaglist, this.imported);
+      VillageInventory.readInventory(nbttaglist, this.imported);
       nbttaglist = nbttagcompound.getListOrEmpty("exportedGoodsNew");
-      MillCommonUtilities.readInventory(nbttaglist, this.exported);
+      VillageInventory.readInventory(nbttaglist, this.exported);
    }
 
    private void readPaths() {
@@ -5267,7 +5268,7 @@ public class Building {
       for (int i = 0; stored < toPut && i < this.resManager.chests.size(); i++) {
          TileEntityLockedChest chest = this.resManager.chests.get(i).getMillChest(this.world);
          if (chest != null) {
-            stored += MillCommonUtilities.putItemsInChest(chest, item, meta, toPut - stored);
+            stored += VillageInventory.putItemsInChest(chest, item, meta, toPut - stored);
          }
       }
 
@@ -5390,21 +5391,21 @@ public class Building {
       for (int i = 0; taken < toTake && i < this.resManager.chests.size(); i++) {
          TileEntityLockedChest chest = this.resManager.chests.get(i).getMillChest(this.world);
          if (chest != null) {
-            taken += WorldUtilities.getItemsFromChest(chest, item, meta, toTake - taken);
+            taken += VillageInventory.getItemsFromChest(chest, item, meta, toTake - taken);
          }
       }
 
       for (int var7 = 0; taken < toTake && var7 < this.resManager.furnaces.size(); var7++) {
          net.minecraft.world.level.block.entity.FurnaceBlockEntity furnace = this.resManager.furnaces.get(var7).getFurnace(this.world);
          if (furnace != null) {
-            taken += WorldUtilities.getItemsFromFurnace(furnace, item, toTake - taken);
+            taken += VillageInventory.getItemsFromFurnace(furnace, item, toTake - taken);
          }
       }
 
       for (int var8 = 0; taken < toTake && var8 < this.resManager.firepits.size(); var8++) {
          TileEntityFirePit firepit = (TileEntityFirePit)this.world.getBlockEntity(this.resManager.firepits.get(var8).getBlockPos());
          if (firepit != null) {
-            taken += WorldUtilities.getItemsFromFirePit(firepit, item, toTake - taken);
+            taken += VillageInventory.getItemsFromFirePit(firepit, item, toTake - taken);
          }
       }
 
@@ -5907,7 +5908,7 @@ public class Building {
          if (MillRandom.chanceOn(5000)) {
             net.minecraft.world.level.block.entity.DispenserBlockEntity dispenser = p.getDispenser(this.world);
             if (dispenser != null) {
-               MillCommonUtilities.putItemsInChest(dispenser, MillItems.UNKNOWN_POWDER, 1);
+               VillageInventory.putItemsInChest(dispenser, MillItems.UNKNOWN_POWDER, 1);
             }
          }
       }
@@ -6570,9 +6571,9 @@ public class Building {
                this.parentVillage.write(nbttagcompound, "parentVillage");
             }
 
-            nbttaglist = MillCommonUtilities.writeInventory(this.imported);
+            nbttaglist = VillageInventory.writeInventory(this.imported);
             nbttagcompound.put("importedGoodsNew", nbttaglist);
-            nbttaglist = MillCommonUtilities.writeInventory(this.exported);
+            nbttaglist = VillageInventory.writeInventory(this.exported);
             nbttagcompound.put("exportedGoodsNew", nbttaglist);
             if (MillConfigValues.LogTileEntityBuilding >= 3) {
                MillLog.debug(this, "Saving building. Location: " + this.location + ", pos: " + this.getPos());

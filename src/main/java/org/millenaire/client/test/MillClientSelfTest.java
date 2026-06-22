@@ -51,7 +51,7 @@ import org.millenaire.common.forge.Mill;
 import org.millenaire.common.item.TradeGood;
 import org.millenaire.common.ui.ContainerTrade;
 import org.millenaire.common.culture.VillageType;
-import org.millenaire.common.utilities.MillCommonUtilities;
+import org.millenaire.common.utilities.VillageInventory;
 import org.millenaire.common.utilities.MillRandom;
 import org.millenaire.common.utilities.MillLog;
 import org.millenaire.common.utilities.Point;
@@ -1401,12 +1401,12 @@ public final class MillClientSelfTest {
 
    /** Counts the server player's money (deniers, in base-denier units) via the verified Mill helper. */
    private static int countServerMoney(ServerPlayer sp) {
-      return MillCommonUtilities.countMoney(sp.getInventory());
+      return VillageInventory.countMoney(sp.getInventory());
    }
 
    /** Counts how many of (item,meta) the server player holds in their inventory. */
    private static int countInv(ServerPlayer sp, TradeGood good) {
-      return MillCommonUtilities.countChestItems(sp.getInventory(), good.item.getItem(), good.item.meta);
+      return VillageInventory.countChestItems(sp.getInventory(), good.item.getItem(), good.item.meta);
    }
 
    // ============================ DYNAMIC STEP: stand inside an active village ============================
@@ -1643,7 +1643,7 @@ public final class MillClientSelfTest {
             // Ensure the player can afford it: top up money to price*nb + a margin.
             int need = Math.max(0, price * nb + 16 - countServerMoney(sp));
             if (need > 0) {
-               MillCommonUtilities.changeMoney(sp.getInventory(), need, sp);
+               VillageInventory.changeMoney(sp.getInventory(), need, sp);
             }
             ContainerTrade menu = new ContainerTrade(0, sp, shop);
             int moneyBefore = countServerMoney(sp);
@@ -1676,7 +1676,7 @@ public final class MillClientSelfTest {
          } else {
             int nb = 4;
             // Give the player the sellable item so the sale has stock to move.
-            MillCommonUtilities.putItemsInChest(sp.getInventory(), sellGood.item.getItem(), sellGood.item.meta, nb);
+            VillageInventory.putItemsInChest(sp.getInventory(), sellGood.item.getItem(), sellGood.item.meta, nb);
             shop.computeShopGoods(sp); // refresh prices/goods for the now-held item
             int price = shop.getBuyingPrice(sellGood, sp);
             ContainerTrade menu = new ContainerTrade(0, sp, shop);

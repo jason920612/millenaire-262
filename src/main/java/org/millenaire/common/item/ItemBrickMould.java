@@ -12,7 +12,7 @@ import net.minecraft.world.level.block.Blocks;
 
 import org.millenaire.common.block.MillBlocks;
 import org.millenaire.common.network.ServerSender;
-import org.millenaire.common.utilities.MillCommonUtilities;
+import org.millenaire.common.utilities.VillageInventory;
 import org.millenaire.common.utilities.Point;
 import org.millenaire.common.utilities.WorldUtilities;
 
@@ -50,8 +50,8 @@ public class ItemBrickMould extends ItemMill {
       } else {
          ItemStack is = player.getItemInHand(hand);
          if (is.getDamageValue() % 4 == 0) {
-            if (MillCommonUtilities.countChestItems(player.getInventory(), Blocks.DIRT, 0) == 0
-               || MillCommonUtilities.countChestItems(player.getInventory(), Blocks.SAND, 0) == 0) {
+            if (VillageInventory.countChestItems(player.getInventory(), Blocks.DIRT, 0) == 0
+               || VillageInventory.countChestItems(player.getInventory(), Blocks.SAND, 0) == 0) {
                if (!world.isClientSide()) {
                   ServerSender.sendTranslatedSentence(player, 'f', "ui.brickinstructions");
                }
@@ -59,8 +59,8 @@ public class ItemBrickMould extends ItemMill {
                return InteractionResult.PASS;
             }
 
-            WorldUtilities.getItemsFromChest(player.getInventory(), Blocks.DIRT, 0, 1);
-            WorldUtilities.getItemsFromChest(player.getInventory(), Blocks.SAND, 0, 1);
+            VillageInventory.getItemsFromChest(player.getInventory(), Blocks.DIRT, 0, 1);
+            VillageInventory.getItemsFromChest(player.getInventory(), Blocks.SAND, 0, 1);
          }
 
          WorldUtilities.setBlockstate(world, new Point(pos), MillBlocks.BS_WET_BRICK, true, false);

@@ -39,7 +39,7 @@ import org.millenaire.common.forge.Mill;
 import org.millenaire.common.item.ItemMockBanner;
 import org.millenaire.common.item.MillItems;
 import org.millenaire.common.utilities.BlockItemUtilities;
-import org.millenaire.common.utilities.MillCommonUtilities;
+import org.millenaire.common.utilities.VillageInventory;
 import org.millenaire.common.utilities.MillRandom;
 import org.millenaire.common.utilities.MillLog;
 import org.millenaire.common.utilities.PathUtilities;
@@ -215,7 +215,7 @@ public class BuildingBlock {
          } else if (this.special == DISPENDERUNKNOWNPOWDER) {
             WorldUtilities.setBlockAndMetadata(world, this.p, Blocks.DISPENSER, 0);
             DispenserBlockEntity dispenser = this.p.getDispenser(world);
-            MillCommonUtilities.putItemsInChest(dispenser, MillItems.UNKNOWN_POWDER, 2);
+            VillageInventory.putItemsInChest(dispenser, MillItems.UNKNOWN_POWDER, 2);
             blockSet = true;
          } else if (this.special == FURNACEGUESS) {
             Direction facing = this.guessChestFurnaceFacing(world, this.p);

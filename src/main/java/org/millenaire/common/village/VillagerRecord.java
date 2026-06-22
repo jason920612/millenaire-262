@@ -20,6 +20,7 @@ import org.millenaire.common.entity.VillagerConfig;
 import org.millenaire.common.item.InvItem;
 import org.millenaire.common.item.MillItems;
 import org.millenaire.common.utilities.MillCommonUtilities;
+import org.millenaire.common.utilities.VillageInventory;
 import org.millenaire.common.utilities.MillRandom;
 import org.millenaire.common.utilities.MillLog;
 import org.millenaire.common.utilities.Point;
@@ -251,7 +252,7 @@ public class VillagerRecord implements Cloneable {
          }
 
          nbttaglist = nbttagcompound.getListOrEmpty(label + "_inventoryNew");
-         MillCommonUtilities.readInventory(nbttaglist, vr.inventory);
+         VillageInventory.readInventory(nbttaglist, vr.inventory);
          if (vr.getType() == null) {
             MillLog.error(vr, "Could not find type " + vr.type + " for VR. Skipping.");
             return null;
@@ -686,7 +687,7 @@ public class VillagerRecord implements Cloneable {
       }
 
       nbttagcompound.put(label + "questTags", nbttaglist);
-      nbttaglist = MillCommonUtilities.writeInventory(this.inventory);
+      nbttaglist = VillageInventory.writeInventory(this.inventory);
       nbttagcompound.put(label + "_inventoryNew", nbttaglist);
       nbttagcompound.putString(label + "_culture", this.getCulture().key);
    }

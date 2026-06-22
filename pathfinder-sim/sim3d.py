@@ -50,6 +50,13 @@ def neighbors(v, p):
         if (not v.standable(gx,y,gz) and v.clearBody(gx,y,gz) and v.standable(lx,y,lz)
                 and v.clearBody(lx,y,lz) and not v.solid(gx,y+1,gz)):
             out.append(((lx,y,lz), JUMP_GAP))
+    for dx,dz in H4:                                       # running jump over a 2-block gap (land 3 out)
+        g1x,g1z = x+dx, z+dz; g2x,g2z = x+2*dx, z+2*dz; lx,lz = x+3*dx, z+3*dz
+        if (not v.standable(g1x,y,g1z) and v.clearBody(g1x,y,g1z)
+                and not v.standable(g2x,y,g2z) and v.clearBody(g2x,y,g2z)
+                and v.standable(lx,y,lz) and v.clearBody(lx,y,lz)
+                and not v.solid(g1x,y+1,g1z) and not v.solid(g2x,y+1,g2z)):
+            out.append(((lx,y,lz), JUMP_GAP+1.5))
     return out
 
 
@@ -155,6 +162,32 @@ def staircase():
     s=set(); floor(s,0,6,0,0)
     s.update({(1,1,0),(2,1,0),(2,2,0),(3,1,0),(3,2,0),(3,3,0)})
     return "climb a staircase", Voxel(s), (0,1,0),(3,4,0), 0,(0,6),(0,5)
+
+@scenario
+def islands():
+    s=set()
+    for x in (0,2,4,6,8): s.add((x,0,0))   # platforms separated by 1-block gaps (jump chain)
+    return "floating-island jump chain (1-gaps)", Voxel(s),(0,1,0),(8,1,0),0,(0,8),(0,3)
+
+@scenario
+def gap2():
+    s=set(); floor(s,0,6,0,0)
+    s.discard((2,0,0)); s.discard((3,0,0))  # a 2-WIDE gap (stream/path) — can we jump it?
+    return "2-WIDE gap (stream)", Voxel(s),(0,1,0),(6,1,0),0,(0,6),(0,3)
+
+@scenario
+def tunnel():
+    s=set(); floor(s,0,8,0,0)
+    for x in range(3,6):                      # a hill with a 2-high tunnel bored through it
+        for y in range(3,6): s.add((x,y,0))
+        s.add((x,0,0))
+    return "low tunnel under a hill (head clearance)", Voxel(s),(0,1,0),(8,1,0),0,(0,8),(0,6)
+
+@scenario
+def ledge2():
+    s=set(); floor(s,0,6,0,0)
+    for y in (1,2): s.add((3,y,0))            # a 2-high ledge straight ahead (can't jump 2 — must it go round?)
+    return "2-high ledge ahead (no side route)", Voxel(s),(0,1,0),(4,1,0),0,(0,6),(0,4)
 
 @scenario
 def pit():

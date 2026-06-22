@@ -53,6 +53,19 @@ class Mill3DPathfinderExtremeTest {
    }
 
    @Test
+   void runningJumpsA2WideGap() {
+      // Floor x=0..6 with x=2,3 removed → a 2-WIDE void (stream / wide path) only the running jump can clear.
+      Set<Long> s = new HashSet<>();
+      floor(s, 0, 6, 0, 0);
+      s.remove(BlockPos.asLong(2, 0, 0));
+      s.remove(BlockPos.asLong(3, 0, 0));
+      List<BlockPos> path = Mill3DPathfinder.findPath(of(s), new BlockPos(0, 1, 0), new BlockPos(6, 1, 0), BUDGET);
+      assertNotNull(path, "running-jumps the 2-wide gap");
+      assertTrue(path.get(path.size() - 1).equals(new BlockPos(6, 1, 0)), "reaches the far side");
+      assertFalse(path.contains(new BlockPos(2, 1, 0)) || path.contains(new BlockPos(3, 1, 0)), "never stands in the 2-wide void");
+   }
+
+   @Test
    void routesAroundALavaCellViaDangerCost() {
       // Solid floor 0..4 × 0..2. A single "lava" cell at (2,1,0) modelled as a huge danger cost — the path
       // should detour one row over (z=1) instead of stepping on it, even though it is physically walkable.

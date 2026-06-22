@@ -138,6 +138,22 @@ public final class Mill3DPathfinder {
             out.accept(new BlockPos(lx, y, lz), LexCost.normal(JUMP_GAP));
          }
       }
+      // RUNNING JUMP over a 2-block gap (cardinal): two air cells, land 3 out — for streams / 2-wide paths /
+      // small ravines that a 1-gap jump can't clear. Pricier than the 1-gap so it's a considered choice.
+      for (int[] d : H4) {
+         int g1x = x + d[0];
+         int g1z = z + d[1];
+         int g2x = x + 2 * d[0];
+         int g2z = z + 2 * d[1];
+         int lx = x + 3 * d[0];
+         int lz = z + 3 * d[1];
+         if (!v.standable(g1x, y, g1z) && v.clearBody(g1x, y, g1z)
+            && !v.standable(g2x, y, g2z) && v.clearBody(g2x, y, g2z)
+            && v.standable(lx, y, lz) && v.clearBody(lx, y, lz)
+            && !v.isSolid(g1x, y + 1, g1z) && !v.isSolid(g2x, y + 1, g2z)) {
+            out.accept(new BlockPos(lx, y, lz), LexCost.normal(JUMP_GAP + 1.5));
+         }
+      }
    }
 
    private static LexCost heuristic(BlockPos a, BlockPos b) {

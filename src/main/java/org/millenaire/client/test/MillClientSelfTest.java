@@ -120,6 +120,7 @@ public final class MillClientSelfTest {
    // --- DYNAMIC gameplay steps: performed AFTER the village has had hundreds of ticks to populate
    //     (villagers stream in / shops compute their goods), each verifying an OBSERVED before->after. ---
    private static final int TICK_DYN_STAND_IN_VILLAGE = 360;  // teleport the player INTO the active village
+   private static final int TICK_DYN_DUMP = 372;              // /milldebug dump: full text inventory of blocks/BEs/entities + render state around the player
    private static final int TICK_DYN_ACTIVITY_START = 380;    // begin the ~600-tick villager-activity sample
    private static final int TICK_DYN_TRADE = 1010;            // real buy + sell with money/inventory verification
    private static final int TICK_DYN_QUEST = 1040;            // accept a quest if one is available
@@ -283,6 +284,7 @@ public final class MillClientSelfTest {
             case TICK_CREATIVE_OPEN -> stepOpenCreative();
             case TICK_SHOT_CREATIVE -> stepScreenshot("milltest_06_creative.png", "creative");
             case TICK_DYN_STAND_IN_VILLAGE -> stepStandInActiveVillage();
+            case TICK_DYN_DUMP -> stepMillDump();
             case TICK_DYN_ACTIVITY_START -> stepStartActivitySampling();
             case TICK_DYN_TRADE -> stepRealTrade();
             case TICK_DYN_QUEST -> stepAcceptQuest();
@@ -1438,6 +1440,32 @@ public final class MillClientSelfTest {
             + "/" + c.getiZ() + " (townhall=" + th.getVillageQualifiedName() + ")");
       } catch (Throwable t) {
          fail("stand-in-village", t);
+      }
+   }
+
+   // ============================ DYNAMIC STEP: full text dump (/milldebug dump) ============================
+
+   /**
+    * Runs the {@code /milldebug dump} text-inventory once, around the player's current position (the
+    * village centre, set by the previous stand-in-village step), so the headless harness ALSO emits the
+    * full greppable ███ MILLDUMP record set (blocks + block-entities + entities + their render/visual
+    * state) for offline inspection. Log-only; never fails the run.
+    */
+   private void stepMillDump() {
+      try {
+         MinecraftServer server = mc.getSingleplayerServer();
+         ServerPlayer sp = serverPlayer();
+         if (server == null || sp == null) {
+            skip("milldump", "no integrated server / server player to anchor the dump");
+            return;
+         }
+         int count = org.millenaire.common.commands.CommandDebugDump.dumpToLog(
+            server.overworld(), sp.blockPosition(), 12);
+         pass("milldump", "emitted " + count + " ███ MILLDUMP records (blocks+BEs+entities) around "
+            + sp.blockPosition().getX() + "/" + sp.blockPosition().getY() + "/" + sp.blockPosition().getZ()
+            + " — see the log for the full report");
+      } catch (Throwable t) {
+         fail("milldump", t);
       }
    }
 

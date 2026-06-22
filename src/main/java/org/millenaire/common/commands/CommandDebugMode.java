@@ -25,6 +25,9 @@ public class CommandDebugMode {
             .then(Commands.literal("on").executes(c -> set(c, true)))
             .then(Commands.literal("off").executes(c -> set(c, false)))
             .then(Commands.literal("status").executes(CommandDebugMode::status))
+            // /milldebug dump [radius] — structured text inventory of every Mill block/BE/entity +
+            // its visual/render state around the player (op-gated inside buildSubcommand()).
+            .then(CommandDebugDump.buildSubcommand())
             .executes(CommandDebugMode::status)
       );
    }

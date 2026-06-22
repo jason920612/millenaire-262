@@ -620,6 +620,9 @@ public final class MillClientSelfTest {
                   // Realistic ambush: pretend the sleep goal still wants it lying down. A FIGHTING villager
                   // must NOT render asleep — combat-check asserts pose != SLEEPING to catch the lie-down bug.
                   mv.shouldLieDown = true;
+                  // Keep the fighter alive long enough to OBSERVE its behaviour (it was getting overwhelmed by
+                  // zombie+skeleton and dying before the check could read pose/movement). We test AI, not HP.
+                  mv.setInvulnerable(true);
                }
                // HOSTILE VILLAGER (village-war): the raider (2nd fighter) targets a SEPARATE victim (3rd fighter)
                // → villager-vs-villager combat, kept apart from fighter 0's mob fight.

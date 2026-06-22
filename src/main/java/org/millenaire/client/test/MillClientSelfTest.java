@@ -541,6 +541,11 @@ public final class MillClientSelfTest {
    private double combatStartZ;
    private volatile boolean combatEngaged = false;
    private volatile java.util.UUID combatZombieId = null;
+   private volatile java.util.UUID combatSkeletonId = null; // RANGED hostile that fires at the fighter
+   private volatile java.util.UUID raiderId = null;         // 2nd fighter turned hostile (villager-vs-villager)
+   private volatile java.util.UUID raiderVictimId = null;
+   private volatile double raiderStartX;
+   private volatile double raiderStartZ;
 
    /** Spawn a zombie (melee) + pillager (ranged) next to a fighter villager and target the zombie, exercising
     *  the new combat AI (acquire → move → attack → ranged retreat). Combat crashes/freezes slipped through
@@ -563,6 +568,12 @@ public final class MillClientSelfTest {
          this.combatVillagerId = fighter.getUUID();
          this.combatStartX = fighter.getX();
          this.combatStartZ = fighter.getZ();
+         // Villager-vs-villager uses a SEPARATE pair (2nd vs 3rd fighter) so the mob-fighting fighter 0 isn't
+         // ganged up on by mobs + a raider and killed before the check can read it. Needs 3+ fighters.
+         if (fighters.size() >= 3) {
+            this.raiderId = fighters.get(1).getUUID();
+            this.raiderVictimId = fighters.get(2).getUUID();
+         }
          final double fx = fighter.getX();
          final double fy = fighter.getY();
          final double fz = fighter.getZ();
@@ -575,22 +586,27 @@ public final class MillClientSelfTest {
                server.setDifficulty(net.minecraft.world.Difficulty.NORMAL, true);
                net.minecraft.world.entity.EntityType<?> zType = net.minecraft.core.registries.BuiltInRegistries.ENTITY_TYPE
                   .getValue(net.minecraft.resources.Identifier.withDefaultNamespace("zombie"));
-               net.minecraft.world.entity.EntityType<?> pType = net.minecraft.core.registries.BuiltInRegistries.ENTITY_TYPE
-                  .getValue(net.minecraft.resources.Identifier.withDefaultNamespace("pillager"));
+               net.minecraft.world.entity.EntityType<?> skType = net.minecraft.core.registries.BuiltInRegistries.ENTITY_TYPE
+                  .getValue(net.minecraft.resources.Identifier.withDefaultNamespace("skeleton")); // RANGED hostile
                // create()+addFreshEntity (NOT spawn(), which validates the cell and returned null inside the
                // built-up village → engaged stayed false). Anchor on the fighter's current server position.
                net.minecraft.world.entity.Entity fe = level.getEntity(this.combatVillagerId);
                net.minecraft.core.BlockPos base = fe != null ? fe.blockPosition() : net.minecraft.core.BlockPos.containing(fx, fy, fz);
+               // MELEE hostile (zombie) — the fighter targets it.
                net.minecraft.world.entity.Entity zombie = zType == null ? null : zType.create(level, net.minecraft.world.entity.EntitySpawnReason.COMMAND);
                if (zombie != null) {
                   zombie.setPos(base.getX() + 2.5, base.getY() + 1.0, base.getZ() + 0.5);
                   level.addFreshEntity(zombie);
                }
-               if (pType != null) {
-                  net.minecraft.world.entity.Entity p = pType.create(level, net.minecraft.world.entity.EntitySpawnReason.COMMAND);
-                  if (p != null) {
-                     p.setPos(base.getX() + 7.5, base.getY() + 1.0, base.getZ() + 2.5);
-                     level.addFreshEntity(p);
+               // RANGED hostile (skeleton) — set IT to target the fighter so it FIRES arrows, exercising the
+               // villager's under-fire response (retreat to cover / reposition) AND engaging a ranged enemy.
+               if (skType != null && fe instanceof MillVillager) {
+                  net.minecraft.world.entity.Entity sk = skType.create(level, net.minecraft.world.entity.EntitySpawnReason.COMMAND);
+                  if (sk instanceof net.minecraft.world.entity.Mob skm && fe instanceof net.minecraft.world.entity.LivingEntity fle) {
+                     skm.setPos(base.getX() - 10.5, base.getY() + 1.0, base.getZ() + 0.5);
+                     level.addFreshEntity(skm);
+                     skm.setTarget(fle); // skeleton shoots the fighter
+                     this.combatSkeletonId = skm.getUUID();
                   }
                }
                if (fe instanceof MillVillager mv && zombie instanceof net.minecraft.world.entity.LivingEntity le) {
@@ -602,7 +618,18 @@ public final class MillClientSelfTest {
                   this.combatStartZ = mv.getZ();
                   this.combatEngaged = true;
                }
-               log("combat-spawn (server): fe=" + (fe != null) + " zombieCreated=" + (zombie != null) + " engaged=" + this.combatEngaged);
+               // HOSTILE VILLAGER (village-war): the raider (2nd fighter) targets a SEPARATE victim (3rd fighter)
+               // → villager-vs-villager combat, kept apart from fighter 0's mob fight.
+               net.minecraft.world.entity.Entity fe2 = this.raiderId != null ? level.getEntity(this.raiderId) : null;
+               net.minecraft.world.entity.Entity vic = this.raiderVictimId != null ? level.getEntity(this.raiderVictimId) : null;
+               if (fe2 instanceof MillVillager rmv && vic instanceof net.minecraft.world.entity.LivingEntity victimLe) {
+                  rmv.setTarget(victimLe);
+                  this.raiderStartX = rmv.getX();
+                  this.raiderStartZ = rmv.getZ();
+               }
+               log("combat-spawn (server): fe=" + (fe != null) + " zombie=" + (zombie != null)
+                  + " skeleton=" + (this.combatSkeletonId != null) + " raiderVillager=" + (this.raiderVictimId != null)
+                  + " engaged=" + this.combatEngaged);
             } catch (Throwable t) {
                recordException("combat-spawn(server)", t);
             }
@@ -648,6 +675,36 @@ public final class MillClientSelfTest {
             pass("combat-attack", "fighter dealt damage to its target (hurt or killed)");
          } else {
             log("combat-attack: target not yet damaged (fighter may still be closing the gap) — non-fatal");
+         }
+         // RANGED hostile (skeleton firing at the fighter): the fighter should still be alive and have kept
+         // maneuvering (reacting under fire — retreat to cover / reposition — not standing frozen).
+         if (this.combatSkeletonId != null) {
+            net.minecraft.world.entity.Entity sk = server.overworld().getEntity(this.combatSkeletonId);
+            if (mv.isAlive() && movedSq > 1.0) {
+               pass("combat-ranged", "fighter reacted to a RANGED hostile (skeleton) — alive & maneuvering; skeletonPresent=" + (sk != null));
+            } else {
+               log("combat-ranged: alive=" + mv.isAlive() + " moved2=" + String.format("%.1f", movedSq) + " — inconclusive");
+            }
+         } else {
+            skip("combat-ranged", "skeleton not spawned");
+         }
+         // HOSTILE VILLAGER (village-war): the 2nd fighter, made hostile, should engage the first (move/target).
+         if (this.raiderId != null) {
+            net.minecraft.world.entity.Entity re = server.overworld().getEntity(this.raiderId);
+            if (re instanceof MillVillager rmv) {
+               double rdx = rmv.getX() - this.raiderStartX;
+               double rdz = rmv.getZ() - this.raiderStartZ;
+               double rMoved = rdx * rdx + rdz * rdz;
+               if (rMoved > 1.0 || rmv.getTarget() != null) {
+                  pass("combat-villager", "hostile villager ENGAGED another villager: moved2=" + String.format("%.1f", rMoved) + " targeting=" + (rmv.getTarget() != null));
+               } else {
+                  log("combat-villager: raider moved2=" + String.format("%.1f", rMoved) + " targeting=" + (rmv.getTarget() != null) + " — inconclusive");
+               }
+            } else {
+               skip("combat-villager", "raider villager gone (died/despawned)");
+            }
+         } else {
+            skip("combat-villager", "only one fighter present — no villager-vs-villager pairing");
          }
       } catch (Throwable t) {
          fail("combat-check", t);

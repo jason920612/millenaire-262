@@ -34,6 +34,8 @@ public final class BehaviourCombat implements MillBehaviour {
    private int strafeTimer = 0;
    private boolean strafeRight = true;
    private int unreachableTicks = 0;
+   private org.millenaire.common.ai.nav.Mill3DNavigator nav3d; // 3D approach/positioning (ValueFieldNav)
+   private BlockPos combatGoal; // periodically-recomputed stand cell, driven toward every tick
 
    @Override
    public boolean canRun(MillVillager villager) {
@@ -60,13 +62,25 @@ public final class BehaviourCombat implements MillBehaviour {
       //    STRAFE sideways when at range. If the target sits where we can't stand next to it (in water, on a
       //    pillar), head for the nearest REACHABLE point toward it (vanilla moveTo stops at the closest node,
       //    e.g. the shore) and wait there — then GIVE UP after a while instead of freezing forever.
-      if (--this.repathCooldown <= 0 || villager.getNavigation().isDone()) {
+      // Recompute the tactical stand cell periodically; drive toward it through the SAME ground-up 3D
+      // navigator the work movement uses (ValueFieldNav) so combat approach/kite/strafe also gets 3D
+      // obstacle avoidance + jumps, then fall back to vanilla only when ValueFieldNav is off.
+      boolean recompute = --this.repathCooldown <= 0 || this.combatGoal == null || villager.getNavigation().isDone();
+      if (recompute) {
          this.repathCooldown = 5;
-         BlockPos goal = desiredCombatCell(villager, target, optimal, dist);
+         this.combatGoal = desiredCombatCell(villager, target, optimal, dist);
+      }
+      BlockPos goal = this.combatGoal;
+      double sp = (dist > optimal + 4.0) ? SPEED + 0.25 : SPEED; // hurry to close the gap
+      if (org.millenaire.common.config.MillConfigValues.ValueFieldNav && goal != null) {
+         if (this.nav3d == null) {
+            this.nav3d = new org.millenaire.common.ai.nav.Mill3DNavigator();
+         }
+         this.nav3d.navigateTo(villager, goal); // must run EVERY tick (drives the MoveControl)
+      } else if (recompute) {
          double gx = goal != null ? goal.getX() + 0.5 : target.getX();
          double gy = goal != null ? goal.getY() : target.getY();
          double gz = goal != null ? goal.getZ() + 0.5 : target.getZ();
-         double sp = (dist > optimal + 4.0) ? SPEED + 0.25 : SPEED; // hurry to close the gap
          villager.getNavigation().moveTo(gx, gy, gz, sp);
       }
       boolean inRange = (!ranged && dist <= MELEE_RANGE)
@@ -122,6 +136,10 @@ public final class BehaviourCombat implements MillBehaviour {
    @Override
    public void onStop(MillVillager villager) {
       villager.getNavigation().stop();
+      this.combatGoal = null;
+      if (this.nav3d != null) {
+         this.nav3d.reset();
+      }
    }
 
    /**

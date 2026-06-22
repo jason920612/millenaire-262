@@ -1,14 +1,18 @@
 package org.millenaire.common.buildingplan;
 
 import java.util.HashMap;
+import java.util.Optional;
 import net.minecraft.world.level.block.Block;
 import net.minecraft.world.level.block.state.BlockState;
 import net.minecraft.world.level.block.Blocks;
 import net.minecraft.world.item.Items;
 import net.minecraft.world.item.Item;
 import org.millenaire.common.config.MillConfigValues;
+import org.millenaire.common.convert.BlockSpec;
+import org.millenaire.common.convert.ItemSpec;
+import org.millenaire.common.convert.MillConvert;
+import org.millenaire.common.convert.PlanColour;
 import org.millenaire.common.item.InvItem;
-import org.millenaire.common.utilities.BlockStateUtilities;
 import org.millenaire.common.utilities.MillLog;
 
 public class PointType {
@@ -46,11 +50,9 @@ public class PointType {
             String param_meta_or_values = params[2];
             String param_set_after = params[3];
             String param_cost_itemorblock = null;
-            String param_cost_blockvalues = null;
             String param_cost_quantity = null;
             if (params.length >= 8) {
                param_cost_itemorblock = params[5];
-               param_cost_blockvalues = params[6];
                param_cost_quantity = params[7];
             }
 
@@ -58,68 +60,87 @@ public class PointType {
                MillLog.major(null, "Loading colour point: " + BuildingPlan.getColourString(colour) + ", " + param_special_type);
             }
 
-            PointType pt;
             if (param_block_location.length() == 0) {
-               if (!SpecialPointTypeList.isSpecialPointTypeKnow(param_special_type)) {
-                  throw new MillLog.MillenaireException("Special block type " + param_special_type + " in line " + s + " is not a recognized special type.");
-               }
-
-               pt = new PointType(colour, param_special_type);
-            } else if (param_meta_or_values.matches("\\d+")) {
-               pt = new PointType(
-                  colour, param_special_type, param_block_location, Integer.parseInt(param_meta_or_values), Boolean.parseBoolean(param_set_after)
-               );
-            } else {
-               pt = new PointType(colour, param_special_type, param_block_location, param_meta_or_values, Boolean.parseBoolean(param_set_after));
+               // Special-type-only line (no block). These keep their own cost handling because their cost
+               // can be an "item:"-prefixed InvItem (banners) that the unified BlockSpec path does not carry.
+               return readSpecialPoint(s, colour, param_special_type, param_cost_itemorblock, param_cost_quantity);
             }
 
-            if (param_cost_itemorblock != null) {
-               int quantity = Integer.parseInt(param_cost_quantity);
-               if (quantity == 0) {
-                  pt.setCostToFree();
-               } else if (param_cost_itemorblock.equals("anywood")) {
-                  pt.setCost(Items.STICK, quantity);
-               } else if (param_cost_itemorblock.startsWith("item:")) {
-                  String itemKey = param_cost_itemorblock.substring("item:".length(), param_cost_itemorblock.length()).toLowerCase();
-                  if (!InvItem.INVITEMS_BY_NAME.containsKey(itemKey)) {
-                     throw new MillLog.MillenaireException("Unknown item: " + itemKey + " in line " + s);
-                  }
-
-                  pt.setCost(InvItem.INVITEMS_BY_NAME.get(itemKey), quantity);
-               } else if (net.minecraft.core.registries.BuiltInRegistries.BLOCK.getValue(net.minecraft.resources.Identifier.parse(param_cost_itemorblock)) != null
-                  && net.minecraft.core.registries.BuiltInRegistries.BLOCK.getValue(net.minecraft.resources.Identifier.parse(param_cost_itemorblock)).asItem() != Items.AIR) {
-                  Block block = net.minecraft.core.registries.BuiltInRegistries.BLOCK.getValue(net.minecraft.resources.Identifier.parse(param_cost_itemorblock));
-                  if (param_cost_blockvalues.length() > 0) {
-                     BlockState bs = BlockStateUtilities.getBlockStateWithValues(block.defaultBlockState(), param_cost_blockvalues);
-                     pt.setCost(bs, quantity);
-                  } else {
-                     pt.setCost(block.defaultBlockState(), quantity);
-                  }
-               } else {
-                  Item costItem = net.minecraft.core.registries.BuiltInRegistries.ITEM
-                     .getValue(net.minecraft.resources.Identifier.parse(param_cost_itemorblock));
-                  if (costItem == null || costItem == Items.AIR) {
-                     throw new MillLog.MillenaireException(
-                        "The cost of block "
-                           + param_special_type
-                           + " in line "
-                           + s
-                           + " could not be read. "
-                           + param_cost_itemorblock
-                           + " is not a recognised item or block."
-                     );
-                  }
-
-                  pt.setCost(costItem, quantity);
-               }
-            } else if (pt.getBlockState() == null) {
+            // Block-bearing line: the block, its state and its (simple) cost come from the unified
+            // conversion table parsed once in LegacyTables.loadPlanColours(). The meta column is still kept
+            // here for the few exporters that read getMeta() (PANEL->wall sign, flower pots). A colour the
+            // central parse could not resolve (e.g. a stale custom-mod line) was already logged-and-skipped
+            // there; surface it as the recoverable MillenaireException so loadBuildingPointsFile skips this
+            // line too (matching the legacy per-line content-error contract) rather than fatalising.
+            BlockSpec spec;
+            try {
+               spec = MillConvert.planColourToSpec(new PlanColour(colour));
+            } catch (RuntimeException unresolved) {
                throw new MillLog.MillenaireException(
-                  "The cost of block " + param_special_type + " is not set and it has no blockstate to use as a generic cost."
+                  "Block for line " + s + " could not be resolved: " + unresolved.getMessage()
                );
             }
-
+            int meta = param_meta_or_values.matches("\\d+") ? Integer.parseInt(param_meta_or_values) : 0;
+            PointType pt = new PointType(colour, param_special_type, spec, meta, Boolean.parseBoolean(param_set_after));
+            pt.applyCost(spec.cost());
             return pt;
          }
+      }
+   }
+
+   /**
+    * Builds a special-type-only point (empty block column). Preserves the legacy cost branches that the
+    * unified {@link BlockSpec} path cannot represent: free, {@code anywood} (sticks), and {@code item:}
+    * InvItem references (banners), which may carry a meta/special the simple {@link ItemSpec} cannot.
+    */
+   private static PointType readSpecialPoint(String s, int colour, String specialType, String costRef, String costQty)
+      throws MillLog.MillenaireException {
+      if (!SpecialPointTypeList.isSpecialPointTypeKnow(specialType)) {
+         throw new MillLog.MillenaireException("Special block type " + specialType + " in line " + s + " is not a recognized special type.");
+      }
+
+      PointType pt = new PointType(colour, specialType);
+
+      if (costRef == null) {
+         // 5-field special line with no explicit cost and no block to self-price.
+         throw new MillLog.MillenaireException(
+            "The cost of block " + specialType + " is not set and it has no blockstate to use as a generic cost."
+         );
+      }
+
+      int quantity = Integer.parseInt(costQty);
+      if (quantity == 0) {
+         pt.setCostToFree();
+      } else if (costRef.equals("anywood")) {
+         pt.setCost(Items.STICK, quantity);
+      } else if (costRef.startsWith("item:")) {
+         String itemKey = costRef.substring("item:".length()).toLowerCase();
+         if (!InvItem.INVITEMS_BY_NAME.containsKey(itemKey)) {
+            throw new MillLog.MillenaireException("Unknown item: " + itemKey + " in line " + s);
+         }
+         pt.setCost(InvItem.INVITEMS_BY_NAME.get(itemKey), quantity);
+      } else {
+         Item costItem = net.minecraft.core.registries.BuiltInRegistries.ITEM
+            .getValue(net.minecraft.resources.Identifier.parse(costRef));
+         if (costItem == Items.AIR) {
+            throw new MillLog.MillenaireException(
+               "The cost of block " + specialType + " in line " + s + " could not be read. "
+                  + costRef + " is not a recognised item or block."
+            );
+         }
+         pt.setCost(costItem, quantity);
+      }
+
+      return pt;
+   }
+
+   /** Applies a {@link BlockSpec} cost (block-bearing lines): empty = free, present = item+quantity. */
+   private void applyCost(Optional<ItemSpec> cost) {
+      if (cost.isEmpty()) {
+         setCostToFree();
+      } else {
+         ItemSpec itemSpec = cost.get();
+         setCost(itemSpec.item(), itemSpec.count().value());
       }
    }
 
@@ -132,29 +153,19 @@ public class PointType {
       this.blockState = null;
    }
 
-   public PointType(int colour, String label, String minecraftBlockName, int meta, boolean secondStep) {
+   /**
+    * Block-bearing point built from the unified {@link BlockSpec} (block + state resolved once in
+    * {@code LegacyTables}). The {@code meta} is the legacy metadata column, kept only for the exporters
+    * that still read {@link #getMeta()}.
+    */
+   public PointType(int colour, String label, BlockSpec spec, int meta, boolean secondStep) {
       this.colour = colour;
-      this.block = net.minecraft.core.registries.BuiltInRegistries.BLOCK.getValue(net.minecraft.resources.Identifier.parse(minecraftBlockName));
+      this.blockState = spec.state();
+      this.block = spec.state().getBlock();
       this.meta = meta;
       this.secondStep = secondStep;
-      this.blockState = this.block.defaultBlockState();
       this.specialType = null;
       this.label = label;
-   }
-
-   public PointType(int colour, String label, String minecraftBlockName, String values, boolean secondStep) throws MillLog.MillenaireException {
-      this.colour = colour;
-      this.block = net.minecraft.core.registries.BuiltInRegistries.BLOCK.getValue(net.minecraft.resources.Identifier.parse(minecraftBlockName));
-      if (this.block == null) {
-         throw new MillLog.MillenaireException("Unknown block named " + minecraftBlockName + ".");
-      } else {
-         BlockState bs = BlockStateUtilities.getBlockStateWithValues(this.block.defaultBlockState(), values);
-         this.blockState = bs;
-         this.meta = 0;
-         this.secondStep = secondStep;
-         this.specialType = null;
-         this.label = label;
-      }
    }
 
    public Block getBlock() {

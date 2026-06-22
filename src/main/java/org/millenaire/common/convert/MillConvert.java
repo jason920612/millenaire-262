@@ -253,12 +253,13 @@ public final class MillConvert {
       return new ItemStack(spec.item(), legacy.count().value());
    }
 
-   /** Maps a building-plan pixel colour to a modern placement + optional cost. */
+   /**
+    * Maps a building-plan pixel colour to a modern placement + optional cost, from the centrally-parsed
+    * {@code blocklist.txt} table. The table must have been loaded via
+    * {@link LegacyTables#loadPlanColours(java.io.File)} first; an unknown colour or unloaded table
+    * crashes loudly via {@link MillCrash} rather than degrading to AIR.
+    */
    public static BlockSpec planColourToSpec(PlanColour colour) {
-      BlockSpec spec = LegacyTables.get().planColours.get(colour);
-      if (spec == null) {
-         throw MillCrash.fail("Convert", colour + " not yet in conversion table");
-      }
-      return spec;
+      return LegacyTables.planColourToSpec(colour);
    }
 }

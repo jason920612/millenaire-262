@@ -681,6 +681,11 @@ public class BuildingPlan implements IBuildingPlan, MillCommonUtilities.Weighted
 
    private static boolean loadBuildingPointsFile(File file) {
       try {
+         // Centralise the blocklist parse: build the unified PlanColour->BlockSpec table once (M2). The
+         // per-line readColourPoint below then obtains each block-bearing colour's block/state/cost from
+         // MillConvert.planColourToSpec instead of resolving them ad-hoc.
+         org.millenaire.common.convert.LegacyTables.loadPlanColours(file);
+
          BufferedReader reader = MillCommonUtilities.getReader(file);
 
          String line;

@@ -5,10 +5,12 @@ import com.google.common.collect.Maps;
 import java.util.Iterator;
 import java.util.Map;
 import java.util.Map.Entry;
+import java.util.Set;
 import org.jspecify.annotations.Nullable;
 
 import net.minecraft.core.registries.BuiltInRegistries;
 import net.minecraft.world.level.block.Block;
+import net.minecraft.world.level.block.Blocks;
 import net.minecraft.world.level.block.state.BlockState;
 import net.minecraft.world.level.block.state.StateDefinition;
 import net.minecraft.world.level.block.state.properties.Property;
@@ -23,6 +25,36 @@ public class BlockStateUtilities {
    private static final Splitter COMMA_SPLITTER = Splitter.on(',');
    private static final Splitter EQUAL_SPLITTER = Splitter.on('=').limit(2);
 
+   /**
+    * 1.12-only block-state properties that 26.2 genuinely dropped (flattening / mechanic removal) and
+    * which have NO modern equivalent on the target block. When a {@code prop=value} names one of these,
+    * skipping it is correct (the legacy data still parses; the rest of the block places). Anything NOT
+    * in this set that the block lacks is treated as a porting error and crashes (fail-fast) — that is
+    * what would have caught the floating-torch bug (a real {@code facing} on {@code minecraft:torch}
+    * silently dropped → floor torch).
+    *
+    * <p>Seeded from what the real blocklist/buildings/goals actually skip (harness "Skipping unknown
+    * legacy property" sweep). Each entry is a 1.12 property whose information now lives in the flattened
+    * block id itself, so dropping the property is lossless:</p>
+    * <ul>
+    *   <li>{@code check_decay} — 1.12 leaves decay-scheduling flag; 26.2 LeavesBlock has no such property
+    *       (only PERSISTENT, which the {@code decayable} alias already handles).</li>
+    *   <li>{@code variant} — 1.12 sub-type selector (e.g. {@code stone variant=diorite},
+    *       {@code double_plant variant=double_rose}); 26.2 flattened every variant into its own block id,
+    *       so the variant is encoded by the id and the leftover property is redundant.</li>
+    * </ul>
+    *
+    * <p>Deliberately NOT whitelisted: {@code facing}, {@code half}, {@code type}, {@code axis}, … — these
+    * are real 26.2 properties. If one is skipped on a concrete (non-AIR) block it means the property
+    * mapping is wrong (the torch class of bug), so it must crash. (The harness sees {@code facing}/
+    * {@code half}/{@code type} skips only on {@code minecraft:air}, i.e. an unresolved legacy block id —
+    * handled by the AIR guard below, not by widening this whitelist.)</p>
+    */
+   private static final Set<String> DROPPED_1_12_PROPERTIES = Set.of(
+      "check_decay", // 1.12 leaves decay flag — no 26.2 equivalent
+      "variant"      // 1.12 sub-type selector — folded into the flattened block id
+   );
+
    private static Map<Property<?>, Comparable<?>> getBlockStatePropertyValueMap(Block block, String values) {
       Map<Property<?>, Comparable<?>> map = Maps.newHashMap();
       // Empty/blank values (common after the 1.12 metadata→26.2 flattened-block migration, where the
@@ -36,6 +68,21 @@ public class BlockStateUtilities {
          for (Property<?> p : def.getProperties()) {
             map.put(p, def.getValue(p));
          }
+         return map;
+      } else if (block == Blocks.AIR) {
+         // The block id failed to resolve. In 26.2 BuiltInRegistries.BLOCK.getValue() never returns null
+         // for an unknown id — it returns AIR — so a legacy id that 26.2 renamed (e.g. the unflattened
+         // "red_flower", "yellow_flower", "double_plant" still used by some harvest/plant goal data)
+         // silently arrives here as AIR with leftover properties (type=poppy, facing=north, …). AIR has
+         // no properties, so every prop=value would otherwise be "skipped" and hide the unresolved-id
+         // problem. Skip them all here (AIR cannot hold any state anyway) WITHOUT polluting the
+         // property whitelist with real 26.2 names like facing/half/type. This keeps facing/half/type
+         // fail-fast on concrete blocks (the torch class of bug) while tolerating the separate
+         // unresolved-legacy-block-id data issue, which is fixed in the conversion tables, not here.
+         MillLog.milldebug(
+            "BlockStateUtilities",
+            "Block id resolved to AIR; ignoring leftover properties '" + values + "' (likely an unflattened legacy block id)"
+         );
          return map;
       } else {
          StateDefinition<Block, BlockState> stateDefinition = block.getStateDefinition();
@@ -68,16 +115,25 @@ public class BlockStateUtilities {
                }
             }
             if (property == null) {
-               // Unknown legacy 1.12 property (check_decay, age on leaves, variant, ...). 26.2 dropped it;
-               // skip it so the rest of the legacy building-data block still places, instead of failing
-               // the whole block (was logged as "Could not parse values ...").
-               // Make the skip LOUD (debug-mode only) so a real-but-unhandled 26.2 property does not
-               // get silently ignored: if a building looks wrong, these lines name the dropped property.
-               MillLog.milldebug(
-                  "BlockStateUtilities",
-                  "Skipping unknown legacy property '" + propName + "=" + rawValue + "' for block " + block + " (no matching 26.2 property)"
+               if (DROPPED_1_12_PROPERTIES.contains(propName)) {
+                  // A genuinely-dropped 1.12 property (see DROPPED_1_12_PROPERTIES): skip it so the rest of
+                  // the legacy building-data block still places. Logged (debug-mode) so a building that
+                  // looks wrong can be traced back to the dropped property.
+                  MillLog.milldebug(
+                     "BlockStateUtilities",
+                     "Skipping known-dropped 1.12 property '" + propName + "=" + rawValue + "' for block " + block
+                  );
+                  continue;
+               }
+               // FAIL-FAST: this block has no such property and it is NOT a known-dropped 1.12 one. The old
+               // code silently skipped it, which is exactly how the floating-torch bug hid (a real
+               // "facing" on minecraft:torch was dropped → floor torch). Consistent with
+               // MillConvert.dotSpecToBlockState, crash loudly so the wrong block is never produced.
+               throw MillCrash.fail(
+                  "Convert",
+                  block + " has no property '" + propName + "=" + rawValue
+                     + "' (not a known-dropped 1.12 property — likely a porting error)"
                );
-               continue;
             }
 
             Comparable<?> comparable = getValueHelper(property, rawValue);
@@ -87,13 +143,13 @@ public class BlockStateUtilities {
                comparable = getValueHelper(property, "true".equals(rawValue) ? "low" : "none");
             }
             if (comparable == null) {
-               // Value still unparseable for this 26.2 property — skip just this property rather than
-               // discarding the whole block. Logged (debug-mode) so a genuinely-wrong value is visible.
-               MillLog.milldebug(
-                  "BlockStateUtilities",
-                  "Skipping unparseable value '" + rawValue + "' for property '" + property.getName() + "' on block " + block
+               // FAIL-FAST: the property IS real on this block but it rejects this value. Unlike a
+               // dropped property, there is no "lossless skip" here — silently dropping it would place
+               // the wrong state. Consistent with MillConvert.setNonIntegerValue, crash loudly.
+               throw MillCrash.fail(
+                  "Convert",
+                  "property '" + property.getName() + "' on block " + block + " rejects value '" + rawValue + "'"
                );
-               continue;
             }
 
             map.put(property, comparable);

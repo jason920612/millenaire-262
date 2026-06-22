@@ -4040,7 +4040,11 @@ public abstract class MillVillager extends PathfinderMob implements IAStarPathed
          }
 
          StreamReadWrite.writeNullablePoint(this.getGoalDestPoint(), data);
-         data.writeBoolean(this.shouldLieDown);
+         // The lying-down pose is decided on the CLIENT from this synced flag. The client can't reliably tell
+         // we're fighting (the target is sent only as a UUID it often fails to resolve, so its getTarget() stays
+         // null and isVillagerSleeping() would read true). So gate the WIRE value on the server's authoritative
+         // getTarget(): during combat we send shouldLieDown=false, and the client renders STANDING, not asleep.
+         data.writeBoolean(this.shouldLieDown && this.getTarget() == null);
          StreamReadWrite.writeNullableString(this.dialogueTargetFirstName, data);
          StreamReadWrite.writeNullableString(this.dialogueTargetLastName, data);
          data.writeChar(this.dialogueColour);

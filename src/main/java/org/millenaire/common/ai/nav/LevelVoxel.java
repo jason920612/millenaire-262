@@ -14,6 +14,7 @@ import net.minecraft.world.level.block.state.BlockState;
 public final class LevelVoxel implements Voxel {
    private final Level level;
    private final java.util.HashMap<Long, Boolean> cache = new java.util.HashMap<>();
+   private final java.util.HashMap<Long, Boolean> tallCache = new java.util.HashMap<>();
 
    public LevelVoxel(Level level) {
       this.level = level;
@@ -31,5 +32,20 @@ public final class LevelVoxel implements Voxel {
       boolean solid = !s.getCollisionShape(this.level, p).isEmpty();
       this.cache.put(key, solid);
       return solid;
+   }
+
+   @Override
+   public boolean tall(int x, int y, int z) {
+      long key = BlockPos.asLong(x, y, z);
+      Boolean cached = this.tallCache.get(key);
+      if (cached != null) {
+         return cached;
+      }
+      BlockPos p = new BlockPos(x, y, z);
+      net.minecraft.world.phys.shapes.VoxelShape shape = this.level.getBlockState(p).getCollisionShape(this.level, p);
+      // Collision top above one full block (fence/wall/gate = 1.5) → can't be jumped onto/over.
+      boolean tall = !shape.isEmpty() && shape.max(net.minecraft.core.Direction.Axis.Y) > 1.0;
+      this.tallCache.put(key, tall);
+      return tall;
    }
 }

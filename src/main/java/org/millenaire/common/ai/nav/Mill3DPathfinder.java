@@ -113,8 +113,10 @@ public final class Mill3DPathfinder {
          }
          if (v.standable(nx, y, nz)) {
             out.accept(new BlockPos(nx, y, nz), LexCost.normal(base)); // walk same level
-         } else if (v.standable(nx, y + 1, nz) && v.clearBody(x, y + 2, z) && !v.isSolid(nx, y + 2, nz)) {
-            out.accept(new BlockPos(nx, y + 1, nz), LexCost.normal(base)); // step / jump up one (climbing free)
+         } else if (v.standable(nx, y + 1, nz) && !v.tall(nx, y, nz) && v.clearBody(x, y + 2, z) && !v.isSolid(nx, y + 2, nz)) {
+            // step / jump up one (climbing free) — but NOT onto a fence/wall: its 1.5-high collision can't be
+            // jumped, so treat it as an obstacle to route around (the "stuck trying to hop a fence" fix).
+            out.accept(new BlockPos(nx, y + 1, nz), LexCost.normal(base));
          } else if (v.clearBody(nx, y, nz)) {
             for (int dy = -1; dy >= -5; dy--) { // drop down up to 5 (lets a villager step off a ledge/pillar)
                if (v.standable(nx, y + dy, nz)) {

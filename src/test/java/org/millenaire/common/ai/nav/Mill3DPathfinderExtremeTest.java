@@ -52,6 +52,40 @@ class Mill3DPathfinderExtremeTest {
       }
    }
 
+   /** World with explicit solid cells AND tall (fence/wall, 1.5-high) cells. */
+   private static Voxel withTall(Set<Long> solid, Set<Long> tall) {
+      return new Voxel() {
+         public boolean isSolid(int x, int y, int z) {
+            return solid.contains(BlockPos.asLong(x, y, z));
+         }
+
+         public boolean tall(int x, int y, int z) {
+            return tall.contains(BlockPos.asLong(x, y, z));
+         }
+      };
+   }
+
+   @Test
+   void goesAroundAFenceInsteadOfHoppingIt() {
+      // A fence line (1.5-high, un-jumpable) at x=3, z=0..2, open at z=-1. The villager must route around it,
+      // never trying to step onto it — the real "stuck trying to hop a 1.5-high fence" bug.
+      Set<Long> solid = new HashSet<>();
+      Set<Long> tall = new HashSet<>();
+      floor(solid, 0, 6, -1, 3);
+      for (int z = 0; z <= 2; z++) {
+         long k = BlockPos.asLong(3, 1, z);
+         solid.add(k);
+         tall.add(k);
+      }
+      List<BlockPos> path = Mill3DPathfinder.findPath(withTall(solid, tall), new BlockPos(0, 1, 0), new BlockPos(6, 1, 0), BUDGET);
+      assertNotNull(path, "found a route around the fence");
+      assertTrue(path.get(path.size() - 1).equals(new BlockPos(6, 1, 0)), "reaches the goal past the fence");
+      assertTrue(path.stream().anyMatch(p -> p.getZ() <= -1), "detours around the fence's open end");
+      for (int z = 0; z <= 2; z++) {
+         assertFalse(path.contains(new BlockPos(3, 2, z)), "never hops ONTO the fence top at z=" + z);
+      }
+   }
+
    @Test
    void runningJumpsA2WideGap() {
       // Floor x=0..6 with x=2,3 removed → a 2-WIDE void (stream / wide path) only the running jump can clear.

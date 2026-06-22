@@ -25,4 +25,13 @@ public interface Voxel {
    default boolean clearBody(int x, int y, int z) {
       return !isSolid(x, y, z) && !isSolid(x, y + 1, z);
    }
+
+   /**
+    * Is the block at (x,y,z) TALLER than one block (collision top &gt; 1.0) — a fence, wall or gate? Its
+    * 1.5-high collision defeats a normal step-up, so a villager can't jump onto/over it (exactly the "stuck on
+    * a fence" case). The pathfinder must route AROUND it, not climb it. Synthetic test worlds: only normal blocks.
+    */
+   default boolean tall(int x, int y, int z) {
+      return false;
+   }
 }

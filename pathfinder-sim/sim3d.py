@@ -15,9 +15,11 @@ H4 = [(1,0),(-1,0),(0,1),(0,-1)]
 
 
 class Voxel:
-    def __init__(self, solid):           # solid: set of (x,y,z)
+    def __init__(self, solid, tall=None):   # solid: set of (x,y,z); tall: fence/wall cells (1.5 high)
         self.s = solid
+        self.t = tall or set()
     def solid(self, x,y,z): return (x,y,z) in self.s
+    def tall(self, x,y,z):  return (x,y,z) in self.t   # >1-block collision: can't be jumped onto
     def standable(self, x,y,z):
         return self.solid(x,y-1,z) and not self.solid(x,y,z) and not self.solid(x,y+1,z)
     def clearBody(self, x,y,z):
@@ -35,8 +37,8 @@ def neighbors(v, p):
             continue
         if v.standable(nx,y,nz):
             out.append(((nx,y,nz), base))
-        elif v.standable(nx,y+1,nz) and v.clearBody(x,y+2,z) and not v.solid(nx,y+2,nz):
-            out.append(((nx,y+1,nz), base))
+        elif v.standable(nx,y+1,nz) and not v.tall(nx,y,nz) and v.clearBody(x,y+2,z) and not v.solid(nx,y+2,nz):
+            out.append(((nx,y+1,nz), base))   # NOT onto a fence/wall (1.5 tall — un-jumpable)
         elif v.clearBody(nx,y,nz):
             dy = -1
             while dy >= -5:
@@ -188,6 +190,27 @@ def ledge2():
     s=set(); floor(s,0,6,0,0)
     for y in (1,2): s.add((3,y,0))            # a 2-high ledge straight ahead (can't jump 2 — must it go round?)
     return "2-high ledge ahead (no side route)", Voxel(s),(0,1,0),(4,1,0),0,(0,6),(0,4)
+
+@scenario
+def fence():
+    s=set(); floor(s,0,6,-1,3); tall=set()
+    for z in (0,1,2):                         # a 1.5-high fence line at x=3 (z=0..2), open past z=2
+        s.add((3,1,z)); tall.add((3,1,z))
+    return "1.5-high fence — go AROUND, don't hop over", Voxel(s,tall),(0,1,0),(6,1,0),0,(0,6),(0,3)
+
+@scenario
+def diag_gap():
+    s=set()
+    s.update({(0,0,0),(1,0,1),(2,0,2),(3,0,3)})  # stepping stones on the DIAGONAL with 1-gaps between
+    return "diagonal 1-gap stepping stones", Voxel(s),(0,1,0),(3,1,3),0,(0,3),(0,3)
+
+@scenario
+def maze():
+    s=set(); floor(s,0,8,0,6)
+    walls=[(2,1),(2,2),(2,3),(2,4),  (5,2),(5,3),(5,4),(5,5),(5,6)]
+    for wx,wz in walls:
+        s.add((wx,1,wz)); s.add((wx,2,wz))
+    return "serpentine maze", Voxel(s),(0,1,0),(8,1,6),0,(0,8),(0,3)
 
 @scenario
 def pit():

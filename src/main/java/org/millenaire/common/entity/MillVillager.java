@@ -2192,6 +2192,25 @@ public abstract class MillVillager extends PathfinderMob implements IAStarPathed
       this.updateSleepingPose();
    }
 
+   @Override
+   public void setTarget(net.minecraft.world.entity.LivingEntity target) {
+      super.setTarget(target);
+      if (target != null) {
+         // Entering combat must WAKE the villager SYNCHRONOUSLY — now, before the combat MoveControl drives the
+         // body this very tick — otherwise it stays in the vanilla SLEEPING pose (renders lying down) AND skates
+         // at combat speed (vanilla travel() never gates movement on sleep). The night sleep goal keeps
+         // re-setting shouldLieDown, so clear it too. Mirrors updateSleepingPose()'s wake branch without vanilla
+         // startSleeping/stopSleeping's bed-centre teleport.
+         this.shouldLieDown = false;
+         if (this.getPose() == Pose.SLEEPING) {
+            this.setPose(Pose.STANDING);
+         }
+         if (this.getSleepingPos().isPresent()) {
+            this.clearSleepingPos();
+         }
+      }
+   }
+
    /**
     * Bridges the Mill "lie down" state to the vanilla rendering path. The client villager renderer
     * (LivingEntityRenderer) draws a sleeping entity when {@link #getPose()} is {@link Pose#SLEEPING}

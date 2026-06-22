@@ -43,12 +43,23 @@ public final class Mill3DPathfinder {
       g.put(start.asLong(), LexCost.ZERO);
       open.add(new Node(start, LexCost.ZERO, heuristic(start, goal)));
       int expanded = 0;
+      // Track the closest-to-goal node seen, so that when the goal can't be fully reached within the node
+      // budget (a long trip) we return a BEST-EFFORT PARTIAL path toward it rather than null. The villager
+      // then advances + re-plans the next leg — incremental long-range progress, so "no route" only ever
+      // means genuinely zero progress possible (truly walled in → the escape behaviour handles it).
+      BlockPos best = start;
+      double bestDist = heuristic(start, goal).scalarCost;
       while (!open.isEmpty() && expanded < maxNodes) {
          Node cur = open.poll();
          long ck = cur.pos.asLong();
          LexCost known = g.get(ck);
          if (known != null && cur.g.compareTo(known) > 0) {
             continue;
+         }
+         double h = heuristic(cur.pos, goal).scalarCost;
+         if (h < bestDist) {
+            bestDist = h;
+            best = cur.pos;
          }
          // Reached: standing ON the goal, OR — when the goal is a NON-standable block (a log/crop/ore the
          // villager works AT, or any occupied cell) — standing in an adjacent cell within reach. Without this
@@ -70,7 +81,20 @@ public final class Mill3DPathfinder {
             }
          });
       }
-      return null;
+      // Goal not fully reached within budget → best-effort partial path toward it.
+      if (!best.equals(start)) {
+         return reconstruct(from, start, best);
+      }
+      // No progress toward the goal at all: step to ANY walkable neighbour and re-plan next leg, so we never
+      // report "no route" while the villager can still move. null only if the start is fully encased (zero
+      // neighbours) — a genuine trap the escape behaviour handles.
+      BlockPos[] step = {null};
+      forEachNeighbor(v, start, (nb, c) -> {
+         if (step[0] == null) {
+            step[0] = nb;
+         }
+      });
+      return step[0] == null ? null : List.of(start, step[0]);
    }
 
    /** Enumerate the 3D move edges out of a standable cell, calling {@code out} with each (neighbour, cost). */
@@ -92,7 +116,7 @@ public final class Mill3DPathfinder {
          } else if (v.standable(nx, y + 1, nz) && v.clearBody(x, y + 2, z) && !v.isSolid(nx, y + 2, nz)) {
             out.accept(new BlockPos(nx, y + 1, nz), LexCost.normal(base)); // step / jump up one (climbing free)
          } else if (v.clearBody(nx, y, nz)) {
-            for (int dy = -1; dy >= -3; dy--) { // drop down up to 3
+            for (int dy = -1; dy >= -5; dy--) { // drop down up to 5 (lets a villager step off a ledge/pillar)
                if (v.standable(nx, y + dy, nz)) {
                   out.accept(new BlockPos(nx, y + dy, nz), LexCost.normal(base + DROP * (-dy)));
                   break;

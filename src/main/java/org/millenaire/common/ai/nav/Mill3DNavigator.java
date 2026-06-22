@@ -13,7 +13,7 @@ import org.millenaire.common.entity.MillVillager;
  * routes actually traversed. Re-plans on a timer, when off-path, or when the goal moves.
  */
 public final class Mill3DNavigator {
-   private static final int MAX_NODES = 4000;
+   private static final int MAX_NODES = 8000; // bigger budget for medium-range 3D routes (long range → HPA*)
    private static final double SPEED = 1.0;
    private static final int REPLAN_TICKS = 40;
 
@@ -102,9 +102,9 @@ public final class Mill3DNavigator {
       float w = (float) org.millenaire.common.config.MillConfigValues.VFNavDangerWeight;
       Mill3DPathfinder.CostField field = (x, y, z) -> w * danger.dangerAt(x, z);
       this.path = Mill3DPathfinder.findPath(new LevelVoxel(villager.level()), villager.blockPosition(), goal, MAX_NODES, field);
-      // Fail LOUD (no silent give-up): surface that the 3D pathfinder found no route, with the exact terrain
-      // coords, so its gaps are visible + fixable. Throttled so a persistently-unreachable goal doesn't spam.
-      if (this.path == null || this.path.size() < 2) {
+      // Fail LOUD only on a GENUINE no-route (path == null). A size-1 path means "already adjacent to a
+      // non-standable goal" — i.e. the villager is at the worksite — which is success, not a failure.
+      if (this.path == null) {
          if (this.noRouteStreak++ % 60 == 0) {
             org.millenaire.common.utilities.MillLog.printException(
                "███ 3D-NAV: NO route ███ " + villager.blockPosition() + " → " + goal + " for " + villager,

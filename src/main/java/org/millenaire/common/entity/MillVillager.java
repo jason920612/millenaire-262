@@ -515,7 +515,9 @@ public abstract class MillVillager extends PathfinderMob implements IAStarPathed
          // jumpPenalty kept SMALL (0.3): it must only be a gentle tiebreaker for flatter routes, NOT a
          // deterrent — at 2.0 it made every 1-block step-up expensive, so on hilly/uphill terrain the A*
          // exhausted its node budget on flat directions and never found the climb → villagers got stuck.
-         nav.configureCost(this.aiInfluence, 1.0F, 0.3F);
+         nav.configureCost(this.aiInfluence,
+            (float) org.millenaire.common.config.MillConfigValues.VFNavDangerWeight,
+            (float) org.millenaire.common.config.MillConfigValues.VFNavDropPenalty);
       }
    }
 

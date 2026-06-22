@@ -73,6 +73,11 @@ public class MillConfigValues {
     *  "one objective, layered solvers" replacement for the heuristic movement behaviours. Default off; flipped
     *  on per phase as it is built + harness-validated. See Millenaire/AI-NAV-REWRITE-PLAN.md. */
    public static boolean ValueFieldNav = true;
+   /** Value-field cost weights, in "equivalent walk-blocks" (Phase 7 tunables — adjust without recompiling).
+    *  danger = how many detour blocks avoiding a hostile/hazard cell is worth; drop = penalty per downward
+    *  step (climbing up is free). Defaults are sane starting points; tune against a populated village. */
+   public static double VFNavDangerWeight = 1.0;
+   public static double VFNavDropPenalty = 0.3;
    public static boolean displayNames = true;
    public static boolean displayStart = true;
    public static final String NEOL = System.getProperty("line.separator");

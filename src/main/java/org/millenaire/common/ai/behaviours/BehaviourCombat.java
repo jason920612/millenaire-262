@@ -177,19 +177,13 @@ public final class BehaviourCombat implements MillBehaviour {
       return findStandable(villager.level(), (int) Math.floor(gx), (int) Math.floor(tp.y), (int) Math.floor(gz));
    }
 
-   /** RANDOM strafe side (unpredictable to aim at), overridden only when one side is clearly more dangerous. */
+   /** Strafe side by Boltzmann softmin over the two sides' danger: favours the safer side yet stays RANDOM
+    *  among comparable options, so a ranged attacker can't lead the shot (principled vs a coin-flip+override). */
    private static boolean pickStrafeSide(MillVillager villager, net.minecraft.world.phys.Vec3 vp, double nx, double nz) {
-      boolean r = villager.getRandom().nextBoolean();
       MillInfluenceGrid danger = villager.getAiInfluence();
-      float right = danger.dangerAt((int) Math.floor(vp.x - nz * 2.5), (int) Math.floor(vp.z + nx * 2.5));
-      float left = danger.dangerAt((int) Math.floor(vp.x + nz * 2.5), (int) Math.floor(vp.z - nx * 2.5));
-      if (r && right > left + 4.0F) {
-         return false;
-      }
-      if (!r && left > right + 4.0F) {
-         return true;
-      }
-      return r;
+      double right = danger.dangerAt((int) Math.floor(vp.x - nz * 2.5), (int) Math.floor(vp.z + nx * 2.5));
+      double left = danger.dangerAt((int) Math.floor(vp.x + nz * 2.5), (int) Math.floor(vp.z - nx * 2.5));
+      return org.millenaire.common.ai.nav.MillBoltzmann.pick(new double[]{right, left}, 3.0, villager.getRandom()) == 0;
    }
 
    /** Cardinal unit vector from the enemy toward nearby BAD terrain (a drop or a fluid) within ~4 blocks, or

@@ -173,6 +173,7 @@ public final class MillClientSelfTest {
    private int activitySpeakingEvents = 0;  // distinct (villagerId, speech_started) speech events observed
    private final Map<Long, Long> lastSpeechStart = new LinkedHashMap<>(); // villagerId -> last speech_started seen
    private final Map<Long, Vec3> lastPos = new LinkedHashMap<>();         // villagerId -> last sampled position
+   private final Map<Long, Float> lastYaw = new LinkedHashMap<>();        // TEMP SPIN DIAGNOSTIC: villagerId -> last sampled yaw
    private final List<String> sentencesObserved = new ArrayList<>();      // human-readable speech lines
    private String dynTradeResult = "not-run";
    private String dynQuestResult = "not-run";
@@ -1545,6 +1546,43 @@ public final class MillClientSelfTest {
             if (was != null && was.distanceToSqr(now) > 0.0025) { // moved > 0.05 block since last full sample
                moving++;
             }
+            // ===== SPIN DIAGNOSTIC (gated: LogPathing>=2) ===== per-villager position + yaw + nav target + MoveControl
+            // state, so a "static position while yaw changes" (spin-in-place) regression can be diagnosed from the log
+            // without guessing: dPos≈0 with dYaw>0 = spinning; wantedSelfDist≈0 = MoveControl target is at the villager.
+            if (org.millenaire.common.config.MillConfigValues.LogPathing >= 2) {
+            try {
+               double dPos = was != null ? Math.sqrt(was.distanceToSqr(now)) : -1.0;
+               Float prevYaw = lastYaw.get(id);
+               float yaw = v.getYRot();
+               double dYaw = prevYaw != null ? Math.abs(net.minecraft.util.Mth.degreesDifference(prevYaw, yaw)) : -1.0;
+               lastYaw.put(id, yaw);
+               net.minecraft.world.entity.ai.control.MoveControl mc2 = v.getMoveControl();
+               double wx = readD(mc2, "wantedX");
+               double wz = readD(mc2, "wantedZ");
+               double spdMod = readD(mc2, "speedModifier");
+               Object op = readObj(mc2, "operation");
+               double mvspd = v.getAttributeValue(net.minecraft.world.entity.ai.attributes.Attributes.MOVEMENT_SPEED);
+               org.millenaire.common.ai.nav.Mill3DNavigator nav = v.activeNav3d;
+               Object node = nav != null ? nav.currentNode() : null;
+               double dxw = wx - v.getX();
+               double dzw = wz - v.getZ();
+               double wantedSelfDist = Math.sqrt(dxw * dxw + dzw * dzw);
+               log("SPINDIAG id=" + id + " pos=" + String.format(java.util.Locale.ROOT, "%.2f/%.2f/%.2f", v.getX(), v.getY(), v.getZ())
+                  + " dPos=" + String.format(java.util.Locale.ROOT, "%.3f", dPos)
+                  + " yaw=" + String.format(java.util.Locale.ROOT, "%.1f", yaw)
+                  + " dYaw=" + String.format(java.util.Locale.ROOT, "%.1f", dYaw)
+                  + " goalKey=" + v.goalKey + " stopMoving=" + v.stopMoving + " onGround=" + v.onGround()
+                  + " moveOp=" + op + " wanted=" + String.format(java.util.Locale.ROOT, "%.2f/%.2f", wx, wz)
+                  + " wantedSelfDist=" + String.format(java.util.Locale.ROOT, "%.2f", wantedSelfDist)
+                  + " speedMod=" + String.format(java.util.Locale.ROOT, "%.2f", spdMod)
+                  + " MOVEMENT_SPEED=" + String.format(java.util.Locale.ROOT, "%.3f", mvspd)
+                  + " inWater=" + v.isInWater() + " navTarget=" + node
+                  + " navActive=" + (nav != null) + " navHasPath=" + (node != null));
+            } catch (Throwable diag) {
+               log("SPINDIAG id=" + id + " ERROR " + diag);
+            }
+            }
+            // ===== END SPIN DIAGNOSTIC =====
             lastPos.put(id, now);
          }
       }
@@ -1562,6 +1600,38 @@ public final class MillClientSelfTest {
       if (activityTicksSampled >= ACTIVITY_WINDOW_TICKS) {
          activitySampling = false;
       }
+   }
+
+   // TEMP SPIN DIAGNOSTIC: read a protected MoveControl field by reflection (wantedX/Z, speedModifier).
+   private static double readD(Object o, String field) {
+      try {
+         java.lang.reflect.Field f = findField(o.getClass(), field);
+         f.setAccessible(true);
+         return f.getDouble(o);
+      } catch (Throwable t) {
+         return Double.NaN;
+      }
+   }
+
+   private static Object readObj(Object o, String field) {
+      try {
+         java.lang.reflect.Field f = findField(o.getClass(), field);
+         f.setAccessible(true);
+         return f.get(o);
+      } catch (Throwable t) {
+         return "?";
+      }
+   }
+
+   private static java.lang.reflect.Field findField(Class<?> c, String name) throws NoSuchFieldException {
+      for (Class<?> k = c; k != null; k = k.getSuperclass()) {
+         try {
+            return k.getDeclaredField(name);
+         } catch (NoSuchFieldException ignored) {
+            // walk up
+         }
+      }
+      throw new NoSuchFieldException(name);
    }
 
    private void stepReportActivity() {

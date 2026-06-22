@@ -65,10 +65,15 @@ public final class Mill3DNavigator {
       BlockPos target = this.path.get(Math.min(this.index, this.path.size() - 1));
 
       villager.getMoveControl().setWantedPosition(target.getX() + 0.5, target.getY(), target.getZ() + 0.5, speed);
-      // Jump ONLY when actually needed: climbing UP, or an actual air GAP (a hole — no floor) one step toward
-      // the target. Do NOT jump just because the next node is far (that caused pointless in-place jumping on
-      // flat ground). A wall ahead is a climb (handled by 'climbs'), not a gap.
-      boolean climbs = target.getY() > here.getY();
+      // Jump ONLY when actually needed: climbing UP MORE than the villager can auto-step, or an actual air GAP
+      // (a hole — no floor) one step toward the target. Do NOT jump just because the next node is far (that
+      // caused pointless in-place jumping on flat ground). A wall ahead is a climb (handled by 'climbs'),
+      // not a gap.
+      // Use the ACTUAL height difference (villager.getY() is a double, so it accounts for already standing
+      // part-way up on a slab/path/snow at e.g. y+0.5) against the entity's step height: anything <= maxUpStep
+      // is auto-stepped by the vanilla collision code (Entity.maxUpStep), so jumping there is the spurious
+      // jump-on-a-half-block the navigator used to do.
+      boolean climbs = target.getY() - villager.getY() > villager.maxUpStep();
       boolean gapAhead = false;
       int sdx = Integer.signum(target.getX() - here.getX());
       int sdz = Integer.signum(target.getZ() - here.getZ());

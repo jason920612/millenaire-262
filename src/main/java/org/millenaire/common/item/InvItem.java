@@ -17,7 +17,7 @@ import org.millenaire.common.block.MillBlocks;
 import org.millenaire.common.convert.MillConvert;
 import org.millenaire.common.forge.Mill;
 import org.millenaire.common.utilities.LanguageUtilities;
-import org.millenaire.common.utilities.MillCommonUtilities;
+import org.millenaire.common.utilities.MillFiles;
 import org.millenaire.common.utilities.MillCrash;
 import org.millenaire.common.utilities.MillLog;
 
@@ -103,7 +103,7 @@ public final class InvItem implements Comparable<InvItem> {
 
    private static void loadInvItemList(File file) {
       try {
-         BufferedReader reader = MillCommonUtilities.getReader(file);
+         BufferedReader reader = MillFiles.getReader(file);
 
          String line;
          while ((line = reader.readLine()) != null) {

@@ -18,6 +18,7 @@ import org.millenaire.common.entity.MillVillager;
 import org.millenaire.common.item.TradeGood;
 import org.millenaire.common.utilities.LanguageData;
 import org.millenaire.common.utilities.MillCommonUtilities;
+import org.millenaire.common.utilities.MillFiles;
 import org.millenaire.common.utilities.MillCrash;
 import org.millenaire.common.utilities.MillLog;
 import org.millenaire.common.village.Building;
@@ -283,7 +284,7 @@ public class CultureLanguage {
 
    private void loadReputationFile(File file) {
       try {
-         BufferedReader reader = MillCommonUtilities.getReader(file);
+         BufferedReader reader = MillFiles.getReader(file);
 
          String line;
          while ((line = reader.readLine()) != null) {
@@ -328,7 +329,7 @@ public class CultureLanguage {
 
    private void readBuildingNameFile(File file) {
       try {
-         BufferedReader reader = MillCommonUtilities.getReader(file);
+         BufferedReader reader = MillFiles.getReader(file);
 
          String line;
          while ((line = reader.readLine()) != null) {
@@ -361,7 +362,7 @@ public class CultureLanguage {
 
    private void readCultureStringFile(File file) {
       try {
-         BufferedReader reader = MillCommonUtilities.getReader(file);
+         BufferedReader reader = MillFiles.getReader(file);
 
          String line;
          while ((line = reader.readLine()) != null) {
@@ -394,7 +395,7 @@ public class CultureLanguage {
 
    private boolean readDialoguesFile(File file) {
       try {
-         BufferedReader reader = MillCommonUtilities.getReader(file);
+         BufferedReader reader = MillFiles.getReader(file);
          CultureLanguage.Dialogue dialogue = null;
 
          String line;
@@ -456,7 +457,7 @@ public class CultureLanguage {
 
    private boolean readSentenceFile(File file) {
       try {
-         BufferedReader reader = MillCommonUtilities.getReader(file);
+         BufferedReader reader = MillFiles.getReader(file);
 
          String line;
          while ((line = reader.readLine()) != null) {

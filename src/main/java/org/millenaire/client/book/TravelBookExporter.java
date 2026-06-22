@@ -27,6 +27,7 @@ import org.millenaire.common.entity.MillVillager;
 import org.millenaire.common.forge.Mill;
 import org.millenaire.common.item.TradeGood;
 import org.millenaire.common.utilities.MillCommonUtilities;
+import org.millenaire.common.utilities.MillFiles;
 import org.millenaire.common.utilities.MillCrash;
 import org.millenaire.common.utilities.MillLog;
 import org.millenaire.common.village.VillagerRecord;
@@ -300,7 +301,7 @@ public class TravelBookExporter {
 
    public static void exportTravelBookData() {
       BookManagerTravelBook travelBookManager = new BookManagerTravelBook(50000, 50000, 50000, 50000, new BookManager.FontRendererMock());
-      File dir = new File(MillCommonUtilities.getMillenaireCustomContentDir(), "jsonexports");
+      File dir = new File(MillFiles.getMillenaireCustomContentDir(), "jsonexports");
       dir.mkdirs();
       Gson gson = new GsonBuilder().disableHtmlEscaping().create();
 
@@ -311,7 +312,7 @@ public class TravelBookExporter {
          }
 
          File file = new File(dir, "travelbook_" + language + ".sql");
-         BufferedWriter writer = MillCommonUtilities.getWriter(file);
+         BufferedWriter writer = MillFiles.getWriter(file);
          exportAllCultures(travelBookManager, writer, gson, language);
          exportAllVillagers(travelBookManager, writer, gson, language);
          exportAllBuildings(travelBookManager, writer, gson, language);

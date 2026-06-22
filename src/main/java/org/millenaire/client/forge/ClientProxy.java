@@ -18,7 +18,7 @@ import org.millenaire.client.MillClientUtilities;
 import org.millenaire.common.forge.CommonProxy;
 import org.millenaire.common.forge.Mill;
 import org.millenaire.common.utilities.LanguageUtilities;
-import org.millenaire.common.utilities.MillCommonUtilities;
+import org.millenaire.common.utilities.MillFiles;
 import org.millenaire.common.utilities.MillCrash;
 import org.millenaire.common.utilities.MillLog;
 import org.millenaire.common.world.UserProfile;
@@ -69,12 +69,12 @@ public class ClientProxy extends CommonProxy {
 
    @Override
    public File getConfigFile() {
-      return new File(MillCommonUtilities.getMillenaireContentDir(), "config.txt");
+      return new File(MillFiles.getMillenaireContentDir(), "config.txt");
    }
 
    @Override
    public File getCustomConfigFile() {
-      return new File(MillCommonUtilities.getMillenaireCustomContentDir(), "config-custom.txt");
+      return new File(MillFiles.getMillenaireCustomContentDir(), "config-custom.txt");
    }
 
    @Override
@@ -97,7 +97,7 @@ public class ClientProxy extends CommonProxy {
 
    @Override
    public File getLogFile() {
-      return new File(MillCommonUtilities.getMillenaireCustomContentDir(), "millenaire.log");
+      return new File(MillFiles.getMillenaireCustomContentDir(), "millenaire.log");
    }
 
    @Override

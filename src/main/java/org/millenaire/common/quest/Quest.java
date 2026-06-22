@@ -12,6 +12,7 @@ import org.millenaire.common.culture.VillagerType;
 import org.millenaire.common.forge.Mill;
 import org.millenaire.common.item.InvItem;
 import org.millenaire.common.utilities.MillCommonUtilities;
+import org.millenaire.common.utilities.MillFiles;
 import org.millenaire.common.utilities.MillCrash;
 import org.millenaire.common.utilities.MillLog;
 import org.millenaire.common.utilities.Point;
@@ -65,7 +66,7 @@ public class Quest {
       q.key = file.getName().split("\\.")[0];
 
       try {
-         BufferedReader reader = MillCommonUtilities.getReader(file);
+         BufferedReader reader = MillFiles.getReader(file);
          QuestStep step = null;
 
          String line;
@@ -218,7 +219,7 @@ public class Quest {
    public static void loadQuests() {
       VirtualDir questVirtualDir = Mill.virtualLoadingDir.getChildDirectory("quests");
 
-      for (File file : questVirtualDir.listFilesRecursive(new MillCommonUtilities.ExtFileFilter("txt"))) {
+      for (File file : questVirtualDir.listFilesRecursive(new MillFiles.ExtFileFilter("txt"))) {
          Quest quest = loadQuest(file);
          if (quest != null) {
             quests.put(quest.key, quest);

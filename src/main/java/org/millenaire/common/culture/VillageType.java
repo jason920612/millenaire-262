@@ -23,6 +23,7 @@ import org.millenaire.common.forge.Mill;
 import org.millenaire.common.item.InvItem;
 import org.millenaire.common.network.StreamReadWrite;
 import org.millenaire.common.utilities.MillCommonUtilities;
+import org.millenaire.common.utilities.MillFiles;
 import org.millenaire.common.utilities.MillCrash;
 import org.millenaire.common.utilities.MillLog;
 import org.millenaire.common.utilities.Point;
@@ -487,7 +488,7 @@ public class VillageType implements MillCommonUtilities.WeightedChoice {
       VirtualDir lonebuildingsVirtualDir = cultureVirtualDir.getChildDirectory("lonebuildings");
       List<VillageType> v = new ArrayList<>();
 
-      for (File file : lonebuildingsVirtualDir.listFilesRecursive(new MillCommonUtilities.ExtFileFilter("txt"))) {
+      for (File file : lonebuildingsVirtualDir.listFilesRecursive(new MillFiles.ExtFileFilter("txt"))) {
          try {
             if (MillConfigValues.LogVillage >= 1) {
                MillLog.major(file, "Loading lone building: " + file.getAbsolutePath());
@@ -512,7 +513,7 @@ public class VillageType implements MillCommonUtilities.WeightedChoice {
       VirtualDir villagesVirtualDir = cultureVirtualDir.getChildDirectory("villages");
       List<VillageType> villages = new ArrayList<>();
 
-      for (File file : villagesVirtualDir.listFilesRecursive(new MillCommonUtilities.ExtFileFilter("txt"))) {
+      for (File file : villagesVirtualDir.listFilesRecursive(new MillFiles.ExtFileFilter("txt"))) {
          try {
             if (MillConfigValues.LogVillage >= 1) {
                MillLog.major(file, "Loading village: " + file.getAbsolutePath());

@@ -1,17 +1,9 @@
 package org.millenaire.common.utilities;
 
 import java.io.BufferedReader;
-import java.io.BufferedWriter;
-import java.io.File;
-import java.io.FileInputStream;
-import java.io.FileNotFoundException;
-import java.io.FileOutputStream;
-import java.io.FilenameFilter;
 import java.io.IOException;
 import java.io.InputStream;
 import java.io.InputStreamReader;
-import java.io.OutputStreamWriter;
-import java.io.UnsupportedEncodingException;
 import java.lang.reflect.Method;
 import java.net.URL;
 import java.net.URLConnection;
@@ -25,7 +17,6 @@ import java.util.stream.Collectors;
 import net.minecraft.core.particles.ParticleTypes;
 import net.minecraft.core.registries.BuiltInRegistries;
 import net.minecraft.resources.Identifier;
-import net.minecraft.server.MinecraftServer;
 import net.minecraft.world.level.block.Block;
 import net.minecraft.world.level.block.state.BlockState;
 import net.minecraft.world.entity.Entity;
@@ -40,12 +31,9 @@ import net.minecraft.world.item.ItemStack;
 import net.minecraft.nbt.CompoundTag;
 import net.minecraft.nbt.ListTag;
 import net.minecraft.world.level.Level;
-import net.minecraft.world.level.storage.LevelResource;
 import org.millenaire.common.advancements.GenericAdvancement;
 import org.millenaire.common.advancements.MillAdvancements;
 import org.millenaire.common.config.MillConfigValues;
-import org.millenaire.common.convert.ContentFile;
-import org.millenaire.common.convert.MillConvert;
 import org.millenaire.common.culture.Culture;
 import org.millenaire.common.culture.VillagerType;
 import org.millenaire.common.forge.Mill;
@@ -57,8 +45,6 @@ import org.millenaire.common.world.UserProfile;
 public class MillCommonUtilities {
    private static final String MILLENAIRE_ORG_ROOT = "http://millenaire.org";
    public static Random random = new Random();
-   private static File baseDir = null;
-   private static File customDir = null;
 
    public static boolean chanceOn(int i) {
       return getRandom().nextInt(i) == 0;
@@ -222,21 +208,6 @@ public class MillCommonUtilities {
       return deniers;
    }
 
-   public static boolean deleteDir(File dir) {
-      if (dir.isDirectory()) {
-         String[] children = dir.list();
-
-         for (int i = 0; i < children.length; i++) {
-            boolean success = deleteDir(new File(dir, children[i]));
-            if (!success) {
-               return false;
-            }
-         }
-      }
-
-      return dir.delete();
-   }
-
    public static String flattenStrings(Collection<String> strings) {
       return strings.stream().collect(Collectors.joining(", "));
    }
@@ -259,36 +230,6 @@ public class MillCommonUtilities {
                var8
             );
       }
-   }
-
-   public static BufferedWriter getAppendWriter(File file) throws UnsupportedEncodingException, FileNotFoundException {
-      FileOutputStream fos = new FileOutputStream(file, true);
-
-      try {
-         return new BufferedWriter(new OutputStreamWriter(fos, "UTF8"));
-      } catch (UnsupportedEncodingException | RuntimeException var3) {
-         try {
-            fos.close();
-         } catch (IOException var2) {
-         }
-
-         throw var3;
-      }
-   }
-
-   public static File getBuildingsDir(Level world) {
-      File saveDir = getWorldSaveDir(world);
-      File millenaireDir = new File(saveDir, "millenaire");
-      if (!millenaireDir.exists()) {
-         millenaireDir.mkdir();
-      }
-
-      File buildingsDir = new File(millenaireDir, "buildings");
-      if (!buildingsDir.exists()) {
-         buildingsDir.mkdir();
-      }
-
-      return buildingsDir;
    }
 
    public static String getCardinalDirectionStringFromAngle(int angle) {
@@ -324,27 +265,6 @@ public class MillCommonUtilities {
 
    public static Method getDrawSlotInventoryMethod(Object gui) {
       return null;
-   }
-
-   public static File getExportDir() {
-      File exportDir = new File(getMillenaireCustomContentDir(), "exports");
-      if (!exportDir.exists()) {
-         exportDir.mkdirs();
-      }
-
-      return exportDir;
-   }
-
-   public static List<String> getFileLines(File file) throws IOException {
-      List<String> lines = new ArrayList<>();
-
-      try (BufferedReader reader = new BufferedReader(new InputStreamReader(new FileInputStream(file), "UTF8"))) {
-         for (String line = reader.readLine(); line != null; line = reader.readLine()) {
-            lines.add(line);
-         }
-      }
-
-      return lines;
    }
 
    public static int getInvItemHashTotal(HashMap<InvItem, Integer> map) {
@@ -384,30 +304,6 @@ public class MillCommonUtilities {
       }
    }
 
-   public static File getMillenaireContentDir() {
-      if (baseDir == null) {
-         baseDir = new File(getModsDir(), "millenaire");
-      }
-
-      return baseDir;
-   }
-
-   public static File getMillenaireCustomContentDir() {
-      if (customDir == null) {
-         customDir = new File(getModsDir(), "millenaire-custom");
-      }
-
-      return customDir;
-   }
-
-   public static File getMillenaireHelpDir() {
-      return new File(getMillenaireContentDir(), "help");
-   }
-
-   public static File getModsDir() {
-      return new File(net.fabricmc.loader.api.FabricLoader.getInstance().getGameDir().toFile(), "mods");
-   }
-
    public static int getPriceColourMC(int price) {
       if (price >= 4096) {
          return 14;
@@ -422,12 +318,6 @@ public class MillCommonUtilities {
       }
 
       return random;
-   }
-
-   public static BufferedReader getReader(File file) throws IOException {
-      // Single canonical implementation of the UTF-8 → Windows-1252 encoding detection now lives in the
-      // unified conversion protocol; getReader stays the public entry point and forwards to it.
-      return MillConvert.contentFileToReader(new ContentFile(file));
    }
 
    public static String getShortPrice(int price) {
@@ -472,26 +362,6 @@ public class MillCommonUtilities {
          }
 
          return null;
-      }
-   }
-
-   public static File getWorldSaveDir(Level world) {
-      MinecraftServer server = world.getServer();
-      return server != null ? server.getWorldPath(LevelResource.ROOT).toFile() : null;
-   }
-
-   public static BufferedWriter getWriter(File file) throws UnsupportedEncodingException, FileNotFoundException {
-      FileOutputStream fos = new FileOutputStream(file);
-
-      try {
-         return new BufferedWriter(new OutputStreamWriter(fos, "UTF8"));
-      } catch (UnsupportedEncodingException | RuntimeException var3) {
-         try {
-            fos.close();
-         } catch (IOException var2) {
-         }
-
-         throw var3;
       }
    }
 
@@ -780,19 +650,6 @@ public class MillCommonUtilities {
       }
    }
 
-   public static class ExtFileFilter implements FilenameFilter {
-      String ext = null;
-
-      public ExtFileFilter(String ext) {
-         this.ext = ext;
-      }
-
-      @Override
-      public boolean accept(File file, String name) {
-         return !name.toLowerCase().endsWith("." + this.ext) ? false : !name.startsWith(".");
-      }
-   }
-
    private static class LogThread extends Thread {
       String url;
 
@@ -810,25 +667,6 @@ public class MillCommonUtilities {
             if (MillConfigValues.DEV) {
                MillLog.error(null, "Exception when calling statistic service:" + var2.getMessage().substring(0, var2.getMessage().indexOf("?")));
             }
-         }
-      }
-   }
-
-   public static class PrefixExtFileFilter implements FilenameFilter {
-      String ext = null;
-      String prefix = null;
-
-      public PrefixExtFileFilter(String pref, String ext) {
-         this.ext = ext;
-         this.prefix = pref;
-      }
-
-      @Override
-      public boolean accept(File file, String name) {
-         if (!name.toLowerCase().endsWith("." + this.ext)) {
-            return false;
-         } else {
-            return !name.toLowerCase().startsWith(this.prefix) ? false : !name.startsWith(".");
          }
       }
    }

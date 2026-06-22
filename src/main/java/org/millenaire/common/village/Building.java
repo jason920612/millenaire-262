@@ -103,6 +103,7 @@ import org.millenaire.common.ui.PujaSacrifice;
 import org.millenaire.common.utilities.BlockItemUtilities;
 import org.millenaire.common.utilities.LanguageUtilities;
 import org.millenaire.common.utilities.MillCommonUtilities;
+import org.millenaire.common.utilities.MillFiles;
 import org.millenaire.common.utilities.MillCrash;
 import org.millenaire.common.utilities.MillLog;
 import org.millenaire.common.utilities.PathUtilities;
@@ -4318,7 +4319,7 @@ public class Building {
    }
 
    private void readPaths() {
-      File buildingsDir = MillCommonUtilities.getBuildingsDir(this.world);
+      File buildingsDir = MillFiles.getBuildingsDir(this.world);
       File file1 = new File(buildingsDir, this.getPos().getPathString() + "_paths.bin");
       if (file1.exists()) {
          try (FileInputStream fis = new FileInputStream(file1);
@@ -6318,7 +6319,7 @@ public class Building {
    }
 
    private void writePaths() {
-      File buildingsDir = MillCommonUtilities.getBuildingsDir(this.world);
+      File buildingsDir = MillFiles.getBuildingsDir(this.world);
       File file1 = new File(buildingsDir, this.getPos().getPathString() + "_paths.bin");
       if (this.pathsToBuild != null) {
          try (FileOutputStream fos = new FileOutputStream(file1);

@@ -32,6 +32,7 @@ import org.millenaire.common.item.TradeGood;
 import org.millenaire.common.network.StreamReadWrite;
 import org.millenaire.common.utilities.LanguageUtilities;
 import org.millenaire.common.utilities.MillCommonUtilities;
+import org.millenaire.common.utilities.MillFiles;
 import org.millenaire.common.utilities.MillCrash;
 import org.millenaire.common.utilities.MillLog;
 import org.millenaire.common.utilities.virtualdir.VirtualDir;
@@ -855,7 +856,7 @@ public class Culture {
                file.createNewFile();
             }
 
-            BufferedReader reader = MillCommonUtilities.getReader(file);
+            BufferedReader reader = MillFiles.getReader(file);
 
             String line;
             while ((line = reader.readLine()) != null) {
@@ -937,7 +938,7 @@ public class Culture {
       } else {
          CultureLanguage lang = new CultureLanguage(this, key, false);
          List<File> languageDirsWithCusto = new ArrayList<>(languageDirs);
-         File dircusto = new File(new File(new File(MillCommonUtilities.getMillenaireCustomContentDir(), "custom cultures"), key), "languages");
+         File dircusto = new File(new File(new File(MillFiles.getMillenaireCustomContentDir(), "custom cultures"), key), "languages");
          if (dircusto.exists()) {
             languageDirsWithCusto.add(dircusto);
          }
@@ -971,9 +972,9 @@ public class Culture {
       VirtualDir namelistsVirtualDir = cultureVirtualDir.getChildDirectory("namelists");
 
       try {
-         for (File file : namelistsVirtualDir.listFilesRecursive(new MillCommonUtilities.ExtFileFilter("txt"))) {
+         for (File file : namelistsVirtualDir.listFilesRecursive(new MillFiles.ExtFileFilter("txt"))) {
             List<String> list = new ArrayList<>();
-            BufferedReader reader = MillCommonUtilities.getReader(file);
+            BufferedReader reader = MillFiles.getReader(file);
 
             String line;
             while ((line = reader.readLine()) != null) {
@@ -994,7 +995,7 @@ public class Culture {
 
    private void loadShop(File file) {
       try {
-         BufferedReader reader = MillCommonUtilities.getReader(file);
+         BufferedReader reader = MillFiles.getReader(file);
 
          String line;
          while ((line = reader.readLine()) != null) {
@@ -1078,7 +1079,7 @@ public class Culture {
       VirtualDir shopVirtualDir = cultureVirtualDir.getChildDirectory("shops");
 
       try {
-         for (File file : shopVirtualDir.listFilesRecursive(new MillCommonUtilities.ExtFileFilter("txt"))) {
+         for (File file : shopVirtualDir.listFilesRecursive(new MillFiles.ExtFileFilter("txt"))) {
             this.loadShop(file);
          }
       } catch (IllegalStateException crash) {
@@ -1093,7 +1094,7 @@ public class Culture {
       VirtualDir villagersVirtualDir = cultureVirtualDir.getChildDirectory("villagers");
 
       try {
-         for (File file : villagersVirtualDir.listFilesRecursive(new MillCommonUtilities.ExtFileFilter("txt"))) {
+         for (File file : villagersVirtualDir.listFilesRecursive(new MillFiles.ExtFileFilter("txt"))) {
             VillagerType vtype = VillagerType.loadVillagerType(file, this);
             if (vtype != null) {
                if (this.villagerTypes.containsKey(vtype.key)) {

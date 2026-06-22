@@ -11,6 +11,7 @@ import org.millenaire.common.culture.Culture;
 import org.millenaire.common.culture.VillageType;
 import org.millenaire.common.network.StreamReadWrite;
 import org.millenaire.common.utilities.MillCommonUtilities;
+import org.millenaire.common.utilities.MillFiles;
 import org.millenaire.common.utilities.MillLog;
 import org.millenaire.common.utilities.virtualdir.VirtualDir;
 import org.millenaire.common.village.Building;
@@ -142,7 +143,7 @@ public class BuildingPlanSet {
          vplans.add(new ArrayList<>());
          int level = 0;
          prevPlan = null;
-         List<String> metadataLines = MillCommonUtilities.getFileLines(this.virtualDir.getChildFileRecursive(this.key + "_" + varChar + ".txt"));
+         List<String> metadataLines = MillFiles.getFileLines(this.virtualDir.getChildFileRecursive(this.key + "_" + varChar + ".txt"));
 
          for (BuildingMetadataLoader metadataLoader = new BuildingMetadataLoader(metadataLines);
             this.virtualDir.getChildFileRecursive(this.key + "_" + varChar + level + ".png") != null;

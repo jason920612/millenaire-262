@@ -1,4 +1,5 @@
 package org.millenaire.common.convert;
+import org.millenaire.common.utilities.MillFiles;
 
 import java.io.BufferedReader;
 import java.io.FileInputStream;
@@ -205,7 +206,7 @@ public final class MillConvert {
 
    /**
     * Opens a content file as a {@link BufferedReader}, detecting its encoding per-file. This is the
-    * canonical version of the former {@code MillCommonUtilities.getReader}.
+    * canonical version of the former {@code MillFiles.getReader}.
     *
     * <p>Strict UTF-8 is tried first: modern / translation content (including CJK like the Chinese
     * villager speech) decodes cleanly. On a {@link CharacterCodingException} the bytes are decoded as

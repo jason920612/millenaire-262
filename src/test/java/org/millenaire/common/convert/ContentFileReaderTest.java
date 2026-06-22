@@ -1,4 +1,5 @@
 package org.millenaire.common.convert;
+import org.millenaire.common.utilities.MillFiles;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 
@@ -15,7 +16,7 @@ import org.millenaire.MillHeadlessTest;
 
 /**
  * Golden tests for the canonical encoding-detecting content-file reader
- * ({@link MillConvert#contentFileToReader(ContentFile)}), which {@code MillCommonUtilities.getReader}
+ * ({@link MillConvert#contentFileToReader(ContentFile)}), which {@code MillFiles.getReader}
  * now delegates to. Proves the two real-world cases Millénaire content hits:
  * <ul>
  *   <li>modern / translation files are UTF-8 (multibyte: "café", CJK) — must round-trip exactly;</li>

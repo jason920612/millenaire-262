@@ -29,6 +29,7 @@ import org.millenaire.common.quest.QuestInstance;
 import org.millenaire.common.quest.QuestInstanceVillager;
 import org.millenaire.common.utilities.LanguageUtilities;
 import org.millenaire.common.utilities.MillCommonUtilities;
+import org.millenaire.common.utilities.MillFiles;
 import org.millenaire.common.utilities.MillCrash;
 import org.millenaire.common.utilities.MillLog;
 import org.millenaire.common.utilities.Point;
@@ -589,7 +590,7 @@ public class UserProfile {
       this.actionData.clear();
       if (dataFile.exists()) {
          try {
-            BufferedReader reader = MillCommonUtilities.getReader(dataFile);
+            BufferedReader reader = MillFiles.getReader(dataFile);
 
             for (String line = reader.readLine(); line != null; line = reader.readLine()) {
                if (line.trim().length() > 0 && line.split(":").length == 2) {
@@ -610,7 +611,7 @@ public class UserProfile {
    private void loadProfileConfig(File configFile) {
       if (configFile != null && configFile.exists()) {
          try {
-            BufferedReader reader = MillCommonUtilities.getReader(configFile);
+            BufferedReader reader = MillFiles.getReader(configFile);
 
             String line;
             while ((line = reader.readLine()) != null) {
@@ -661,7 +662,7 @@ public class UserProfile {
       this.profileTags.clear();
       if (tagsFile.exists()) {
          try {
-            BufferedReader reader = MillCommonUtilities.getReader(tagsFile);
+            BufferedReader reader = MillFiles.getReader(tagsFile);
 
             for (String line = reader.readLine(); line != null; line = reader.readLine()) {
                if (line.trim().length() > 0) {
@@ -685,7 +686,7 @@ public class UserProfile {
 
       try {
          if (questDataFile != null && questDataFile.exists()) {
-            BufferedReader reader = MillCommonUtilities.getReader(questDataFile);
+            BufferedReader reader = MillFiles.getReader(questDataFile);
 
             String line;
             while ((line = reader.readLine()) != null) {
@@ -716,7 +717,7 @@ public class UserProfile {
       this.unlockedTradeGoods.clear();
       if (dataFile.exists()) {
          try {
-            BufferedReader reader = MillCommonUtilities.getReader(dataFile);
+            BufferedReader reader = MillFiles.getReader(dataFile);
 
             for (String line = reader.readLine(); line != null; line = reader.readLine()) {
                if (line.trim().length() > 0 && line.split(":").length == 2) {
@@ -753,7 +754,7 @@ public class UserProfile {
       this.mw.profiles.remove(oldUUID);
       this.saveProfile();
       File oldDir = new File(new File(this.mw.millenaireDir, "profiles"), oldUUID.toString());
-      MillCommonUtilities.deleteDir(oldDir);
+      MillFiles.deleteDir(oldDir);
    }
 
    public void receiveDeclareReleaseNumberPacket(FriendlyByteBuf packetBuffer) {
@@ -876,7 +877,7 @@ public class UserProfile {
          File configFile = new File(this.getDir(), "actiondata.txt");
 
          try {
-            BufferedWriter writer = MillCommonUtilities.getWriter(configFile);
+            BufferedWriter writer = MillFiles.getWriter(configFile);
 
             for (String key : this.actionData.keySet()) {
                writer.write(key + ":" + this.actionData.get(key) + "\n");
@@ -905,7 +906,7 @@ public class UserProfile {
          File configFile = new File(this.getDir(), "config.txt");
 
          try {
-            BufferedWriter writer = MillCommonUtilities.getWriter(configFile);
+            BufferedWriter writer = MillFiles.getWriter(configFile);
             writer.write("player_name=" + this.playerName + "\n");
             writer.write("donation_mode=" + this.donationActivated + "\n");
 
@@ -938,7 +939,7 @@ public class UserProfile {
          File configFile = new File(this.getDir(), "tags.txt");
 
          try {
-            BufferedWriter writer = MillCommonUtilities.getWriter(configFile);
+            BufferedWriter writer = MillFiles.getWriter(configFile);
 
             for (String tag : this.profileTags) {
                writer.write(tag + "\n");
@@ -957,7 +958,7 @@ public class UserProfile {
          File questDataFile = new File(this.getDir(), "quests.txt");
 
          try {
-            BufferedWriter writer = MillCommonUtilities.getWriter(questDataFile);
+            BufferedWriter writer = MillFiles.getWriter(questDataFile);
 
             for (QuestInstance qi : this.questInstances) {
                writer.write(qi.writeToString() + "\n");
@@ -976,7 +977,7 @@ public class UserProfile {
          File configFile = new File(this.getDir(), "unlockedcontent.txt");
 
          try {
-            BufferedWriter writer = MillCommonUtilities.getWriter(configFile);
+            BufferedWriter writer = MillFiles.getWriter(configFile);
 
             for (String key : this.unlockedVillagers) {
                writer.write("villager:" + key + "\n");

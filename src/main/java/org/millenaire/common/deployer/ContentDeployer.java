@@ -13,7 +13,7 @@ import java.util.jar.JarEntry;
 import java.util.jar.JarFile;
 import org.apache.commons.io.IOUtils;
 import org.millenaire.common.forge.Mill;
-import org.millenaire.common.utilities.MillCommonUtilities;
+import org.millenaire.common.utilities.MillFiles;
 import org.millenaire.common.utilities.MillCrash;
 
 public class ContentDeployer {
@@ -95,7 +95,7 @@ public class ContentDeployer {
       if (!ContentDeployer.class.getResource("ContentDeployer.class").toString().startsWith("jar")) {
          Mill.LOGGER.warn("No need to redeploy Millénaire as we are in a dev environment.");
       } else {
-         File modsDir = MillCommonUtilities.getModsDir();
+         File modsDir = MillFiles.getModsDir();
 
          try {
             boolean redeployMillenaire = false;
@@ -111,14 +111,14 @@ public class ContentDeployer {
                File versionFile = new File(millenaireDir, "version.txt");
                if (!versionFile.exists()) {
                   redeployMillenaire = true;
-                  MillCommonUtilities.deleteDir(millenaireDir);
+                  MillFiles.deleteDir(millenaireDir);
                   Mill.LOGGER.warn("Redeploying millenaire/ to version 8.1.2 as it has no version file.");
                } else {
-                  BufferedReader reader = MillCommonUtilities.getReader(versionFile);
+                  BufferedReader reader = MillFiles.getReader(versionFile);
                   String versionString = reader.readLine();
                   if (!versionString.equals("8.1.2")) {
                      redeployMillenaire = true;
-                     MillCommonUtilities.deleteDir(millenaireDir);
+                     MillFiles.deleteDir(millenaireDir);
                      Mill.LOGGER.warn("Redeploying millenaire/ to version 8.1.2 as it has version " + versionString + ".");
                   } else {
                      // Version matches: also compare the content fingerprint. A content-only fix (same version)
@@ -126,14 +126,14 @@ public class ContentDeployer {
                      File hashFile = new File(millenaireDir, "content-hash.txt");
                      String deployedHash = null;
                      if (hashFile.exists()) {
-                        try (BufferedReader hashReader = MillCommonUtilities.getReader(hashFile)) {
+                        try (BufferedReader hashReader = MillFiles.getReader(hashFile)) {
                            deployedHash = hashReader.readLine();
                         }
                      }
 
                      if (!packagedHash.equals(deployedHash)) {
                         redeployMillenaire = true;
-                        MillCommonUtilities.deleteDir(millenaireDir);
+                        MillFiles.deleteDir(millenaireDir);
                         Mill.LOGGER
                            .warn(
                               "Redeploying millenaire/ at version "

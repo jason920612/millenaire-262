@@ -9,7 +9,7 @@ import java.io.IOException;
 import java.nio.file.Files;
 import org.millenaire.common.buildingplan.BuildingBlock;
 import org.millenaire.common.entity.MillVillager;
-import org.millenaire.common.utilities.MillCommonUtilities;
+import org.millenaire.common.utilities.MillFiles;
 import org.millenaire.common.utilities.MillCrash;
 import org.millenaire.common.utilities.MillLog;
 import org.millenaire.common.utilities.Point;
@@ -89,7 +89,7 @@ public class ConstructionIP {
    }
 
    public void readBblocks() {
-      File buildingsDir = MillCommonUtilities.getBuildingsDir(this.townHall.world);
+      File buildingsDir = MillFiles.getBuildingsDir(this.townHall.world);
       File bblocksFile = new File(buildingsDir, this.townHall.getPos().getPathString() + "_bblocks_" + this.id + ".bin");
       if (bblocksFile.exists()) {
          try (FileInputStream fileStream = new FileInputStream(bblocksFile);
@@ -143,7 +143,7 @@ public class ConstructionIP {
    }
 
    public void writeBblocks() {
-      File buildingsDir = MillCommonUtilities.getBuildingsDir(this.townHall.world);
+      File buildingsDir = MillFiles.getBuildingsDir(this.townHall.world);
       File blocksFile = new File(buildingsDir, this.townHall.getPos().getPathString() + "_bblocks_" + this.id + ".bin");
       BuildingBlock[] blocks = this.getBblocks();
       if (blocks != null) {

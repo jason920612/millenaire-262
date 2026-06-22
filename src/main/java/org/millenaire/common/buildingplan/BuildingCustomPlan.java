@@ -19,7 +19,7 @@ import org.millenaire.common.block.MillBlocks;
 import org.millenaire.common.config.MillConfigValues;
 import org.millenaire.common.culture.Culture;
 import org.millenaire.common.forge.Mill;
-import org.millenaire.common.utilities.MillCommonUtilities;
+import org.millenaire.common.utilities.MillFiles;
 import org.millenaire.common.utilities.MillCrash;
 import org.millenaire.common.utilities.MillLog;
 import org.millenaire.common.utilities.Point;
@@ -76,7 +76,7 @@ public class BuildingCustomPlan implements IBuildingPlan {
    public BuildingCustomPlan(File file, Culture culture) throws IOException {
       this.culture = culture;
       this.buildingKey = file.getName().split("\\.")[0];
-      BufferedReader reader = MillCommonUtilities.getReader(file);
+      BufferedReader reader = MillFiles.getReader(file);
       String line = reader.readLine();
       this.readConfigLine(line);
       if (MillConfigValues.LogBuildingPlan >= 1) {

@@ -8,7 +8,7 @@ import org.millenaire.common.annotedparameters.ConfigAnnotations;
 import org.millenaire.common.annotedparameters.ParametersManager;
 import org.millenaire.common.buildingplan.BuildingPlanSet;
 import org.millenaire.common.config.MillConfigValues;
-import org.millenaire.common.utilities.MillCommonUtilities;
+import org.millenaire.common.utilities.MillFiles;
 import org.millenaire.common.utilities.MillCrash;
 import org.millenaire.common.utilities.MillLog;
 import org.millenaire.common.utilities.virtualdir.VirtualDir;
@@ -272,7 +272,7 @@ public class WallType {
       VirtualDir wallsVirtualDir = cultureVirtualDir.getChildDirectory("walls");
       Map<String, WallType> walls = new HashMap<>();
 
-      for (File file : wallsVirtualDir.listFilesRecursive(new MillCommonUtilities.ExtFileFilter("txt"))) {
+      for (File file : wallsVirtualDir.listFilesRecursive(new MillFiles.ExtFileFilter("txt"))) {
          try {
             if (MillConfigValues.LogVillage >= 1) {
                MillLog.major(file, "Loading wall: " + file.getAbsolutePath());

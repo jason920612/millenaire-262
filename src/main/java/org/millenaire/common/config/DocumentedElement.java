@@ -13,7 +13,7 @@ import java.util.Collections;
 import java.util.List;
 import java.util.Map;
 import org.millenaire.common.culture.VillagerType;
-import org.millenaire.common.utilities.MillCommonUtilities;
+import org.millenaire.common.utilities.MillFiles;
 import org.millenaire.common.utilities.MillLog;
 import org.millenaire.common.village.BuildingTags;
 
@@ -25,14 +25,14 @@ public class DocumentedElement implements Comparable<DocumentedElement> {
       try {
          File directory;
          if (directoryName != null) {
-            directory = new File(MillCommonUtilities.getMillenaireHelpDir(), directoryName);
+            directory = new File(MillFiles.getMillenaireHelpDir(), directoryName);
          } else {
-            directory = MillCommonUtilities.getMillenaireHelpDir();
+            directory = MillFiles.getMillenaireHelpDir();
          }
 
          directory.mkdirs();
          File file = new File(directory, fileName);
-         BufferedWriter writer = MillCommonUtilities.getWriter(file);
+         BufferedWriter writer = MillFiles.getWriter(file);
          writer.write(explanations + "\n" + "\n");
          List<DocumentedElement> tags = new ArrayList<>();
 
@@ -67,14 +67,14 @@ public class DocumentedElement implements Comparable<DocumentedElement> {
       try {
          File directory;
          if (directoryName != null) {
-            directory = new File(MillCommonUtilities.getMillenaireHelpDir(), directoryName);
+            directory = new File(MillFiles.getMillenaireHelpDir(), directoryName);
          } else {
-            directory = MillCommonUtilities.getMillenaireHelpDir();
+            directory = MillFiles.getMillenaireHelpDir();
          }
 
          directory.mkdirs();
          File file = new File(directory, fileName);
-         BufferedWriter writer = MillCommonUtilities.getWriter(file);
+         BufferedWriter writer = MillFiles.getWriter(file);
          writer.write(explanations + "\n" + "\n");
          List<DocumentedElement> tags = new ArrayList<>();
 

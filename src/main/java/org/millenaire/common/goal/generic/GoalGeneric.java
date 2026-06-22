@@ -11,7 +11,7 @@ import org.millenaire.common.config.MillConfigValues;
 import org.millenaire.common.entity.MillVillager;
 import org.millenaire.common.forge.Mill;
 import org.millenaire.common.goal.Goal;
-import org.millenaire.common.utilities.MillCommonUtilities;
+import org.millenaire.common.utilities.MillFiles;
 import org.millenaire.common.utilities.MillCrash;
 import org.millenaire.common.utilities.MillLog;
 import org.millenaire.common.utilities.virtualdir.VirtualDir;
@@ -171,7 +171,7 @@ public abstract class GoalGeneric extends Goal implements ParametersManager.Defa
 
    private static List<File> getGenericGoalFiles(String directoryName) {
       VirtualDir virtualGoalDir = Mill.virtualLoadingDir.getChildDirectory("goals").getChildDirectory(directoryName);
-      return virtualGoalDir.listFilesRecursive(new MillCommonUtilities.ExtFileFilter("txt"));
+      return virtualGoalDir.listFilesRecursive(new MillFiles.ExtFileFilter("txt"));
    }
 
    public static void loadGenericGoals() {

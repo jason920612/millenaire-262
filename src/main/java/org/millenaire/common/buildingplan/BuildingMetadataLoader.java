@@ -10,6 +10,7 @@ import org.millenaire.common.config.MillConfigValues;
 import org.millenaire.common.culture.Culture;
 import org.millenaire.common.item.InvItem;
 import org.millenaire.common.utilities.MillCommonUtilities;
+import org.millenaire.common.utilities.MillFiles;
 import org.millenaire.common.utilities.MillLog;
 
 public class BuildingMetadataLoader {
@@ -31,7 +32,7 @@ public class BuildingMetadataLoader {
    }
 
    private static void exportBuildingPlanTextFile(BuildingPlanSet planSet) {
-      File exportDirectory = new File(new File(MillCommonUtilities.getMillenaireCustomContentDir(), "Converted Buildings"), planSet.culture.key);
+      File exportDirectory = new File(new File(MillFiles.getMillenaireCustomContentDir(), "Converted Buildings"), planSet.culture.key);
       exportDirectory.mkdirs();
 
       for (int variation = 0; variation < planSet.plans.size(); variation++) {
@@ -45,7 +46,7 @@ public class BuildingMetadataLoader {
          file.delete();
 
          try {
-            BufferedWriter writer = MillCommonUtilities.getAppendWriter(file);
+            BufferedWriter writer = MillFiles.getAppendWriter(file);
             writer.write("//Parameters for the building as a whole\n");
             ParametersManager.writeAnnotedParameters(writer, planSet.plans.get(variation)[0], "init", null, "building");
             writer.write("\n");

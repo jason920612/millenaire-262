@@ -24,6 +24,7 @@ import org.millenaire.common.forge.Mill;
 import org.millenaire.common.utilities.LanguageData;
 import org.millenaire.common.utilities.LanguageUtilities;
 import org.millenaire.common.utilities.MillCommonUtilities;
+import org.millenaire.common.utilities.MillFiles;
 import org.millenaire.common.utilities.MillCrash;
 import org.millenaire.common.utilities.MillLog;
 import org.millenaire.common.utilities.virtualdir.VirtualDir;
@@ -165,7 +166,7 @@ public class MillConfigValues {
    }
 
    private static void detectSubmods() {
-      File modDirs = new File(MillCommonUtilities.getMillenaireCustomContentDir(), "mods");
+      File modDirs = new File(MillFiles.getMillenaireCustomContentDir(), "mods");
       modDirs.mkdirs();
       String mods = "";
 
@@ -227,9 +228,9 @@ public class MillConfigValues {
             MillLog.initLogFileWriter();
          }
 
-         Mill.loadingDirs.add(MillCommonUtilities.getMillenaireContentDir());
+         Mill.loadingDirs.add(MillFiles.getMillenaireContentDir());
          detectSubmods();
-         Mill.loadingDirs.add(MillCommonUtilities.getMillenaireCustomContentDir());
+         Mill.loadingDirs.add(MillFiles.getMillenaireCustomContentDir());
 
          try {
             Mill.virtualLoadingDir = new VirtualDir(Mill.loadingDirs);
@@ -402,7 +403,7 @@ public class MillConfigValues {
          return false;
       } else {
          try {
-            BufferedReader reader = MillCommonUtilities.getReader(file);
+            BufferedReader reader = MillFiles.getReader(file);
             long validationKey = 0L;
 
             String line;
@@ -509,7 +510,7 @@ public class MillConfigValues {
    }
 
    public static void writeBaseConfigFile() {
-      File file = new File(MillCommonUtilities.getMillenaireCustomContentDir(), "config-base.txt");
+      File file = new File(MillFiles.getMillenaireCustomContentDir(), "config-base.txt");
       if (!file.exists()) {
          try {
             file.createNewFile();
@@ -519,7 +520,7 @@ public class MillConfigValues {
       }
 
       try {
-         BufferedWriter writer = MillCommonUtilities.getWriter(file);
+         BufferedWriter writer = MillFiles.getWriter(file);
          LanguageData main = mainLanguage;
          LanguageData fr = loadedLanguages.get("fr");
          LanguageData en = loadedLanguages.get("en");
@@ -564,7 +565,7 @@ public class MillConfigValues {
       }
 
       try {
-         BufferedReader reader = MillCommonUtilities.getReader(file);
+         BufferedReader reader = MillFiles.getReader(file);
          List<String> toWrite = new ArrayList<>();
          HashSet<MillConfigParameter> configsWritten = new HashSet<>();
 
@@ -612,7 +613,7 @@ public class MillConfigValues {
          }
 
          reader.close();
-         BufferedWriter writer = MillCommonUtilities.getWriter(file);
+         BufferedWriter writer = MillFiles.getWriter(file);
 
          for (String s : toWrite) {
             writer.write(s + "\n");

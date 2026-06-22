@@ -78,7 +78,7 @@ public class LanguageUtilities {
       List<String> hofData = new ArrayList<>();
 
       try {
-         BufferedReader reader = MillCommonUtilities.getReader(new File(MillCommonUtilities.getMillenaireContentDir(), "hof.txt"));
+         BufferedReader reader = MillFiles.getReader(new File(MillFiles.getMillenaireContentDir(), "hof.txt"));
 
          String line;
          while ((line = reader.readLine()) != null) {
@@ -104,7 +104,7 @@ public class LanguageUtilities {
          }
       }
 
-      languageDirs.add(new File(MillCommonUtilities.getMillenaireCustomContentDir(), "languages"));
+      languageDirs.add(new File(MillFiles.getMillenaireCustomContentDir(), "languages"));
       return languageDirs;
    }
 
@@ -265,7 +265,7 @@ public class LanguageUtilities {
                }
             }
 
-            File translationGapDir = new File(MillCommonUtilities.getMillenaireCustomContentDir(), "Translation gaps");
+            File translationGapDir = new File(MillFiles.getMillenaireCustomContentDir(), "Translation gaps");
             if (!translationGapDir.exists()) {
                translationGapDir.mkdirs();
             }
@@ -276,7 +276,7 @@ public class LanguageUtilities {
             }
 
             try {
-               BufferedWriter writer = MillCommonUtilities.getWriter(file);
+               BufferedWriter writer = MillFiles.getWriter(file);
 
                for (String key : percentageComplete.keySet()) {
                   writer.write(key + ": " + percentageComplete.get(key) + "%" + "\n");

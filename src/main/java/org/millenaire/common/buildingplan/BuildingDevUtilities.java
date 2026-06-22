@@ -27,7 +27,7 @@ import org.millenaire.common.item.MillItems;
 import org.millenaire.common.item.TradeGood;
 import org.millenaire.common.utilities.LanguageData;
 import org.millenaire.common.utilities.LanguageUtilities;
-import org.millenaire.common.utilities.MillCommonUtilities;
+import org.millenaire.common.utilities.MillFiles;
 import org.millenaire.common.utilities.MillLog;
 
 public class BuildingDevUtilities {
@@ -38,12 +38,12 @@ public class BuildingDevUtilities {
       MillConfigValues.LogTranslation = 0;
 
       for (Culture culture : Culture.ListCultures) {
-         File dir = new File(MillCommonUtilities.getMillenaireCustomContentDir(), "travelbook");
+         File dir = new File(MillFiles.getMillenaireCustomContentDir(), "travelbook");
          dir.mkdirs();
          File file = new File(dir, culture.key + "_travelbook.txt");
 
          try {
-            BufferedWriter writer = MillCommonUtilities.getWriter(file);
+            BufferedWriter writer = MillFiles.getWriter(file);
             writer.write("//Elements without travel book descriptions\n\n");
 
             for (VillagerType villagerType : culture.listVillagerTypes
@@ -112,12 +112,12 @@ public class BuildingDevUtilities {
       Map<String, String> tradeGoodsCultures = new HashMap<>();
 
       for (Culture culture : Culture.ListCultures) {
-         File dir = new File(MillCommonUtilities.getMillenaireCustomContentDir(), "travelbook");
+         File dir = new File(MillFiles.getMillenaireCustomContentDir(), "travelbook");
          dir.mkdirs();
          File file = new File(dir, culture.key + "_travelbook.csv");
 
          try {
-            BufferedWriter writer = MillCommonUtilities.getWriter(file);
+            BufferedWriter writer = MillFiles.getWriter(file);
 
             for (VillagerType villagerType : culture.listVillagerTypes.stream().sorted((p1, p2) -> p1.key.compareTo(p2.key)).collect(Collectors.toList())) {
                String key = "travelbook.villager." + villagerType.key + ".desc";
@@ -172,12 +172,12 @@ public class BuildingDevUtilities {
          }
       }
 
-      File dir = new File(MillCommonUtilities.getMillenaireCustomContentDir(), "travelbook");
+      File dir = new File(MillFiles.getMillenaireCustomContentDir(), "travelbook");
       dir.mkdirs();
       File file = new File(dir, "tradegoods.csv");
 
       try {
-         BufferedWriter writer = MillCommonUtilities.getWriter(file);
+         BufferedWriter writer = MillFiles.getWriter(file);
 
          for (String keyx : tradeGoodsDesc.keySet().stream().sorted().collect(Collectors.toList())) {
             if (tradeGoodsDesc.get(keyx) == null) {
@@ -196,10 +196,10 @@ public class BuildingDevUtilities {
    }
 
    public static void generateBuildingRes() {
-      File file = new File(MillCommonUtilities.getMillenaireCustomContentDir(), "resources used.txt");
+      File file = new File(MillFiles.getMillenaireCustomContentDir(), "resources used.txt");
 
       try {
-         BufferedWriter writer = MillCommonUtilities.getWriter(file);
+         BufferedWriter writer = MillFiles.getWriter(file);
          if (MillConfigValues.DEV) {
             generateSignBuildings(writer);
          }
@@ -256,7 +256,7 @@ public class BuildingDevUtilities {
          }
 
          try {
-            ImageIO.write(pict, "png", new File(MillCommonUtilities.getMillenaireContentDir(), "Colour Sheet.png"));
+            ImageIO.write(pict, "png", new File(MillFiles.getMillenaireContentDir(), "Colour Sheet.png"));
          } catch (Exception var6) {
             MillLog.printException(var6);
          }
@@ -271,7 +271,7 @@ public class BuildingDevUtilities {
 
    private static int generateColourSheetHandleFile(Graphics2D graphics, int pos, File file) {
       try {
-         BufferedReader reader = MillCommonUtilities.getReader(file);
+         BufferedReader reader = MillFiles.getReader(file);
 
          String line;
          while ((line = reader.readLine()) != null) {
@@ -294,10 +294,10 @@ public class BuildingDevUtilities {
    }
 
    private static void generateCultureBuildingRes(Culture culture) {
-      File file = new File(MillCommonUtilities.getMillenaireCustomContentDir(), "resources used " + culture.key + ".txt");
+      File file = new File(MillFiles.getMillenaireCustomContentDir(), "resources used " + culture.key + ".txt");
 
       try {
-         BufferedWriter writer = MillCommonUtilities.getWriter(file);
+         BufferedWriter writer = MillFiles.getWriter(file);
 
          for (BuildingPlanSet set : culture.ListPlanSets) {
             writePlanCostTextStyle(set, writer);
@@ -337,10 +337,10 @@ public class BuildingDevUtilities {
 
    public static void generateTranslatedHoFData(LanguageData language) {
       List<String> hofData = LanguageUtilities.getHoFData();
-      File file = new File(MillCommonUtilities.getMillenaireCustomContentDir(), "hof_" + language.language + ".txt");
+      File file = new File(MillFiles.getMillenaireCustomContentDir(), "hof_" + language.language + ".txt");
 
       try {
-         BufferedWriter writer = MillCommonUtilities.getWriter(file);
+         BufferedWriter writer = MillFiles.getWriter(file);
          boolean isFirstLine = true;
 
          for (String line : hofData) {
@@ -495,8 +495,8 @@ public class BuildingDevUtilities {
             }
          }
 
-         File file = new File(MillCommonUtilities.getMillenaireCustomContentDir(), "resources used wiki building list.txt");
-         BufferedWriter writer = MillCommonUtilities.getWriter(file);
+         File file = new File(MillFiles.getMillenaireCustomContentDir(), "resources used wiki building list.txt");
+         BufferedWriter writer = MillFiles.getWriter(file);
          writer.write("{| class=\"wikitable\"\n");
          writer.write("|-\n");
          writer.write("! Requirements Template Building Name\n");
@@ -511,8 +511,8 @@ public class BuildingDevUtilities {
 
          writer.write("|}");
          writer.close();
-         file = new File(MillCommonUtilities.getMillenaireCustomContentDir(), "resources used wiki.txt");
-         writer = MillCommonUtilities.getWriter(file);
+         file = new File(MillFiles.getMillenaireCustomContentDir(), "resources used wiki.txt");
+         writer = MillFiles.getWriter(file);
          writer.write("{{#switch: {{{1|{{BASEPAGENAME}}}}}\n");
 
          for (Culture culture : Culture.ListCultures) {

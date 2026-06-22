@@ -18,7 +18,7 @@ import org.millenaire.common.culture.VillagerType;
 import org.millenaire.common.culture.WallType;
 import org.millenaire.common.entity.VillagerConfig;
 import org.millenaire.common.goal.generic.GoalGeneric;
-import org.millenaire.common.utilities.MillCommonUtilities;
+import org.millenaire.common.utilities.MillFiles;
 import org.millenaire.common.utilities.MillLog;
 
 public class ParametersManager {
@@ -30,16 +30,16 @@ public class ParametersManager {
    ) {
       File directory;
       if (directoryName != null) {
-         directory = new File(MillCommonUtilities.getMillenaireHelpDir(), directoryName);
+         directory = new File(MillFiles.getMillenaireHelpDir(), directoryName);
       } else {
-         directory = MillCommonUtilities.getMillenaireHelpDir();
+         directory = MillFiles.getMillenaireHelpDir();
       }
 
       directory.mkdirs();
       File file = new File(directory, fileName);
 
       try {
-         BufferedWriter writer = MillCommonUtilities.getWriter(file);
+         BufferedWriter writer = MillFiles.getWriter(file);
          writer.write(explanations + "\n" + "\n");
          Map<String, List<AnnotedParameter>> parametersByExplanationCategory = null;
          if (!recursive) {
@@ -216,7 +216,7 @@ public class ParametersManager {
       boolean oldSeparatorWarning = false;
 
       try {
-         BufferedReader reader = MillCommonUtilities.getReader(file);
+         BufferedReader reader = MillFiles.getReader(file);
 
          String line;
          while ((line = reader.readLine()) != null) {
@@ -342,7 +342,7 @@ public class ParametersManager {
       }
 
       try {
-         BufferedWriter writer = MillCommonUtilities.getWriter(file);
+         BufferedWriter writer = MillFiles.getWriter(file);
          writeAnnotedParameters(writer, target, fieldCategory, null, null);
          writer.close();
       } catch (Exception var4) {

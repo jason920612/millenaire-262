@@ -58,6 +58,7 @@ import org.millenaire.common.utilities.BlockStateUtilities;
 import org.millenaire.common.utilities.IntPoint;
 import org.millenaire.common.utilities.LanguageUtilities;
 import org.millenaire.common.utilities.MillCommonUtilities;
+import org.millenaire.common.utilities.MillFiles;
 import org.millenaire.common.utilities.MillCrash;
 import org.millenaire.common.utilities.MillLog;
 import org.millenaire.common.utilities.Point;
@@ -686,7 +687,7 @@ public class BuildingPlan implements IBuildingPlan, MillCommonUtilities.Weighted
          // MillConvert.planColourToSpec instead of resolving them ad-hoc.
          org.millenaire.common.convert.LegacyTables.loadPlanColours(file);
 
-         BufferedReader reader = MillCommonUtilities.getReader(file);
+         BufferedReader reader = MillFiles.getReader(file);
 
          String line;
          while ((line = reader.readLine()) != null) {

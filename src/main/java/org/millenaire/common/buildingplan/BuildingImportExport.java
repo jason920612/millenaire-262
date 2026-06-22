@@ -50,7 +50,7 @@ import org.millenaire.common.forge.Mill;
 import org.millenaire.common.network.ServerSender;
 import org.millenaire.common.utilities.BlockItemUtilities;
 import org.millenaire.common.utilities.BlockStateUtilities;
-import org.millenaire.common.utilities.MillCommonUtilities;
+import org.millenaire.common.utilities.MillFiles;
 import org.millenaire.common.utilities.MillCrash;
 import org.millenaire.common.utilities.MillLog;
 import org.millenaire.common.utilities.Point;
@@ -93,7 +93,7 @@ public class BuildingImportExport {
    }
 
    private static void copyPlanSetToExportDir(BuildingPlanSet planSet) {
-      File exportDir = MillCommonUtilities.getExportDir();
+      File exportDir = MillFiles.getExportDir();
       Path exportPath = exportDir.toPath();
       Path inputPath = planSet.getFirstStartingPlan().getLoadedFromFile().toPath().getParent();
 
@@ -183,7 +183,7 @@ public class BuildingImportExport {
       boolean autoconvertToPreserveGround
    ) throws Exception, IOException, UnsupportedEncodingException, FileNotFoundException {
       loadReverseBuildingPoints(autoconvertToPreserveGround, exportRegularChests);
-      File exportDir = new File(MillCommonUtilities.getMillenaireCustomContentDir(), "exports");
+      File exportDir = new File(MillFiles.getMillenaireCustomContentDir(), "exports");
       if (!exportDir.exists()) {
          exportDir.mkdirs();
       }
@@ -329,7 +329,7 @@ public class BuildingImportExport {
       String fileName = planName + "_" + variationLetter + upgradeLevel + ".png";
       ImageIO.write(pict, "png", new File(exportDir, fileName));
       if (upgradeLevel == 0 && existingSet == null) {
-         BufferedWriter writer = MillCommonUtilities.getWriter(new File(exportDir, planName + "_" + variationLetter + ".txt"));
+         BufferedWriter writer = MillFiles.getWriter(new File(exportDir, planName + "_" + variationLetter + ".txt"));
          writer.write("building.length=" + length + "\n");
          writer.write("building.width=" + width + "\n");
          writer.write("\n");
@@ -337,7 +337,7 @@ public class BuildingImportExport {
          writer.write("initial.nativename=" + planName + "\n");
          writer.close();
       } else if (upgradeLevel > existingSet.plans.get(variation).length) {
-         BufferedWriter writer = MillCommonUtilities.getAppendWriter(new File(exportDir, planName + "_" + variationLetter + ".txt"));
+         BufferedWriter writer = MillFiles.getAppendWriter(new File(exportDir, planName + "_" + variationLetter + ".txt"));
          writer.write("upgrade" + upgradeLevel + ".startlevel=" + startLevel + "\n");
          writer.close();
       }
@@ -464,7 +464,7 @@ public class BuildingImportExport {
    public static void importTableCreateNewBuilding(
       Player player, TileEntityImportTable importTable, int length, int width, int startLevel, boolean clearGround
    ) {
-      File exportDir = MillCommonUtilities.getExportDir();
+      File exportDir = MillFiles.getExportDir();
       VirtualDir exportVirtualDir = new VirtualDir(exportDir);
       int exportNumber = 1;
 
@@ -540,10 +540,10 @@ public class BuildingImportExport {
 
    public static void importTableExportPlanCost(String buildingKey) {
       BuildingPlanSet set = loadPlanSetFromExportDir(buildingKey);
-      File file = new File(MillCommonUtilities.getExportDir(), set.key + " resources used.txt");
+      File file = new File(MillFiles.getExportDir(), set.key + " resources used.txt");
 
       try {
-         BufferedWriter writer = MillCommonUtilities.getWriter(file);
+         BufferedWriter writer = MillFiles.getWriter(file);
          BuildingDevUtilities.writePlanCostTextStyle(set, writer);
          writer.close();
          Mill.proxy.localTranslatedSentence(Mill.proxy.getTheSinglePlayer(), 'f', "importtable.costexported", "export/" + file.getName());
@@ -677,7 +677,7 @@ public class BuildingImportExport {
    }
 
    private static BuildingPlanSet loadPlanSetFromExportDir(String parentBuildingKey) {
-      File exportDir = MillCommonUtilities.getExportDir();
+      File exportDir = MillFiles.getExportDir();
       VirtualDir exportVirtualDir = new VirtualDir(exportDir);
       File parentBuildingFile = new File(exportDir, parentBuildingKey + "_A.txt");
       BuildingPlanSet parentBuildingSet = new BuildingPlanSet(null, parentBuildingKey, exportVirtualDir, parentBuildingFile);
@@ -1195,7 +1195,7 @@ public class BuildingImportExport {
 
          char variationLetter = 'A';
          variationLetter = (char)(variationLetter + variation);
-         File exportDir = MillCommonUtilities.getExportDir();
+         File exportDir = MillFiles.getExportDir();
          File buildingFile = new File(exportDir, buildingKey + "_" + variationLetter + ".txt");
          if (!buildingFile.exists()) {
             File foundFile = null;

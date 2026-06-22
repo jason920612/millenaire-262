@@ -40,6 +40,7 @@ import org.millenaire.common.network.StreamReadWrite;
 import org.millenaire.common.quest.SpecialQuestActions;
 import org.millenaire.common.utilities.DevModUtilities;
 import org.millenaire.common.utilities.MillCommonUtilities;
+import org.millenaire.common.utilities.MillFiles;
 import org.millenaire.common.utilities.MillCrash;
 import org.millenaire.common.utilities.MillLog;
 import org.millenaire.common.utilities.Point;
@@ -92,7 +93,7 @@ public class MillWorldData {
    public MillWorldData(Level world) {
       this.world = world;
       if (!world.isClientSide()) {
-         this.saveDir = MillCommonUtilities.getWorldSaveDir(world);
+         this.saveDir = MillFiles.getWorldSaveDir(world);
          this.millenaireEnabled = true;
          this.millenaireDir = new File(this.saveDir, "millenaire");
          if (!this.millenaireDir.exists()) {
@@ -424,7 +425,7 @@ public class MillWorldData {
          buildingsDir.mkdir();
       }
 
-      for (File file : buildingsDir.listFiles(new MillCommonUtilities.ExtFileFilter("gz"))) {
+      for (File file : buildingsDir.listFiles(new MillFiles.ExtFileFilter("gz"))) {
          try (FileInputStream fileinputstream = new FileInputStream(file)) {
             CompoundTag buildingsFileTag = NbtIo.readCompressed(fileinputstream, net.minecraft.nbt.NbtAccounter.unlimitedHeap());
             ListTag buildingTagList = buildingsFileTag.getListOrEmpty("buildings");
@@ -465,7 +466,7 @@ public class MillWorldData {
       this.globalTags.clear();
       if (tagsFile.exists()) {
          try {
-            BufferedReader reader = MillCommonUtilities.getReader(tagsFile);
+            BufferedReader reader = MillFiles.getReader(tagsFile);
 
             for (String line = reader.readLine(); line != null; line = reader.readLine()) {
                if (line.trim().length() > 0) {
@@ -539,7 +540,7 @@ public class MillWorldData {
       File villageLog = new File(this.millenaireDir, "villages.txt");
       if (villageLog.exists()) {
          try {
-            BufferedReader reader = MillCommonUtilities.getReader(villageLog);
+            BufferedReader reader = MillFiles.getReader(villageLog);
 
             for (String line = reader.readLine(); line != null; line = reader.readLine()) {
                if (line.trim().length() > 0) {
@@ -588,7 +589,7 @@ public class MillWorldData {
       villageLog = new File(this.millenaireDir, "lonebuildings.txt");
       if (villageLog.exists()) {
          try {
-            BufferedReader reader = MillCommonUtilities.getReader(villageLog);
+            BufferedReader reader = MillFiles.getReader(villageLog);
 
             for (String linex = reader.readLine(); linex != null; linex = reader.readLine()) {
                if (linex.trim().length() > 0) {
@@ -636,7 +637,7 @@ public class MillWorldData {
       File configFile = new File(this.millenaireDir, "config.txt");
       if (configFile != null && configFile.exists()) {
          try {
-            BufferedReader reader = MillCommonUtilities.getReader(configFile);
+            BufferedReader reader = MillFiles.getReader(configFile);
 
             String line;
             while ((line = reader.readLine()) != null) {
@@ -981,7 +982,7 @@ public class MillWorldData {
          File configFile = new File(this.millenaireDir, "tags.txt");
 
          try {
-            BufferedWriter writer = MillCommonUtilities.getWriter(configFile);
+            BufferedWriter writer = MillFiles.getWriter(configFile);
 
             for (String tag : this.globalTags) {
                writer.write(tag + "\n");
@@ -1005,7 +1006,7 @@ public class MillWorldData {
          File villageLog = new File(millenaireDir, "lonebuildings.txt");
 
          try {
-            BufferedWriter writer = MillCommonUtilities.getWriter(villageLog);
+            BufferedWriter writer = MillFiles.getWriter(villageLog);
 
             for (int i = 0; i < this.loneBuildingsList.pos.size(); i++) {
                Point p = this.loneBuildingsList.pos.get(i);
@@ -1053,7 +1054,7 @@ public class MillWorldData {
          File villageLog = new File(millenaireDir, "villages.txt");
 
          try {
-            BufferedWriter writer = MillCommonUtilities.getWriter(villageLog);
+            BufferedWriter writer = MillFiles.getWriter(villageLog);
 
             for (int i = 0; i < this.villagesList.pos.size(); i++) {
                Point p = this.villagesList.pos.get(i);
@@ -1132,7 +1133,7 @@ public class MillWorldData {
          File configFile = new File(this.millenaireDir, "config.txt");
 
          try {
-            BufferedWriter writer = MillCommonUtilities.getWriter(configFile);
+            BufferedWriter writer = MillFiles.getWriter(configFile);
             if (this.generateVillagesSet) {
                writer.write("generate_villages=" + this.generateVillages + "\n");
             }
@@ -1280,7 +1281,7 @@ public class MillWorldData {
 
    public void updateWorldClient(boolean inOverworld) {
       if (!Mill.checkedMillenaireDir
-         && (!MillCommonUtilities.getMillenaireContentDir().exists() || !new File(MillCommonUtilities.getMillenaireContentDir(), "config.txt").exists())) {
+         && (!MillFiles.getMillenaireContentDir().exists() || !new File(MillFiles.getMillenaireContentDir(), "config.txt").exists())) {
          Mill.proxy.sendChatAdmin("The millenaire directory could not be found. It should be inside the minecraft \"mods\" directory, alongside the jar.");
          Mill.proxy.sendChatAdmin("Le dossier millenaire est introuvable. Il devrait être dans le dossier \"mods\" de Minecraft, à côté du jar.");
       }

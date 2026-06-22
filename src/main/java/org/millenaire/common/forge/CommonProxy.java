@@ -10,7 +10,7 @@ import net.minecraft.world.level.block.LeavesBlock;
 
 import org.millenaire.common.network.ServerReceiver;
 import org.millenaire.common.utilities.LanguageUtilities;
-import org.millenaire.common.utilities.MillCommonUtilities;
+import org.millenaire.common.utilities.MillFiles;
 import org.millenaire.common.world.UserProfile;
 
 /**
@@ -32,11 +32,11 @@ public class CommonProxy {
    }
 
    public File getConfigFile() {
-      return new File(MillCommonUtilities.getMillenaireContentDir(), "config-server.txt");
+      return new File(MillFiles.getMillenaireContentDir(), "config-server.txt");
    }
 
    public File getCustomConfigFile() {
-      return new File(MillCommonUtilities.getMillenaireCustomContentDir(), "config-server-custom.txt");
+      return new File(MillFiles.getMillenaireCustomContentDir(), "config-server-custom.txt");
    }
 
    public String getItemName(Item item, int meta) {
@@ -48,7 +48,7 @@ public class CommonProxy {
    }
 
    public File getLogFile() {
-      return new File(MillCommonUtilities.getMillenaireCustomContentDir(), "millenaire-server.log");
+      return new File(MillFiles.getMillenaireCustomContentDir(), "millenaire-server.log");
    }
 
    public String getQuestKeyName() {

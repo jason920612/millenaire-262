@@ -21,7 +21,7 @@ import org.millenaire.common.culture.Culture;
 import org.millenaire.common.entity.TileEntityImportTable;
 import org.millenaire.common.item.MillItems;
 import org.millenaire.common.utilities.LanguageUtilities;
-import org.millenaire.common.utilities.MillCommonUtilities;
+import org.millenaire.common.utilities.MillFiles;
 import org.millenaire.common.utilities.Point;
 import org.millenaire.common.utilities.virtualdir.VirtualDir;
 
@@ -353,7 +353,7 @@ public class GuiImportTable extends GuiText {
 
    private List<TextLine> getDataImportExportDirBuilding() {
       List<TextLine> text = new ArrayList<>();
-      File exportDir = new File(MillCommonUtilities.getMillenaireCustomContentDir(), "exports");
+      File exportDir = new File(MillFiles.getMillenaireCustomContentDir(), "exports");
       if (!exportDir.exists()) {
          exportDir.mkdirs();
       }
@@ -386,7 +386,7 @@ public class GuiImportTable extends GuiText {
 
    private List<TextLine> getDataImportExportDirData() {
       List<TextLine> text = new ArrayList<>();
-      File exportDir = new File(MillCommonUtilities.getMillenaireCustomContentDir(), "exports");
+      File exportDir = new File(MillFiles.getMillenaireCustomContentDir(), "exports");
       if (!exportDir.exists()) {
          exportDir.mkdirs();
       }

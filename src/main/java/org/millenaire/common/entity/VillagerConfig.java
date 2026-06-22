@@ -14,7 +14,7 @@ import org.millenaire.common.annotedparameters.ConfigAnnotations;
 import org.millenaire.common.annotedparameters.ParametersManager;
 import org.millenaire.common.forge.Mill;
 import org.millenaire.common.item.InvItem;
-import org.millenaire.common.utilities.MillCommonUtilities;
+import org.millenaire.common.utilities.MillFiles;
 import org.millenaire.common.utilities.MillCrash;
 import org.millenaire.common.utilities.MillLog;
 import org.millenaire.common.utilities.virtualdir.VirtualDir;
@@ -176,7 +176,7 @@ public class VillagerConfig {
 
    private static List<File> getVillagerConfigFiles() {
       VirtualDir virtualConfigDir = Mill.virtualLoadingDir.getChildDirectory("villagerconfig");
-      return virtualConfigDir.listFilesRecursive(new MillCommonUtilities.ExtFileFilter("txt"));
+      return virtualConfigDir.listFilesRecursive(new MillFiles.ExtFileFilter("txt"));
    }
 
    public static void loadConfigs() {

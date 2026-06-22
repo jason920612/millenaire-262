@@ -250,7 +250,7 @@ public class BlockItemUtilities {
    }
 
    public static void initBlockTypes() {
-      File mainBlockTypesFile = new File(MillCommonUtilities.getMillenaireContentDir(), "blocktypes.txt");
+      File mainBlockTypesFile = new File(MillFiles.getMillenaireContentDir(), "blocktypes.txt");
       if (!mainBlockTypesFile.exists()) {
          System.err.println("ERROR: Could not find the blocktypes file at " + mainBlockTypesFile.getAbsolutePath());
          Mill.startupError = true;
@@ -260,7 +260,7 @@ public class BlockItemUtilities {
             System.err.println("ERROR: Could not read the blocktypes file at " + mainBlockTypesFile.getAbsolutePath());
             Mill.startupError = true;
          } else {
-            File customBlockTypesFile = new File(MillCommonUtilities.getMillenaireCustomContentDir(), "blocktypes.txt");
+            File customBlockTypesFile = new File(MillFiles.getMillenaireCustomContentDir(), "blocktypes.txt");
             if (customBlockTypesFile.exists()) {
                readBlockTypesFile(customBlockTypesFile);
             }
@@ -407,7 +407,7 @@ public class BlockItemUtilities {
          return false;
       } else {
          try {
-            BufferedReader reader = MillCommonUtilities.getReader(file);
+            BufferedReader reader = MillFiles.getReader(file);
 
             for (String line = reader.readLine(); line != null; line = reader.readLine()) {
                if (line.trim().length() > 0 && !line.startsWith("//")) {

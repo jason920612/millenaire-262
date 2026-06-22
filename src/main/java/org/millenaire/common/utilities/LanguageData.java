@@ -68,7 +68,7 @@ public class LanguageData {
    }
 
    public void compareWithLanguage(List<File> languageDirs, HashMap<String, Integer> percentages, LanguageData ref, Map<String, String> referenceLangStrings) {
-      File translationGapDir = new File(MillCommonUtilities.getMillenaireCustomContentDir(), "Translation gaps");
+      File translationGapDir = new File(MillFiles.getMillenaireCustomContentDir(), "Translation gaps");
       if (!translationGapDir.exists()) {
          translationGapDir.mkdirs();
       }
@@ -81,7 +81,7 @@ public class LanguageData {
       try {
          int translationsMissing = 0;
          int translationsDone = 0;
-         BufferedWriter writer = MillCommonUtilities.getWriter(file);
+         BufferedWriter writer = MillFiles.getWriter(file);
          writer.write(
             "Translation comparison between " + this.language + " and " + ref.language + ", version " + "8.1.2" + ", date: " + MillLog.now() + "\n" + "\n"
          );
@@ -238,7 +238,7 @@ public class LanguageData {
          }
 
          if (effectiveLanguageDir.exists()) {
-            for (File file : effectiveLanguageDir.listFiles(new MillCommonUtilities.PrefixExtFileFilter("quests", "txt"))) {
+            for (File file : effectiveLanguageDir.listFiles(new MillFiles.PrefixExtFileFilter("quests", "txt"))) {
                this.loadStrings(this.questStrings, file);
             }
          }
@@ -301,7 +301,7 @@ public class LanguageData {
          }
 
          if (effectiveLanguageDir.exists()) {
-            for (File file : effectiveLanguageDir.listFiles(new MillCommonUtilities.ExtFileFilter("lang"))) {
+            for (File file : effectiveLanguageDir.listFiles(new MillFiles.ExtFileFilter("lang"))) {
                this.loadStrings(values, file);
             }
          }
@@ -312,7 +312,7 @@ public class LanguageData {
 
    private void loadStrings(Map<String, String> strings, File file) {
       try {
-         BufferedReader reader = MillCommonUtilities.getReader(file);
+         BufferedReader reader = MillFiles.getReader(file);
 
          String line;
          while ((line = reader.readLine()) != null) {
@@ -399,7 +399,7 @@ public class LanguageData {
             String version = "unknown";
 
             try {
-               BufferedReader reader = MillCommonUtilities.getReader(file);
+               BufferedReader reader = MillFiles.getReader(file);
                List<String> page = new ArrayList<>();
 
                String line;

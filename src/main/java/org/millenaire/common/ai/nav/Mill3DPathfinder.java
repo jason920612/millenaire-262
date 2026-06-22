@@ -50,8 +50,12 @@ public final class Mill3DPathfinder {
          if (known != null && cur.g.compareTo(known) > 0) {
             continue;
          }
-         if (cur.pos.equals(goal)) {
-            return reconstruct(from, start, goal);
+         // Reached: standing ON the goal, OR — when the goal is a NON-standable block (a log/crop/ore the
+         // villager works AT, or any occupied cell) — standing in an adjacent cell within reach. Without this
+         // most routes "failed" because the goal was an occupied work block nobody can stand on.
+         if (cur.pos.equals(goal)
+            || (cur.pos.closerThan(goal, 1.8) && !v.standable(goal.getX(), goal.getY(), goal.getZ()))) {
+            return reconstruct(from, start, cur.pos);
          }
          expanded++;
          forEachNeighbor(v, cur.pos, (nb, stepCost) -> {

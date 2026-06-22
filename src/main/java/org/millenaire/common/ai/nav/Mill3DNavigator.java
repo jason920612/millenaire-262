@@ -21,12 +21,29 @@ public final class Mill3DNavigator {
    private int index;
    private int replanTimer;
    private BlockPos pathGoal;
+   private int noRouteStreak;
+   private double lastX = Double.NaN;
+   private double lastZ;
+   private int stuckTicks;
 
    /** Drive {@code villager} toward {@code goal} for one tick. @return false when arrived or unreachable. */
    public boolean navigateTo(MillVillager villager, BlockPos goal) {
       BlockPos here = villager.blockPosition();
       if (here.closerThan(goal, 1.6)) {
          return false; // arrived
+      }
+      // No forward progress for ~1s → the current path is unwalkable from here; force a fresh plan.
+      double mv = Double.isNaN(this.lastX) ? 1.0
+         : (villager.getX() - this.lastX) * (villager.getX() - this.lastX) + (villager.getZ() - this.lastZ) * (villager.getZ() - this.lastZ);
+      this.lastX = villager.getX();
+      this.lastZ = villager.getZ();
+      if (mv < 0.0025) {
+         if (++this.stuckTicks > 20) {
+            this.stuckTicks = 0;
+            this.path = null;
+         }
+      } else {
+         this.stuckTicks = 0;
       }
       boolean stale = this.path == null || this.pathGoal == null || !this.pathGoal.equals(goal)
          || --this.replanTimer <= 0 || this.index >= this.path.size()
@@ -44,13 +61,20 @@ public final class Mill3DNavigator {
       BlockPos target = this.path.get(Math.min(this.index, this.path.size() - 1));
 
       villager.getMoveControl().setWantedPosition(target.getX() + 0.5, target.getY(), target.getZ() + 0.5, SPEED);
-      // Jump when the next node climbs, or is a horizontal hop over a gap (>1.5 blocks away, not lower).
-      double dx = target.getX() + 0.5 - villager.getX();
-      double dz = target.getZ() + 0.5 - villager.getZ();
-      double horiz = Math.sqrt(dx * dx + dz * dz);
+      // Jump ONLY when actually needed: climbing UP, or an actual air GAP (a hole — no floor) one step toward
+      // the target. Do NOT jump just because the next node is far (that caused pointless in-place jumping on
+      // flat ground). A wall ahead is a climb (handled by 'climbs'), not a gap.
       boolean climbs = target.getY() > here.getY();
-      boolean gapHop = horiz > 1.5 && target.getY() >= here.getY();
-      if ((climbs || gapHop) && villager.onGround()) {
+      boolean gapAhead = false;
+      int sdx = Integer.signum(target.getX() - here.getX());
+      int sdz = Integer.signum(target.getZ() - here.getZ());
+      if ((sdx != 0 || sdz != 0) && target.getY() >= here.getY()) {
+         Voxel v = new LevelVoxel(villager.level());
+         int ax = here.getX() + sdx;
+         int az = here.getZ() + sdz;
+         gapAhead = !v.isSolid(ax, here.getY(), az) && !v.isSolid(ax, here.getY() - 1, az); // passable + no floor = hole
+      }
+      if ((climbs || gapAhead) && villager.onGround()) {
          villager.getJumpControl().jump();
       }
       return true;
@@ -78,6 +102,17 @@ public final class Mill3DNavigator {
       float w = (float) org.millenaire.common.config.MillConfigValues.VFNavDangerWeight;
       Mill3DPathfinder.CostField field = (x, y, z) -> w * danger.dangerAt(x, z);
       this.path = Mill3DPathfinder.findPath(new LevelVoxel(villager.level()), villager.blockPosition(), goal, MAX_NODES, field);
+      // Fail LOUD (no silent give-up): surface that the 3D pathfinder found no route, with the exact terrain
+      // coords, so its gaps are visible + fixable. Throttled so a persistently-unreachable goal doesn't spam.
+      if (this.path == null || this.path.size() < 2) {
+         if (this.noRouteStreak++ % 60 == 0) {
+            org.millenaire.common.utilities.MillLog.printException(
+               "███ 3D-NAV: NO route ███ " + villager.blockPosition() + " → " + goal + " for " + villager,
+               new IllegalStateException("3D pathfinder found no route"));
+         }
+      } else {
+         this.noRouteStreak = 0;
+      }
       // Don't let the legacy navigation fight the MoveControl while we drive the 3D path directly.
       villager.getNavigation().stop();
    }

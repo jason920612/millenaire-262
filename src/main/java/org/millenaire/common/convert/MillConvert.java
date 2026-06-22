@@ -334,6 +334,196 @@ public final class MillConvert {
    }
 
    /**
+    * Reconstructs the 1.12 "block metadata" int from a 26.2 {@link BlockState}, using the same bit-packing
+    * the legacy vanilla block used in {@code getMetaFromState}. This is the documented inverse of
+    * {@link #blockState(Block, int)} / {@link #blockState(String, int)}: it lets ported call sites that still
+    * think in terms of legacy meta (and the building export, which persists schematics as block+meta) keep
+    * orientation/variant/age information.
+    *
+    * <p>Pure function: BlockState in, int out — no world/level access. Only the encodings actually relied
+    * upon by Millénaire are reconstructed; everything else falls back to 0. Behaviour-identical to the former
+    * {@code WorldUtilities.blockStateToLegacyMeta} inline switch (now a thin delegate to here).</p>
+    */
+   public static int blockStateToLegacyMeta(BlockState state) {
+      if (state == null) {
+         return 0;
+      }
+
+      net.minecraft.world.level.block.Block block = state.getBlock();
+
+      // --- Age / growth (crops, nether wart, cocoa) -------------------------------------------------
+      if (state.hasProperty(net.minecraft.world.level.block.NetherWartBlock.AGE)) {
+         return state.getValue(net.minecraft.world.level.block.NetherWartBlock.AGE);
+      }
+      if (state.hasProperty(net.minecraft.world.level.block.state.properties.BlockStateProperties.AGE_7)) {
+         return state.getValue(net.minecraft.world.level.block.state.properties.BlockStateProperties.AGE_7);
+      }
+      if (state.hasProperty(net.minecraft.world.level.block.FarmlandBlock.MOISTURE)) {
+         return state.getValue(net.minecraft.world.level.block.FarmlandBlock.MOISTURE);
+      }
+
+      // --- Wool: legacy meta == DyeColor ordinal (variants are distinct blocks now) -----------------
+      int wool = woolColorMeta(block);
+      if (wool >= 0) {
+         return wool;
+      }
+
+      // --- Logs / pillars: meta&12 = axis (Y=0, X=4, Z=8) -------------------------------------------
+      if (state.hasProperty(net.minecraft.world.level.block.RotatedPillarBlock.AXIS)) {
+         return switch (state.getValue(net.minecraft.world.level.block.RotatedPillarBlock.AXIS)) {
+            case X -> 4;
+            case Z -> 8;
+            default -> 0;
+         };
+      }
+
+      // --- Stairs: 4*(half==TOP) | (5 - facing.get3DDataValue()) ------------------------------------
+      if (block instanceof net.minecraft.world.level.block.StairBlock) {
+         int i = 0;
+         if (state.getValue(net.minecraft.world.level.block.StairBlock.HALF) == net.minecraft.world.level.block.state.properties.Half.TOP) {
+            i |= 4;
+         }
+         return i | 5 - state.getValue(net.minecraft.world.level.block.StairBlock.FACING).get3DDataValue();
+      }
+
+      // --- Ladder: meta = facing.get3DDataValue() (NORTH=2, SOUTH=3, WEST=4, EAST=5) -----------------
+      if (block instanceof net.minecraft.world.level.block.LadderBlock) {
+         return state.getValue(net.minecraft.world.level.block.LadderBlock.FACING).get3DDataValue();
+      }
+
+      // --- Torch: standing=5; wall torch EAST=1, WEST=2, SOUTH=3, NORTH=4 ---------------------------
+      if (block instanceof net.minecraft.world.level.block.WallTorchBlock) {
+         return switch (state.getValue(net.minecraft.world.level.block.WallTorchBlock.FACING)) {
+            case EAST -> 1;
+            case WEST -> 2;
+            case SOUTH -> 3;
+            case NORTH -> 4;
+            default -> 5;
+         };
+      }
+      if (block instanceof net.minecraft.world.level.block.TorchBlock) {
+         return 5;
+      }
+
+      // --- Slab: TOP=8, BOTTOM=0 (variant bits removed; variants are distinct blocks) ---------------
+      if (state.hasProperty(net.minecraft.world.level.block.SlabBlock.TYPE)) {
+         return state.getValue(net.minecraft.world.level.block.SlabBlock.TYPE)
+               == net.minecraft.world.level.block.state.properties.SlabType.TOP ? 8 : 0;
+      }
+
+      // --- Door: upper = 8 | (hinge RIGHT?1) | (powered?2); lower = facing.clockWise.2D | (open?4) ---
+      if (block instanceof net.minecraft.world.level.block.DoorBlock) {
+         int i = 0;
+         if (state.getValue(net.minecraft.world.level.block.DoorBlock.HALF) == net.minecraft.world.level.block.state.properties.DoubleBlockHalf.UPPER) {
+            i |= 8;
+            if (state.getValue(net.minecraft.world.level.block.DoorBlock.HINGE) == net.minecraft.world.level.block.state.properties.DoorHingeSide.RIGHT) {
+               i |= 1;
+            }
+            if (state.getValue(net.minecraft.world.level.block.DoorBlock.POWERED)) {
+               i |= 2;
+            }
+         } else {
+            i |= state.getValue(net.minecraft.world.level.block.DoorBlock.FACING).getClockWise().get2DDataValue();
+            if (state.getValue(net.minecraft.world.level.block.DoorBlock.OPEN)) {
+               i |= 4;
+            }
+         }
+         return i;
+      }
+
+      // --- Bed: meta&8 = HEAD part (foot=0); meta&3 = facing.get2DDataValue() -----------------------
+      if (block instanceof net.minecraft.world.level.block.BedBlock) {
+         int i = state.getValue(net.minecraft.world.level.block.BedBlock.FACING).get2DDataValue();
+         if (state.getValue(net.minecraft.world.level.block.BedBlock.PART) == net.minecraft.world.level.block.state.properties.BedPart.HEAD) {
+            i |= 8;
+         }
+         return i;
+      }
+
+      // --- Lever: orientation index | (powered?8) ---------------------------------------------------
+      if (block instanceof net.minecraft.world.level.block.LeverBlock) {
+         int i = leverOrientationMeta(state);
+         if (state.getValue(net.minecraft.world.level.block.LeverBlock.POWERED)) {
+            i |= 8;
+         }
+         return i;
+      }
+
+      // --- Button: face/facing index | (powered?8) --------------------------------------------------
+      if (block instanceof net.minecraft.world.level.block.ButtonBlock) {
+         int i = buttonFacingMeta(state);
+         if (state.getValue(net.minecraft.world.level.block.ButtonBlock.POWERED)) {
+            i |= 8;
+         }
+         return i;
+      }
+
+      // --- Generic horizontal-facing blocks: meta = facing.get2DDataValue() -------------------------
+      if (state.hasProperty(net.minecraft.world.level.block.HorizontalDirectionalBlock.FACING)) {
+         return state.getValue(net.minecraft.world.level.block.HorizontalDirectionalBlock.FACING).get2DDataValue();
+      }
+      if (state.hasProperty(net.minecraft.world.level.block.DirectionalBlock.FACING)) {
+         return state.getValue(net.minecraft.world.level.block.DirectionalBlock.FACING).get3DDataValue();
+      }
+
+      return 0;
+   }
+
+   /** Legacy wool dye meta for the 16 distinct 26.2 wool blocks, or -1 if not a wool block. */
+   private static int woolColorMeta(net.minecraft.world.level.block.Block block) {
+      // 26.2 wool is a ColorCollection (Blocks.WOOL.pick(DyeColor)), not 16 named constants. The 1.12 wool
+      // meta == the dye id (white=0 … black=15), which DyeColor.getId() reproduces.
+      for (net.minecraft.world.item.DyeColor c : net.minecraft.world.item.DyeColor.values()) {
+         if (block == Blocks.WOOL.pick(c)) {
+            return c.getId();
+         }
+      }
+      return -1;
+   }
+
+   /** 1.12 BlockLever.EnumOrientation index for a 26.2 lever state. */
+   private static int leverOrientationMeta(BlockState state) {
+      net.minecraft.world.level.block.state.properties.AttachFace face =
+         state.getValue(net.minecraft.world.level.block.LeverBlock.FACE);
+      net.minecraft.core.Direction facing = state.getValue(net.minecraft.world.level.block.LeverBlock.FACING);
+      if (face == net.minecraft.world.level.block.state.properties.AttachFace.FLOOR) {
+         // UP_Z=5, UP_X=6 depending on facing axis
+         return facing.getAxis() == net.minecraft.core.Direction.Axis.X ? 6 : 5;
+      } else if (face == net.minecraft.world.level.block.state.properties.AttachFace.CEILING) {
+         // DOWN_X=0, DOWN_Z=7 depending on facing axis
+         return facing.getAxis() == net.minecraft.core.Direction.Axis.X ? 0 : 7;
+      } else {
+         return switch (facing) {
+            case EAST -> 1;
+            case WEST -> 2;
+            case SOUTH -> 3;
+            case NORTH -> 4;
+            default -> 1;
+         };
+      }
+   }
+
+   /** 1.12 BlockButton facing index for a 26.2 button state. */
+   private static int buttonFacingMeta(BlockState state) {
+      net.minecraft.world.level.block.state.properties.AttachFace face =
+         state.getValue(net.minecraft.world.level.block.ButtonBlock.FACE);
+      net.minecraft.core.Direction facing = state.getValue(net.minecraft.world.level.block.ButtonBlock.FACING);
+      if (face == net.minecraft.world.level.block.state.properties.AttachFace.FLOOR) {
+         return facing.getAxis() == net.minecraft.core.Direction.Axis.X ? 1 : 5;
+      } else if (face == net.minecraft.world.level.block.state.properties.AttachFace.CEILING) {
+         return 0;
+      } else {
+         return switch (facing) {
+            case EAST -> 1;
+            case WEST -> 2;
+            case SOUTH -> 3;
+            case NORTH -> 4;
+            default -> 1;
+         };
+      }
+   }
+
+   /**
     * Maps a 1.12 {@code (name, meta)} item to a modern {@link ItemStack} of the requested count. This is
     * the single entry point that replaced the ad-hoc {@code BuiltInRegistries.ITEM.getValue} /
     * {@code BLOCK.getValue} resolution in {@code InvItem.loadInvItemList}.

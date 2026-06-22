@@ -155,6 +155,84 @@ class LegacyBlockTableTest extends MillHeadlessTest {
       assertEquals(state("wheat", 5), MillConvert.blockState(Blocks.WHEAT, 5));
    }
 
+   // ---- Reverse direction: BlockState -> 1.12 meta (the documented inverse) -----------------------
+   // These pin MillConvert.blockStateToLegacyMeta (relocated verbatim from WorldUtilities, the former
+   // single converter living outside the protocol). For every fixed-variant family the forward table
+   // already pins above, the reverse must reproduce the SAME 1.12 meta — i.e. round-trip
+   // blockStateToLegacyMeta(blockState(name, meta)) == meta. Expected values are the 1.12-evidenced ones.
+
+   private static int meta(BlockState s) {
+      return MillConvert.blockStateToLegacyMeta(s);
+   }
+
+   @Test
+   void reverseLogAxis() {
+      assertEquals(0, meta(state("spruce_log", 0)));
+      assertEquals(4, meta(state("spruce_log", 4)));
+      assertEquals(8, meta(state("oak_log", 8)));
+   }
+
+   @Test
+   void reverseSlabType() {
+      assertEquals(0, meta(state("oak_slab", 0)));
+      assertEquals(8, meta(state("stone_slab", 8)));
+   }
+
+   @Test
+   void reverseStairsFacingHalf() {
+      assertEquals(0, meta(state("oak_stairs", 0)));
+      assertEquals(2, meta(state("oak_stairs", 2)));
+      assertEquals(7, meta(state("oak_stairs", 7)));
+   }
+
+   @Test
+   void reverseLadderFacing() {
+      assertEquals(2, meta(state("ladder", 2)));
+      assertEquals(5, meta(state("ladder", 5)));
+   }
+
+   @Test
+   void reverseTorchSplit() {
+      // standing torch -> 5; wall torch EAST -> 1, NORTH -> 4 (forward maps 5->TORCH, 1/4->WALL_TORCH).
+      assertEquals(5, meta(state("torch", 5)));
+      assertEquals(1, meta(state("torch", 1)));
+      assertEquals(4, meta(state("torch", 4)));
+   }
+
+   @Test
+   void reverseBedFacingPart() {
+      assertEquals(0, meta(state("red_bed", 0)));
+      assertEquals(11, meta(state("red_bed", 11)));
+   }
+
+   @Test
+   void reverseCropAndWartAge() {
+      assertEquals(5, meta(state("wheat", 5)));
+      // forward clamps meta 9 -> AGE_7=7, so the reverse reads back 7 (not 9).
+      assertEquals(7, meta(state("wheat", 9)));
+      assertEquals(2, meta(state("nether_wart", 2)));
+   }
+
+   @Test
+   void reverseFarmlandMoisture() {
+      assertEquals(6, meta(state("farmland", 6)));
+   }
+
+   @Test
+   void reverseWoolDyeMeta() {
+      // 1.12 wool meta == DyeColor id (white=0 … black=15); the reverse recovers it from the distinct block.
+      assertEquals(0, meta(Blocks.WOOL.pick(net.minecraft.world.item.DyeColor.WHITE).defaultBlockState()));
+      assertEquals(14, meta(Blocks.WOOL.pick(net.minecraft.world.item.DyeColor.RED).defaultBlockState()));
+      assertEquals(15, meta(Blocks.WOOL.pick(net.minecraft.world.item.DyeColor.BLACK).defaultBlockState()));
+   }
+
+   @Test
+   void reverseNullAndUnmappedAreZero() {
+      // null and a block with none of the recognised properties fall back to 0 (matching pre-relocation).
+      assertEquals(0, meta(null));
+      assertEquals(0, meta(Blocks.STONE.defaultBlockState()));
+   }
+
    // ---- Fail-fast --------------------------------------------------------------------------------
 
    @Test

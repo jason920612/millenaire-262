@@ -6,7 +6,6 @@ import java.util.Collections;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
-import net.minecraft.world.level.block.Block;
 import net.minecraft.world.level.block.state.BlockState;
 import net.minecraft.world.item.DyeColor;
 import net.minecraft.world.item.ItemStack;
@@ -74,20 +73,9 @@ public abstract class ValueIO {
 
       @Override
       public void readValue(Object targetClass, Field field, String value) throws Exception {
-         String[] params = value.split(";");
-         Block block = net.minecraft.core.registries.BuiltInRegistries.BLOCK.getValue(net.minecraft.resources.Identifier.parse(params[0]));
-         if (block == null) {
-            throw new MillLog.MillenaireException("Unknown block: " + value);
-         } else {
-            BlockState bs;
-            if (params.length > 1) {
-               bs = BlockStateUtilities.getBlockStateWithValues(block.defaultBlockState(), params[1]);
-            } else {
-               bs = block.defaultBlockState();
-            }
-
-            ((List)field.get(targetClass)).add(bs);
-         }
+         // Route through the unified conversion so legacy 1.12 ids (red_flower/yellow_flower/double_plant)
+         // are flattened to their 26.2 blocks instead of silently resolving to AIR.
+         ((List)field.get(targetClass)).add(org.millenaire.common.convert.MillConvert.goalBlockState(value));
       }
 
       @Override
@@ -110,17 +98,9 @@ public abstract class ValueIO {
 
       @Override
       public void readValue(Object targetClass, Field field, String value) throws Exception {
-         String[] params = value.split(";");
-         Block block = net.minecraft.core.registries.BuiltInRegistries.BLOCK.getValue(net.minecraft.resources.Identifier.parse(params[0]));
-         if (block == null) {
-            throw new MillLog.MillenaireException("Unknown block: " + value);
-         } else {
-            if (params.length > 1) {
-               field.set(targetClass, BlockStateUtilities.getBlockStateWithValues(block.defaultBlockState(), params[1]));
-            } else {
-               field.set(targetClass, block.defaultBlockState());
-            }
-         }
+         // Route through the unified conversion so legacy 1.12 ids (red_flower/yellow_flower/double_plant)
+         // are flattened to their 26.2 blocks instead of silently resolving to AIR.
+         field.set(targetClass, org.millenaire.common.convert.MillConvert.goalBlockState(value));
       }
 
       @Override

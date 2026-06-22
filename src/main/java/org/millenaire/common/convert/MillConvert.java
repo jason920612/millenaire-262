@@ -416,4 +416,186 @@ public final class MillConvert {
    public static BlockSpec planColourToSpec(PlanColour colour) {
       return LegacyTables.planColourToSpec(colour);
    }
+
+   // ------------------------------------------------------------------------------------------------
+   // 4. Goal-data block-state strings ("red_flower;type=poppy")
+   // ------------------------------------------------------------------------------------------------
+
+   /**
+    * Resolves a goal-data block-state string of the form {@code <block>;<prop>=<value>,…} (the
+    * {@code harvestblockstate} / {@code plantblockstate} / etc. parameters parsed by
+    * {@code ValueIO.BlockStateIO} / {@code BlockStateAddIO}) to a concrete 26.2 {@link BlockState}.
+    *
+    * <p>This is the single point that applies the 1.12→26.2 <b>flower flattening</b>. In 1.12 the small
+    * flowers were a single {@code red_flower} block with a {@code type} property and the single
+    * {@code yellow_flower} block (dandelion); the tall flowers were a single {@code double_plant} block
+    * with a {@code variant} property. 26.2 flattened every variant into its own block id. Goal data still
+    * ships the 1.12 names, and {@code BuiltInRegistries.BLOCK.getValue} returns {@code AIR} (never null)
+    * for an unknown id — so without this step a flower goal silently resolves to AIR and the farmer
+    * harvests / plants nothing.</p>
+    *
+    * <p>Mapping (1.12-faithful):</p>
+    * <ul>
+    *   <li>{@code red_flower;type=poppy} → {@code minecraft:poppy}; {@code blue_orchid}/{@code allium}/
+    *       {@code red_tulip}/{@code orange_tulip}/{@code white_tulip}/{@code pink_tulip}/{@code oxeye_daisy}
+    *       map 1:1 to the same-named block; {@code houstonia} → {@code azure_bluet}.</li>
+    *   <li>{@code yellow_flower} (with or without {@code type=dandelion}) → {@code minecraft:dandelion}.</li>
+    *   <li>{@code double_plant;variant=…}: {@code sunflower}→{@code sunflower}, {@code syringa}→{@code lilac},
+    *       {@code double_grass}→{@code tall_grass}, {@code double_fern}→{@code large_fern},
+    *       {@code double_rose}→{@code rose_bush}, {@code paeonia}→{@code peony}. The 1.12 {@code half}
+    *       (lower/upper) is carried over to the 26.2 {@code DoublePlantBlock} {@code half} property; the
+    *       leftover {@code facing}/{@code variant} are dropped (facing was never used on these and variant
+    *       is now encoded by the id). The lower half is kept as the plant/harvest target, exactly as 1.12
+    *       did.</li>
+    * </ul>
+    *
+    * <p>The same flattening also covers the other 1.12 ids the goal data still ships that 26.2 renamed
+    * or split into per-variant ids: {@code stone;variant=…} (diorite/granite/andesite + polished, and
+    * the no-op {@code variant=stone}) and {@code snow_layer} → {@code snow}. They are the identical
+    * "unflattened id silently resolves to AIR" bug as the flowers, in the {@code sourceblockstate} mining
+    * goals.</p>
+    *
+    * <p>Fail-fast: a flower / stone variant not in the mapping above, or any other id that still resolves
+    * to AIR, crashes loudly via {@link MillCrash} naming it — never a silent AIR.</p>
+    */
+   public static BlockState goalBlockState(String value) {
+      MillCrash.check(value != null && !value.isBlank(), "Convert", "empty goal block-state");
+      String[] params = value.split(";", 2);
+      String blockName = params[0].trim().toLowerCase(java.util.Locale.ROOT);
+      String props = params.length > 1 ? params[1].trim() : "";
+
+      String flattened = flattenLegacyGoalBlock(blockName, props, value);
+      if (flattened != null) {
+         // The flattening fully determines the id; only the carried-over properties (e.g. the
+         // double-plant half) remain in 'props', scrubbed of the now-redundant variant/type/facing.
+         blockName = flattened;
+         props = residualProps(props);
+      }
+
+      Block block = resolveBlock(blockName, value);
+      if (props.isEmpty()) {
+         return block.defaultBlockState();
+      }
+      return org.millenaire.common.utilities.BlockStateUtilities.getBlockStateWithValues(block.defaultBlockState(), props);
+   }
+
+   /** 1.12 {@code red_flower} {@code type} → 26.2 flower block id. */
+   private static final java.util.Map<String, String> RED_FLOWER = java.util.Map.of(
+      "poppy", "poppy",
+      "blue_orchid", "blue_orchid",
+      "allium", "allium",
+      "houstonia", "azure_bluet",
+      "red_tulip", "red_tulip",
+      "orange_tulip", "orange_tulip",
+      "white_tulip", "white_tulip",
+      "pink_tulip", "pink_tulip",
+      "oxeye_daisy", "oxeye_daisy"
+   );
+
+   /** 1.12 {@code double_plant} {@code variant} → 26.2 tall-flower block id. */
+   private static final java.util.Map<String, String> DOUBLE_PLANT = java.util.Map.of(
+      "sunflower", "sunflower",
+      "syringa", "lilac",
+      "double_grass", "tall_grass",
+      "double_fern", "large_fern",
+      "double_rose", "rose_bush",
+      "paeonia", "peony"
+   );
+
+   /** 1.12 {@code stone} {@code variant} → 26.2 stone block id (1.12 BlockStone.EnumType). */
+   private static final java.util.Map<String, String> STONE_VARIANT = java.util.Map.of(
+      "stone", "stone",
+      "granite", "granite",
+      "smooth_granite", "polished_granite",
+      "diorite", "diorite",
+      "smooth_diorite", "polished_diorite",
+      "andesite", "andesite",
+      "smooth_andesite", "polished_andesite"
+   );
+
+   /**
+    * Returns the flattened 26.2 block id for a 1.12 goal-data block reference, or {@code null} if
+    * {@code blockName} is not one of the legacy families that 26.2 split/renamed (so the caller resolves
+    * it normally). Fails fast on a family member with an unknown / missing variant.
+    */
+   private static String flattenLegacyGoalBlock(String blockName, String props, String spec) {
+      String name = blockName.startsWith("minecraft:") ? blockName.substring("minecraft:".length()) : blockName;
+      switch (name) {
+         case "red_flower" -> {
+            String type = propValue(props, "type");
+            MillCrash.check(type != null, "Convert", spec + ": red_flower without a 'type' property");
+            String id = RED_FLOWER.get(type);
+            MillCrash.check(id != null, "Convert", spec + ": unknown red_flower type '" + type + "'");
+            return id;
+         }
+         case "yellow_flower" -> {
+            // 1.12 had a single yellow_flower (dandelion); type is optional and, if present, must be dandelion.
+            String type = propValue(props, "type");
+            MillCrash.check(type == null || "dandelion".equals(type),
+               "Convert", spec + ": unknown yellow_flower type '" + type + "'");
+            return "dandelion";
+         }
+         case "double_plant" -> {
+            String variant = propValue(props, "variant");
+            MillCrash.check(variant != null, "Convert", spec + ": double_plant without a 'variant' property");
+            String id = DOUBLE_PLANT.get(variant);
+            MillCrash.check(id != null, "Convert", spec + ": unknown double_plant variant '" + variant + "'");
+            return id;
+         }
+         case "stone" -> {
+            // 1.12 stone with no variant is plain stone; with a variant it is the flattened per-variant id.
+            String variant = propValue(props, "variant");
+            if (variant == null) {
+               return "stone";
+            }
+            String id = STONE_VARIANT.get(variant);
+            MillCrash.check(id != null, "Convert", spec + ": unknown stone variant '" + variant + "'");
+            return id;
+         }
+         case "snow_layer" -> {
+            // 1.12 minecraft:snow_layer (the thin layer) → 26.2 minecraft:snow (the layer block; the 1.12
+            // full block minecraft:snow became 26.2 minecraft:snow_block). Keep any layers count property.
+            return "snow";
+         }
+         default -> {
+            return null;
+         }
+      }
+   }
+
+   /**
+    * After flattening, keep only the properties the flattened block still understands. The 1.12 sub-type
+    * selectors {@code variant}/{@code type} and the unused {@code facing} are dropped (the variant is now
+    * encoded by the id); {@code half} (double_plant lower/upper) and {@code layers} (snow) carry over.
+    */
+   private static String residualProps(String props) {
+      if (props.isEmpty()) {
+         return "";
+      }
+      StringBuilder kept = new StringBuilder();
+      for (String part : props.split(",")) {
+         String key = part.split("=", 2)[0].trim();
+         if (key.equals("half") || key.equals("layers")) {
+            if (kept.length() > 0) {
+               kept.append(",");
+            }
+            kept.append(part.trim());
+         }
+      }
+      return kept.toString();
+   }
+
+   /** Reads a single {@code key=value} out of a comma-separated property string, or {@code null}. */
+   private static String propValue(String props, String key) {
+      if (props == null || props.isEmpty()) {
+         return null;
+      }
+      for (String part : props.split(",")) {
+         String[] kv = part.split("=", 2);
+         if (kv.length == 2 && kv[0].trim().equals(key)) {
+            return kv[1].trim();
+         }
+      }
+      return null;
+   }
 }

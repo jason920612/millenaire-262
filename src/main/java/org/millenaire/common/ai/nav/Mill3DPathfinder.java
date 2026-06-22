@@ -26,8 +26,17 @@ public final class Mill3DPathfinder {
    private Mill3DPathfinder() {
    }
 
-   /** Lexicographic-shortest 3D path start→goal, or {@code null} if none within {@code maxNodes} expansions. */
+   /** Pure-terrain shortest 3D path (no danger bias). */
    public static List<BlockPos> findPath(Voxel v, BlockPos start, BlockPos goal, int maxNodes) {
+      return findPath(v, start, goal, maxNodes, CostField.ZERO);
+   }
+
+   /**
+    * Lexicographic-shortest 3D path start→goal under terrain + a danger {@link CostField} (extra walk-block
+    * cost per cell entered, e.g. proximity to hostiles/lava), so the route is SAFE as well as 3D. {@code null}
+    * if none within {@code maxNodes} expansions.
+    */
+   public static List<BlockPos> findPath(Voxel v, BlockPos start, BlockPos goal, int maxNodes, CostField danger) {
       Map<Long, LexCost> g = new HashMap<>();
       Map<Long, BlockPos> from = new HashMap<>();
       PriorityQueue<Node> open = new PriorityQueue<>((a, b) -> a.f.compareTo(b.f));
@@ -46,7 +55,8 @@ public final class Mill3DPathfinder {
          }
          expanded++;
          forEachNeighbor(v, cur.pos, (nb, stepCost) -> {
-            LexCost t = cur.g.plus(stepCost);
+            // Add the danger of ENTERING nb (safety routing — req 4) on top of the terrain edge cost.
+            LexCost t = cur.g.plus(stepCost).plus(LexCost.normal(danger.extra(nb.getX(), nb.getY(), nb.getZ())));
             long nk = nb.asLong();
             LexCost prev = g.get(nk);
             if (prev == null || t.compareTo(prev) < 0) {
@@ -124,6 +134,13 @@ public final class Mill3DPathfinder {
    /** Callback for {@link #forEachNeighbor}. */
    public interface Neighbor {
       void accept(BlockPos pos, LexCost cost);
+   }
+
+   /** Extra per-cell cost (in walk-blocks) layered on terrain — e.g. a danger field around hostiles/hazards. */
+   public interface CostField {
+      CostField ZERO = (x, y, z) -> 0.0;
+
+      double extra(int x, int y, int z);
    }
 
    private record Node(BlockPos pos, LexCost g, LexCost f) {

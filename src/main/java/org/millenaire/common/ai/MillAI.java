@@ -22,8 +22,20 @@ public final class MillAI {
       return this.active;
    }
 
-   /** Run one decision tick for {@code villager}: (re)select the best behaviour, then advance it. */
+   /** Run one decision tick for {@code villager}. The villager AI fails LOUD — a behaviour error is reported
+    *  prominently (with the active behaviour + stacktrace) and re-thrown, never silently swallowed, so AI bugs
+    *  surface immediately instead of degrading into "villager quietly does nothing". */
    public void tick(MillVillager villager) {
+      try {
+         tickInternal(villager);
+      } catch (Throwable t) {
+         org.millenaire.common.utilities.MillLog.printException(
+            "███ VILLAGER-AI ERROR ███ active=" + (this.active == null ? "none" : this.active.id()) + " on " + villager, t);
+         throw t instanceof RuntimeException re ? re : new RuntimeException("Villager AI failed", t);
+      }
+   }
+
+   private void tickInternal(MillVillager villager) {
       // 1. Find the best currently-runnable behaviour and its score.
       MillBehaviour best = null;
       int bestPriority = Integer.MIN_VALUE;

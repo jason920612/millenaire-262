@@ -73,7 +73,11 @@ public final class Mill3DNavigator {
       this.pathGoal = goal;
       this.replanTimer = REPLAN_TICKS;
       this.index = 0;
-      this.path = Mill3DPathfinder.findPath(new LevelVoxel(villager.level()), villager.blockPosition(), goal, MAX_NODES);
+      // Bias the 3D route away from the village danger field (hostiles/hazards) — safe AND 3D.
+      org.millenaire.common.ai.MillInfluenceGrid danger = villager.getAiInfluence();
+      float w = (float) org.millenaire.common.config.MillConfigValues.VFNavDangerWeight;
+      Mill3DPathfinder.CostField field = (x, y, z) -> w * danger.dangerAt(x, z);
+      this.path = Mill3DPathfinder.findPath(new LevelVoxel(villager.level()), villager.blockPosition(), goal, MAX_NODES, field);
       // Don't let the legacy navigation fight the MoveControl while we drive the 3D path directly.
       villager.getNavigation().stop();
    }

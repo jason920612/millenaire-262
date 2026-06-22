@@ -61,20 +61,19 @@ public final class BehaviourGoToPoint implements MillBehaviour {
       // in-reach jumps, climbs, going around obstacles) and explores all routes for the optimal one. The
       // flow-field cell-by-cell follow was cruder (±1 Y horizontal neighbours only) so it got blocked easily;
       // the field stays as infrastructure (escape/long-range) but normal movement goes through the real A*.
-      // Ground-up 3D navigator (ValueFieldNav): drive movement along a real 3D path (jumps over gaps, climbs)
-      // via the MoveControl. Falls through to the vanilla navigation as a safety net if it finds no 3D route.
+      // Ground-up 3D navigator (ValueFieldNav): it IS the movement system — no silent vanilla fallback masking
+      // its failures (fail loud, don't degrade). If it finds no 3D route the villager visibly stops + the AI's
+      // stuck-detection below kicks in, surfacing the pathfinder's limits instead of hiding them.
       if (org.millenaire.common.config.MillConfigValues.ValueFieldNav) {
          if (this.nav3d == null) {
             this.nav3d = new org.millenaire.common.ai.nav.Mill3DNavigator();
          }
-         if (this.nav3d.navigateTo(villager, new net.minecraft.core.BlockPos(d.getiX(), d.getiY(), d.getiZ()))) {
-            return true;
-         }
-      }
-      if (villager.getNavigation().isDone()) {
+         this.nav3d.navigateTo(villager, new net.minecraft.core.BlockPos(d.getiX(), d.getiY(), d.getiZ()));
+      } else if (villager.getNavigation().isDone()) {
+         // ValueFieldNav OFF → legacy vanilla navigation.
          boolean pathed = villager.getNavigation().moveTo(d.getiX() + 0.5, d.getiY(), d.getiZ() + 0.5, SPEED);
          if (!pathed) {
-            startDetour(villager, d); // genuinely can't path there → plan a new route around the blockage
+            startDetour(villager, d);
             return true;
          }
       }

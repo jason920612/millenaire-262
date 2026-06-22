@@ -618,9 +618,6 @@ public abstract class MillVillager extends PathfinderMob implements IAStarPathed
       if (ds.getEntity() == null && !ds.is(net.minecraft.world.damagesource.DamageTypes.FELL_OUT_OF_WORLD)) {
          return false;
       } else {
-         // DIAGNOSTIC (temporary): surface what actually damages a villager — to pin down "mysterious" deaths.
-         MillLog.major(this, "███ VILLAGER-DAMAGE " + i + " type=" + ds.type().msgId()
-            + " by=" + ds.getEntity() + " direct=" + ds.getDirectEntity());
          boolean hadFullHealth = this.getMaxHealth() == this.getHealth();
          // Apply the real damage via the PARENT's hurtServer (not hurtOrSimulate, which re-dispatches to
          // this.hurtServer and would infinitely recurse through our override).

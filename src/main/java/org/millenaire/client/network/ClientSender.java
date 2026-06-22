@@ -14,6 +14,7 @@ import org.millenaire.common.forge.Mill;
 import org.millenaire.common.item.TradeGood;
 import org.millenaire.common.network.StreamReadWrite;
 import org.millenaire.common.ui.GuiActions;
+import org.millenaire.common.utilities.MillCrash;
 import org.millenaire.common.utilities.MillLog;
 import org.millenaire.common.utilities.Point;
 import org.millenaire.common.village.Building;
@@ -369,8 +370,10 @@ public class ClientSender {
          for (Culture culture : Culture.ListCultures) {
             culture.writeCultureAvailableContentPacket(data);
          }
-      } catch (Exception var3) {
-         MillLog.printException("Error in displayVillageList", var3);
+      } catch (Exception availableContentWriteError) {
+         // Swallowing this would send a truncated available-content request: the server then computes the
+         // wrong missing-content reply and the client silently lacks cultures/buildings. Crash loudly.
+         throw MillCrash.fail("Net", "sendAvailableContent failed to build the available-content packet: " + availableContentWriteError);
       }
 
       createAndSendServerPacket(data);

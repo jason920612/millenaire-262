@@ -16,6 +16,7 @@ import org.millenaire.common.forge.Mill;
 import org.millenaire.common.ui.ContainerTrade;
 import org.millenaire.common.ui.GuiActions;
 import org.millenaire.common.utilities.DevModUtilities;
+import org.millenaire.common.utilities.MillCrash;
 import org.millenaire.common.utilities.MillLog;
 import org.millenaire.common.utilities.Point;
 import org.millenaire.common.village.Building;
@@ -159,29 +160,29 @@ public class ServerReceiver {
 
             planSets.put(key, v);
             v = new ArrayList<>();
-            int var28 = packetBuffer.readShort();
+            int count = packetBuffer.readShort();
 
-            for (int j = 0; j < var28; j++) {
+            for (int j = 0; j < count; j++) {
                v.add(packetBuffer.readUtf(2048));
             }
 
             villagers.put(key, v);
-            List<String> var25 = new ArrayList();
-            var28 = packetBuffer.readShort();
+            List<String> villageList = new ArrayList<>();
+            count = packetBuffer.readShort();
 
-            for (int j = 0; j < var28; j++) {
-               var25.add(packetBuffer.readUtf(2048));
+            for (int j = 0; j < count; j++) {
+               villageList.add(packetBuffer.readUtf(2048));
             }
 
-            villages.put(key, var25);
-            List<String> var26 = new ArrayList();
-            var28 = packetBuffer.readShort();
+            villages.put(key, villageList);
+            List<String> loneBuildingList = new ArrayList<>();
+            count = packetBuffer.readShort();
 
-            for (int j = 0; j < var28; j++) {
-               var26.add(packetBuffer.readUtf(2048));
+            for (int j = 0; j < count; j++) {
+               loneBuildingList.add(packetBuffer.readUtf(2048));
             }
 
-            lonebuildings.put(key, var26);
+            lonebuildings.put(key, loneBuildingList);
          }
 
          FriendlyByteBuf data = ServerSender.getPacketBuffer();
@@ -211,8 +212,10 @@ public class ServerReceiver {
          }
 
          ServerSender.sendPacketToPlayer(data, player);
-      } catch (IOException var21) {
-         MillLog.printException("Error in readAvailableContentPacket: ", var21);
+      } catch (IOException ioException) {
+         // A parse failure mid-stream means the buffer reader index is now wrong: silently logging and
+         // returning would corrupt every following packet read on this connection. Crash loudly instead.
+         throw MillCrash.fail("Net", "readAvailableContentPacket failed to parse the available-content packet: " + ioException);
       }
    }
 

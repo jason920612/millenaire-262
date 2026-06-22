@@ -29,6 +29,7 @@ import org.millenaire.common.network.StreamReadWrite;
 import org.millenaire.common.ui.MillMapInfo;
 import org.millenaire.common.utilities.LanguageUtilities;
 import org.millenaire.common.utilities.MillCommonUtilities;
+import org.millenaire.common.utilities.MillCrash;
 import org.millenaire.common.utilities.MillLog;
 import org.millenaire.common.utilities.Point;
 import org.millenaire.common.utilities.WorldUtilities;
@@ -119,8 +120,10 @@ public class ClientReceiver {
          } else {
             MillLog.error(null, "Received packet with unknown type: " + packettype);
          }
-      } catch (Exception var4) {
-         MillLog.printException("Error in ClientReceiver.onPacketData:", var4);
+      } catch (Exception packetHandlingError) {
+         // A swallowed packet-handler error is a silent client/server desync: the handler aborted partway,
+         // leaving the client view inconsistent with the server's. Crash loudly instead of logging-and-continuing.
+         throw MillCrash.fail("Net", "ClientReceiver.processPacket failed handling an incoming Mill packet: " + packetHandlingError);
       }
    }
 

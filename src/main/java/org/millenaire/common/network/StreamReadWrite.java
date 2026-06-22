@@ -24,6 +24,7 @@ import org.millenaire.common.quest.QuestInstance;
 import org.millenaire.common.quest.QuestInstanceVillager;
 import org.millenaire.common.ui.PujaSacrifice;
 import org.millenaire.common.utilities.MillCommonUtilities;
+import org.millenaire.common.utilities.MillCrash;
 import org.millenaire.common.utilities.MillLog;
 import org.millenaire.common.utilities.Point;
 import org.millenaire.common.village.Building;
@@ -131,8 +132,10 @@ public class StreamReadWrite {
    }
 
    private static CompoundTag readNBTTagCompound(FriendlyByteBuf par1PacketBuffer) throws IOException {
-      short var2 = par1PacketBuffer.readShort();
-      return var2 < 0 ? null : par1PacketBuffer.readNbt();
+      // PROTOCOL-OPTIONAL: writeNBTTagCompound encodes an absent tag as writeShort(-1); the negative
+      // length sentinel is the intentional "no NBT" encoding, so returning null here is correct.
+      short tagPresenceMarker = par1PacketBuffer.readShort();
+      return tagPresenceMarker < 0 ? null : par1PacketBuffer.readNbt();
    }
 
    public static BuildingLocation readNullableBuildingLocation(FriendlyByteBuf ds) {
@@ -243,9 +246,12 @@ public class StreamReadWrite {
       } else {
          long id = ds.readLong();
          String questKey = ds.readUtf(2048);
-         if (!Quest.quests.containsKey(questKey)) {
-            return null;
-         } else {
+         // NOT the protocol present=false path: the isnull boolean above already governs absence. This
+         // branch fires after we've consumed id+questKey but BEFORE the rest of the quest-instance record
+         // (profile, steps, per-villager block). Returning null here would leave the buffer mid-record and
+         // corrupt every following packet field. An unknown quest key = content desync -> crash loudly.
+         MillCrash.check(Quest.quests.containsKey(questKey), "Net", "unknown quest key in quest-instance packet: " + questKey);
+         {
             Quest quest = Quest.quests.get(questKey);
             UserProfile profile = mw.getProfile(ds.readUUID());
             int currentStep = ds.readUnsignedByte();

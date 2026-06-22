@@ -40,7 +40,9 @@ public final class BehaviourCombat implements MillBehaviour {
    @Override
    public boolean canRun(MillVillager villager) {
       LivingEntity t = villager.getTarget();
-      return t != null && t.isAlive();
+      // t != villager: never fight (and never doHurtTarget) ourselves — 26.2's doHurtTarget has no reach
+      // check, so a self-target would deal MOB_ATTACK to self every tick (the mysterious self-damage death).
+      return t != null && t.isAlive() && t != villager;
    }
 
    @Override
@@ -333,7 +335,7 @@ public final class BehaviourCombat implements MillBehaviour {
     */
    public static int attackIfAble(MillVillager villager, int rangedCooldown) {
       LivingEntity target = villager.getTarget();
-      if (target == null || !target.isAlive()) {
+      if (target == null || !target.isAlive() || target == villager) { // never attack self (no reach check in doHurtTarget)
          return Math.max(0, rangedCooldown - 1);
       }
       villager.getLookControl().setLookAt(target, 30.0F, 30.0F);

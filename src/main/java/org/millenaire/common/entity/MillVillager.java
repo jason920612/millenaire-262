@@ -3494,7 +3494,10 @@ public abstract class MillVillager extends PathfinderMob implements IAStarPathed
       MillVillager target = null;
 
       for (MillVillager v : this.getTownHall().getKnownVillagers()) {
-         if (v.helpsInAttacks() && !v.isRaider && this.getPos().distanceToSquared(v) < bestDist) {
+         // Exclude SELF: getKnownVillagers() includes this villager, and distance-to-self is 0 (always the
+         // "closest"), so without this it targets ITSELF → doHurtTarget(self) deals MOB_ATTACK to itself
+         // (26.2's doHurtTarget has no reach check) → villagers mysteriously self-damage to death.
+         if (v != this && v.helpsInAttacks() && !v.isRaider && this.getPos().distanceToSquared(v) < bestDist) {
             target = v;
             bestDist = (int)this.getPos().distanceToSquared(v);
          }
@@ -3510,7 +3513,7 @@ public abstract class MillVillager extends PathfinderMob implements IAStarPathed
       MillVillager target = null;
 
       for (MillVillager v : this.getTownHall().getKnownVillagers()) {
-         if (v.isRaider && this.getPos().distanceToSquared(v) < bestDist) {
+         if (v != this && v.isRaider && this.getPos().distanceToSquared(v) < bestDist) { // exclude self (see targetDefender)
             target = v;
             bestDist = (int)this.getPos().distanceToSquared(v);
          }

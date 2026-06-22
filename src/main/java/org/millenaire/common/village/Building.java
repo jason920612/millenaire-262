@@ -951,7 +951,7 @@ public class Building {
             );
          }
 
-         if (villager.getTarget() == null && villager.helpsInAttacks() && !villager.isRaider && villager.getPos().distanceTo(attacker) < 80.0) {
+         if (villager != attacker && villager.getTarget() == null && villager.helpsInAttacks() && !villager.isRaider && villager.getPos().distanceTo(attacker) < 80.0) {
             if (MillConfigValues.LogGeneralAI >= 1) {
                MillLog.major(villager, "Off to help a friend attacked by attacking: " + attacker);
             }

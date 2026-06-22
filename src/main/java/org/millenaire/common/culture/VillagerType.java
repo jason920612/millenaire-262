@@ -21,6 +21,7 @@ import org.millenaire.common.goal.Goal;
 import org.millenaire.common.item.InvItem;
 import org.millenaire.common.network.StreamReadWrite;
 import org.millenaire.common.utilities.MillCommonUtilities;
+import org.millenaire.common.utilities.MillCrash;
 import org.millenaire.common.utilities.MillLog;
 
 public class VillagerType implements MillCommonUtilities.WeightedChoice {
@@ -425,9 +426,11 @@ public class VillagerType implements MillCommonUtilities.WeightedChoice {
          }
 
          return v;
-      } catch (Exception var6) {
-         MillLog.printException(var6);
-         return null;
+      } catch (Exception villagerTypeException) {
+         // FAIL-FAST: a villager type that fails to parse silently became null and was skipped by the
+         // caller, so buildings that list it later spawn no villager / NPE. Crash at the parse failure
+         // (1.12 logged-and-returned-null).
+         throw MillCrash.fail("Culture", "failed to load villager type '" + v.key + "': " + villagerTypeException);
       }
    }
 

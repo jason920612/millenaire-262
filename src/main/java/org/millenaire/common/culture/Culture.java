@@ -32,6 +32,7 @@ import org.millenaire.common.item.TradeGood;
 import org.millenaire.common.network.StreamReadWrite;
 import org.millenaire.common.utilities.LanguageUtilities;
 import org.millenaire.common.utilities.MillCommonUtilities;
+import org.millenaire.common.utilities.MillCrash;
 import org.millenaire.common.utilities.MillLog;
 import org.millenaire.common.utilities.virtualdir.VirtualDir;
 
@@ -275,8 +276,11 @@ public class Culture {
             VillageType vtype = culture.getLoneBuildingType(key);
             vtype.readVillageTypeInfoPacket(data);
          }
-      } catch (IOException var18) {
-         MillLog.printException("Error in readCultureInfoPacket: ", var18);
+      } catch (IOException ioException) {
+         // FAIL-FAST: a malformed culture-content packet silently dropped server-sent strings/buildings/
+         // villager+village types, leaving the client with a half-populated culture that NPEs far away.
+         // 1.12 logged-and-continued here; crash at the parse failure instead.
+         throw MillCrash.fail("Culture", "readCultureMissingContentPacket failed to parse: " + ioException);
       }
    }
 
@@ -835,9 +839,12 @@ public class Culture {
                }
             }
          }
-      } catch (Exception var6) {
-         MillLog.printException("Error when loading culture: ", var6);
-         return false;
+      } catch (IllegalStateException crash) {
+         throw crash; // already a fail-fast crash from a sub-loader; propagate unchanged
+      } catch (Exception loadException) {
+         // FAIL-FAST: a culture that fails to load leaves villages/trade/buildings half-defined and NPEs
+         // far away during world gen. 1.12 logged-and-returned-false; crash at the load failure instead.
+         throw MillCrash.fail("Culture", "failed to load culture '" + this.key + "': " + loadException);
       }
    }
 
@@ -898,17 +905,26 @@ public class Culture {
                            MillLog.minor(this, "Loaded traded good: " + key + " prices: " + sellingPrice + "/" + buyingPrice);
                         }
                      } else {
-                        MillLog.error(this, "Unknown good on line: " + line);
+                        // FAIL-FAST: an unknown good name silently dropped this trade good, so the culture's
+                        // shops/merchants later reference a good that doesn't exist. Crash at the corruption.
+                        throw MillCrash.fail("Culture", "unknown good '" + key + "' on line: " + line);
                      }
-                  } catch (Exception var19) {
-                     MillLog.printException("Exception when trying to read trade good on line: " + line, var19);
+                  } catch (IllegalStateException crash) {
+                     throw crash; // already a fail-fast crash (e.g. unknown good); propagate unchanged
+                  } catch (Exception lineException) {
+                     // FAIL-FAST: a malformed trade-good line silently dropped the good (1.12 logged-and-
+                     // continued). A dropped good is exactly the silent content corruption to surface.
+                     throw MillCrash.fail("Culture", "failed to read trade good on line '" + line + "': " + lineException);
                   }
                }
             }
 
             reader.close();
-         } catch (Exception var20) {
-            MillLog.printException(var20);
+         } catch (IllegalStateException crash) {
+            throw crash; // already a fail-fast crash from an inner line; propagate unchanged
+         } catch (Exception fileException) {
+            // FAIL-FAST: traded_goods.txt failed to open/read; the whole goods file silently dropped.
+            throw MillCrash.fail("Culture", "failed to read traded_goods.txt for culture '" + this.key + "': " + fileException);
          }
       }
 
@@ -969,8 +985,10 @@ public class Culture {
 
             this.nameLists.put(file.getName().split("\\.")[0], list);
          }
-      } catch (Exception var8) {
-         MillLog.printException(var8);
+      } catch (Exception nameListException) {
+         // FAIL-FAST: a failed name-list read silently drops villager/village names; getRandomNameFromList
+         // then returns null and NPEs at spawn. Crash at the parse failure (1.12 logged-and-continued).
+         throw MillCrash.fail("Culture", "failed to load name lists for culture '" + this.key + "': " + nameListException);
       }
    }
 
@@ -1049,8 +1067,10 @@ public class Culture {
          }
 
          reader.close();
-      } catch (Exception var12) {
-         MillLog.printException(var12);
+      } catch (Exception shopException) {
+         // FAIL-FAST: a failed shop read silently drops a shop's buy/sell/needs lists, so the villager's
+         // economy is silently broken. Crash at the parse failure (1.12 logged-and-continued).
+         throw MillCrash.fail("Culture", "failed to load shop file '" + file.getName() + "': " + shopException);
       }
    }
 
@@ -1061,8 +1081,11 @@ public class Culture {
          for (File file : shopVirtualDir.listFilesRecursive(new MillCommonUtilities.ExtFileFilter("txt"))) {
             this.loadShop(file);
          }
-      } catch (Exception var5) {
-         MillLog.printException(var5);
+      } catch (IllegalStateException crash) {
+         throw crash; // already a fail-fast crash from loadShop; propagate unchanged
+      } catch (Exception shopsException) {
+         // FAIL-FAST: failed to enumerate the shops directory; the culture silently loses all its shops.
+         throw MillCrash.fail("Culture", "failed to list shops for culture '" + this.key + "': " + shopsException);
       }
    }
 
@@ -1086,8 +1109,10 @@ public class Culture {
                this.listVillagerTypes.add(vtype);
             }
          }
-      } catch (Exception var6) {
-         MillLog.printException(var6);
+      } catch (Exception villagerTypeException) {
+         // FAIL-FAST: a failed villager-type read silently drops a villager definition; buildings then
+         // reference a missing villager type and NPE at spawn. Crash at the parse failure.
+         throw MillCrash.fail("Culture", "failed to load villager types for culture '" + this.key + "': " + villagerTypeException);
       }
    }
 
@@ -1166,8 +1191,10 @@ public class Culture {
          if (file != null) {
             ParametersManager.loadAnnotedParameterData(file, this, null, "culture", null);
          }
-      } catch (Exception var3) {
-         MillLog.printException(var3);
+      } catch (Exception configException) {
+         // FAIL-FAST: a failed culture.txt parse silently leaves the culture's config fields at defaults
+         // (banner, panel texture, travel-book categories...), masking a corrupt file. Crash on parse error.
+         throw MillCrash.fail("Culture", "failed to read culture.txt for culture '" + this.key + "': " + configException);
       }
    }
 

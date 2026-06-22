@@ -22,6 +22,7 @@ import org.millenaire.common.advancements.MillAdvancements;
 import org.millenaire.common.item.MillItems;
 import org.millenaire.common.network.ServerSender;
 import org.millenaire.common.utilities.MillCommonUtilities;
+import org.millenaire.common.utilities.MillCrash;
 import org.millenaire.common.utilities.MillLog;
 import org.millenaire.common.utilities.Point;
 import org.millenaire.common.utilities.VillageUtilities;
@@ -175,13 +176,15 @@ public class MillEventController {
             profile.saveProfile();
          }
 
-         if (profile != null) {
-            profile.connectUser();
-         } else {
-            MillLog.error(this, "Could not get profile on login for user: " + name);
-         }
-      } catch (Exception e) {
-         MillLog.printException("Error in ConnectionHandler.playerLoggedIn:", e);
+         // FAIL-FAST: a null profile here means the player connects with no Millénaire state and NPEs in
+         // village/reputation AI far away. Surface the missing profile at login instead of logging on.
+         MillCrash.need(profile, "Registry", "user profile on login for '" + name + "'").connectUser();
+      } catch (IllegalStateException crash) {
+         throw crash; // already a fail-fast crash (null profile); propagate unchanged
+      } catch (Exception loginException) {
+         // FAIL-FAST: login profile handling threw; 1.12 logged-and-continued, leaving a connected player
+         // with broken Millénaire state. Crash at the failure instead.
+         throw MillCrash.fail("Registry", "failed to handle login for player: " + loginException);
       }
    }
 

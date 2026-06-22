@@ -14,6 +14,7 @@ import java.util.jar.JarFile;
 import org.apache.commons.io.IOUtils;
 import org.millenaire.common.forge.Mill;
 import org.millenaire.common.utilities.MillCommonUtilities;
+import org.millenaire.common.utilities.MillCrash;
 
 public class ContentDeployer {
    private static final String DEV_VERSION_NUMBER = "@VERSION@";
@@ -86,12 +87,18 @@ public class ContentDeployer {
                   copyFolder(ourJar.getAbsolutePath(), "todeploy/", "millenaire/", modsDir);
                   Files.write(Paths.get(modsDir.getAbsolutePath() + "/millenaire/version.txt"), "8.1.2".getBytes());
                   Mill.LOGGER.warn("Deployed millenaire folder in " + (System.currentTimeMillis() - startTime) + " ms.");
-               } catch (IOException var9) {
-                  Mill.LOGGER.error("Error when checking existing millenaire dir: ", var9);
+               } catch (IOException deployException) {
+                  // FAIL-FAST: a failed millenaire/ deploy leaves the content folder absent/partial, so every
+                  // culture/building/language load later finds nothing and NPEs. Crash at the deploy failure.
+                  throw MillCrash.fail("Registry", "failed to deploy millenaire/ content: " + deployException);
                }
             }
-         } catch (Exception var10) {
-            Mill.LOGGER.error("Error when unzipping millenaire: ", var10);
+         } catch (IllegalStateException crash) {
+            throw crash; // already a fail-fast crash from the deploy step; propagate unchanged
+         } catch (Exception deployCheckException) {
+            // FAIL-FAST: the millenaire/ version/redeploy check threw; the content folder is left in an
+            // unknown state. Crash instead of silently continuing with possibly-stale or missing content.
+            throw MillCrash.fail("Registry", "failed to deploy/check millenaire/ content: " + deployCheckException);
          }
 
          try {
@@ -103,12 +110,16 @@ public class ContentDeployer {
                   long startTime = System.currentTimeMillis();
                   copyFolder(ourJar.getAbsolutePath(), "todeploy/", "millenaire-custom/", modsDir);
                   Mill.LOGGER.warn("Deployed millenaire-custom folder in " + (System.currentTimeMillis() - startTime) + " ms.");
-               } catch (IOException var7) {
-                  Mill.LOGGER.error("Error when checking existing millenaire-custom dir: ", var7);
+               } catch (IOException customDeployException) {
+                  // FAIL-FAST: a partially-copied millenaire-custom/ silently breaks user submods/overrides.
+                  throw MillCrash.fail("Registry", "failed to deploy millenaire-custom/ content: " + customDeployException);
                }
             }
-         } catch (Exception var8) {
-            Mill.LOGGER.error("Error when unzipping millenaire-custom: ", var8);
+         } catch (IllegalStateException crash) {
+            throw crash; // already a fail-fast crash from the custom deploy step; propagate unchanged
+         } catch (Exception customCheckException) {
+            // FAIL-FAST: the millenaire-custom/ deploy check threw; crash instead of silently continuing.
+            throw MillCrash.fail("Registry", "failed to deploy/check millenaire-custom/ content: " + customCheckException);
          }
       }
    }

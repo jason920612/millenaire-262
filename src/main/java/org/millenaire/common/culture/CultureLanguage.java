@@ -18,6 +18,7 @@ import org.millenaire.common.entity.MillVillager;
 import org.millenaire.common.item.TradeGood;
 import org.millenaire.common.utilities.LanguageData;
 import org.millenaire.common.utilities.MillCommonUtilities;
+import org.millenaire.common.utilities.MillCrash;
 import org.millenaire.common.utilities.MillLog;
 import org.millenaire.common.village.Building;
 import org.millenaire.common.village.BuildingLocation;
@@ -290,8 +291,10 @@ public class CultureLanguage {
                this.reputationLevels.add(new CultureLanguage.ReputationLevel(file, line));
             }
          }
-      } catch (Exception var4) {
-         MillLog.printException(var4);
+      } catch (Exception reputationException) {
+         // FAIL-FAST: a malformed reputation file silently drops a culture's reputation tiers, leaving the
+         // reputation UI blank. A language FILE that fails to parse is fatal (unlike a missing key lookup).
+         throw MillCrash.fail("Culture", "failed to read reputation file '" + file.getAbsolutePath() + "': " + reputationException);
       }
 
       Collections.sort(this.reputationLevels);
@@ -349,8 +352,10 @@ public class CultureLanguage {
          }
 
          reader.close();
-      } catch (Exception var7) {
-         MillLog.printException(var7);
+      } catch (Exception buildingNameException) {
+         // FAIL-FAST: a malformed building-name file silently drops translated building names. A language
+         // FILE that fails to parse is fatal (unlike a single missing key, which legitimately returns the key).
+         throw MillCrash.fail("Culture", "failed to read building name file '" + file.getAbsolutePath() + "': " + buildingNameException);
       }
    }
 
@@ -380,8 +385,10 @@ public class CultureLanguage {
          }
 
          reader.close();
-      } catch (Exception var7) {
-         MillLog.printException(var7);
+      } catch (Exception cultureStringException) {
+         // FAIL-FAST: a malformed culture-strings file silently drops translated strings. A language FILE
+         // that fails to parse is fatal (unlike a single missing key, which legitimately returns the key).
+         throw MillCrash.fail("Culture", "failed to read culture strings file '" + file.getAbsolutePath() + "': " + cultureStringException);
       }
    }
 
@@ -440,9 +447,10 @@ public class CultureLanguage {
 
          reader.close();
          return true;
-      } catch (Exception var7) {
-         MillLog.printException(var7);
-         return false;
+      } catch (Exception dialogueException) {
+         // FAIL-FAST: a malformed dialogue file silently drops villager conversations. A language FILE that
+         // fails to parse is fatal (unlike a single missing key, which legitimately returns the key).
+         throw MillCrash.fail("Culture", "failed to read dialogue file '" + file.getAbsolutePath() + "': " + dialogueException);
       }
    }
 
@@ -470,9 +478,10 @@ public class CultureLanguage {
 
          reader.close();
          return true;
-      } catch (Exception var8) {
-         MillLog.printException(var8);
-         return false;
+      } catch (Exception sentenceException) {
+         // FAIL-FAST: a malformed sentence file silently drops villager sentences. A language FILE that
+         // fails to parse is fatal (unlike a single missing key, which legitimately returns the key).
+         throw MillCrash.fail("Culture", "failed to read sentence file '" + file.getAbsolutePath() + "': " + sentenceException);
       }
    }
 
@@ -898,9 +907,10 @@ public class CultureLanguage {
       public ReputationLevel(File file, String line) {
          try {
             this.level = MillCommonUtilities.readInteger(line.split(";")[0]);
-         } catch (Exception var4) {
-            this.level = 0;
-            MillLog.error(null, "Error when reading reputation line in file " + file.getAbsolutePath() + ": " + line + " : " + var4.getMessage());
+         } catch (Exception levelException) {
+            // FAIL-FAST: a bad level silently became 0, corrupting the reputation tier ordering. Crash.
+            throw MillCrash.fail("Culture", "failed to read reputation level on line '" + line
+               + "' in file " + file.getAbsolutePath() + ": " + levelException);
          }
 
          this.label = line.split(";")[1];

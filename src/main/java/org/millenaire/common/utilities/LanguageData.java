@@ -341,8 +341,10 @@ public class LanguageData {
          }
 
          reader.close();
-      } catch (Exception var8) {
-         MillLog.printException("Excption reading file " + file.getAbsolutePath(), var8);
+      } catch (Exception stringFileException) {
+         // FAIL-FAST: a language string FILE that fails to parse silently drops its translations, masking a
+         // corrupt file. The bar: a missing key returns the key (soft), but a file that fails to load is fatal.
+         throw MillCrash.fail("Config", "failed to read language string file '" + file.getAbsolutePath() + "': " + stringFileException);
       }
    }
 
@@ -379,11 +381,14 @@ public class LanguageData {
             if (sId.length() > 0) {
                try {
                   id = Integer.parseInt(sId);
-               } catch (Exception var20) {
-                  MillLog.printException("Error when trying to read pachment id: ", var20);
+               } catch (Exception parchmentIdException) {
+                  // FAIL-FAST: a parchment with an unparseable id silently loaded under id 0, overwriting/
+                  // colliding with a real parchment. Crash at the parse failure.
+                  throw MillCrash.fail("Config", "failed to read parchment id from '" + file.getAbsolutePath() + "': " + parchmentIdException);
                }
             } else {
-               MillLog.error(null, "Couldn't read the ID of " + file.getAbsolutePath() + ". sId: " + sId);
+               // FAIL-FAST: a parchment file with no id would load under id 0 and collide. Crash.
+               throw MillCrash.fail("Config", "could not read the id of parchment file " + file.getAbsolutePath() + " (sId: '" + sId + "')");
             }
 
             if (MillConfigValues.LogOther >= 1) {
@@ -417,8 +422,9 @@ public class LanguageData {
                   this.help.put(id, text);
                   this.helpVersion.put(id, version);
                }
-            } catch (Exception var21) {
-               MillLog.printException(var21);
+            } catch (Exception textFileException) {
+               // FAIL-FAST: a parchment/help FILE that fails to read silently drops that page of content.
+               throw MillCrash.fail("Config", "failed to read " + dirName + " file '" + file.getAbsolutePath() + "': " + textFileException);
             }
          }
       }

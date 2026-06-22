@@ -23,6 +23,7 @@ import org.millenaire.common.forge.Mill;
 import org.millenaire.common.item.InvItem;
 import org.millenaire.common.network.StreamReadWrite;
 import org.millenaire.common.utilities.MillCommonUtilities;
+import org.millenaire.common.utilities.MillCrash;
 import org.millenaire.common.utilities.MillLog;
 import org.millenaire.common.utilities.Point;
 import org.millenaire.common.utilities.virtualdir.VirtualDir;
@@ -495,8 +496,12 @@ public class VillageType implements MillCommonUtilities.WeightedChoice {
             VillageType village = loadVillageType(file, culture, true);
             v.remove(village);
             v.add(village);
-         } catch (Exception var7) {
-            MillLog.printException(var7);
+         } catch (IllegalStateException crash) {
+            throw crash; // already a fail-fast crash from loadVillageType; propagate unchanged
+         } catch (Exception loneBuildingException) {
+            // FAIL-FAST: a failed lone-building parse silently drops a building type; world gen then can't
+            // find it and NPEs. Crash at the parse failure (1.12 logged-and-continued).
+            throw MillCrash.fail("Culture", "failed to load lone building '" + file.getName() + "': " + loneBuildingException);
          }
       }
 
@@ -516,8 +521,12 @@ public class VillageType implements MillCommonUtilities.WeightedChoice {
             VillageType village = loadVillageType(file, culture, false);
             villages.remove(village);
             villages.add(village);
-         } catch (Exception var7) {
-            MillLog.printException(var7);
+         } catch (IllegalStateException crash) {
+            throw crash; // already a fail-fast crash from loadVillageType; propagate unchanged
+         } catch (Exception villageException) {
+            // FAIL-FAST: a failed village parse silently drops a village type; world gen then can't find it
+            // and NPEs. Crash at the parse failure (1.12 logged-and-continued).
+            throw MillCrash.fail("Culture", "failed to load village '" + file.getName() + "': " + villageException);
          }
       }
 
@@ -577,9 +586,11 @@ public class VillageType implements MillCommonUtilities.WeightedChoice {
 
             return villageType;
          }
-      } catch (Exception var9) {
-         MillLog.printException(var9);
-         return null;
+      } catch (Exception villageTypeException) {
+         // FAIL-FAST: a village type that fails to parse/validate (missing name, missing centre building,
+         // bad parameter) silently became null and was added to the village list, NPEing far away at spawn.
+         // 1.12 logged-and-returned-null; crash at the parse/validation failure instead.
+         throw MillCrash.fail("Culture", "failed to load village type '" + villageType.key + "': " + villageTypeException);
       }
    }
 

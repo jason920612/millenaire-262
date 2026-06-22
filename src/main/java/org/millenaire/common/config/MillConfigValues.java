@@ -24,6 +24,7 @@ import org.millenaire.common.forge.Mill;
 import org.millenaire.common.utilities.LanguageData;
 import org.millenaire.common.utilities.LanguageUtilities;
 import org.millenaire.common.utilities.MillCommonUtilities;
+import org.millenaire.common.utilities.MillCrash;
 import org.millenaire.common.utilities.MillLog;
 import org.millenaire.common.utilities.virtualdir.VirtualDir;
 
@@ -232,8 +233,10 @@ public class MillConfigValues {
 
          try {
             Mill.virtualLoadingDir = new VirtualDir(Mill.loadingDirs);
-         } catch (Exception var2) {
-            MillLog.printException(var2);
+         } catch (Exception virtualDirException) {
+            // FAIL-FAST: the virtual loading dir is the root for ALL content (cultures, buildings, langs).
+            // If it fails to build, every later load silently finds nothing. Crash here instead.
+            throw MillCrash.fail("Config", "failed to build the virtual loading directory: " + virtualDirException);
          }
       }
    }
@@ -367,8 +370,10 @@ public class MillConfigValues {
                configParameters.put(config.key, config);
             }
          }
-      } catch (Exception var5) {
-         MillLog.error(null, "Exception when initialising config items: " + var5);
+      } catch (Exception configItemException) {
+         // FAIL-FAST: config-item registration uses reflection on field names; a failure here silently
+         // leaves configParameters incomplete so those options can never be read/written. Crash instead.
+         throw MillCrash.fail("Config", "failed to initialise config items: " + configItemException);
       }
    }
 
@@ -432,7 +437,9 @@ public class MillConfigValues {
                               if (forbiddenBlock != null && forbiddenBlock != Blocks.AIR) {
                                  forbiddenBlocks.add(forbiddenBlock);
                               } else {
-                                 System.out.println("Could not read forbidden name: " + name);
+                                 // FAIL-FAST: a bad forbidden_blocks entry silently drops a block the user
+                                 // asked Millénaire never to build on; villages then bulldoze it. Crash.
+                                 throw MillCrash.fail("Config", "unknown forbidden block name: " + name);
                               }
                            }
                         } else if (key.equalsIgnoreCase("force_preload_radius")) {
@@ -491,9 +498,12 @@ public class MillConfigValues {
             }
 
             return true;
-         } catch (Exception var15) {
-            MillLog.printException(var15);
-            return false;
+         } catch (IllegalStateException crash) {
+            throw crash; // already a fail-fast crash (e.g. unknown forbidden block); propagate unchanged
+         } catch (Exception configReadException) {
+            // FAIL-FAST: the config file exists but failed to parse; 1.12 logged-and-returned-false, which
+            // silently reverts every option to its default and masks a corrupt config. Crash on parse error.
+            throw MillCrash.fail("Config", "failed to read config file '" + file.getName() + "': " + configReadException);
          }
       }
    }

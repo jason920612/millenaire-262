@@ -39,6 +39,7 @@ import org.millenaire.common.item.InvItem;
 import org.millenaire.common.item.MillItems;
 import org.millenaire.common.quest.Quest;
 import org.millenaire.common.utilities.BlockItemUtilities;
+import org.millenaire.common.utilities.MillCrash;
 import org.millenaire.common.utilities.MillLog;
 import org.millenaire.common.utilities.virtualdir.VirtualDir;
 import org.millenaire.common.world.MillWorldData;
@@ -157,7 +158,9 @@ public class Mill {
       // Touch MillBannerPatterns so its shortname->ResourceKey map (the EnumHelper hashname bridge) is
       // initialised and the long-name/short-name parity is validated on startup.
       if (MillBannerPatterns.BANNER_LONGNAMES.length != BANNER_SHORTNAMES.length) {
-         MillLog.error(this, "Banner pattern short/long name count mismatch: "
+         // FAIL-FAST: the short<->long banner-name tables must be parallel; a mismatch means culture banner
+         // codes resolve to the wrong (or no) registered pattern, silently corrupting every banner. Crash.
+         throw MillCrash.fail("Registry", "banner pattern short/long name count mismatch: "
             + BANNER_SHORTNAMES.length + " short vs " + MillBannerPatterns.BANNER_LONGNAMES.length + " long");
       }
    }

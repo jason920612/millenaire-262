@@ -9,6 +9,7 @@ import org.millenaire.common.annotedparameters.ParametersManager;
 import org.millenaire.common.buildingplan.BuildingPlanSet;
 import org.millenaire.common.config.MillConfigValues;
 import org.millenaire.common.utilities.MillCommonUtilities;
+import org.millenaire.common.utilities.MillCrash;
 import org.millenaire.common.utilities.MillLog;
 import org.millenaire.common.utilities.virtualdir.VirtualDir;
 
@@ -279,8 +280,12 @@ public class WallType {
 
             WallType wall = loadWallType(file, culture);
             walls.put(wall.key, wall);
-         } catch (Exception var7) {
-            MillLog.printException(var7);
+         } catch (IllegalStateException crash) {
+            throw crash; // already a fail-fast crash from loadWallType; propagate unchanged
+         } catch (Exception wallException) {
+            // FAIL-FAST: a failed wall parse silently dropped a wall type; villages that reference it then
+            // build no wall / NPE. Crash at the parse failure (1.12 logged-and-continued).
+            throw MillCrash.fail("Culture", "failed to load wall '" + file.getName() + "': " + wallException);
          }
       }
 
@@ -294,9 +299,10 @@ public class WallType {
          ParametersManager.loadAnnotedParameterData(file, wallType, null, "wall type", c);
          validateVillageWalls(wallType);
          return wallType;
-      } catch (Exception var4) {
-         MillLog.printException(var4);
-         return null;
+      } catch (Exception wallTypeException) {
+         // FAIL-FAST: a wall type that fails to parse silently became null and NPEs in loadWalls (wall.key).
+         // Crash at the parse failure (1.12 logged-and-returned-null).
+         throw MillCrash.fail("Culture", "failed to load wall type '" + wallType.key + "': " + wallTypeException);
       }
    }
 

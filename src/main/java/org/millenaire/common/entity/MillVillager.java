@@ -366,9 +366,12 @@ public abstract class MillVillager extends PathfinderMob implements IAStarPathed
          } else if (MillConfigValues.LogNetwork >= 2) {
             MillLog.minor(null, "readVillagerPacket for unknown villager: " + villager_id);
          }
-      } catch (IOException var3) {
-         // Phase-2 FLAG (spawn/update-data READ): optional fields are handled by the readNullable* helpers;
-         // a thrown IOException is a genuine buffer/parse failure, not optional-on-client data. Surface it.
+      } catch (IOException | RuntimeException var3) {
+         // FAIL-FAST: now that the villager stream write/read are exact mirrors (StreamReadWrite NBT desync
+         // fixed), any decode failure here is a genuine write/read mismatch, not optional-on-client data.
+         // We catch RuntimeException too because a byte-layout desync surfaces as IndexOutOfBoundsException /
+         // IdentifierException (the historical symptoms) which previously slipped past an IOException-only
+         // catch and was merely logged. Surface it as a loud MillCrash so a future desync cannot hide.
          throw MillCrash.fail("Entity", "MillVillager.readVillagerPacket: villager update-packet parse failed: " + var3);
       }
    }
@@ -2997,7 +3000,10 @@ public abstract class MillVillager extends PathfinderMob implements IAStarPathed
       try {
          this.setVillagerId(data.readLong());
          this.readVillagerStreamdata(data);
-      } catch (IOException var4) {
+      } catch (IOException | RuntimeException var4) {
+         // FAIL-FAST: catch RuntimeException too (IndexOutOfBoundsException / IdentifierException) so a byte
+         // write/read desync surfaces loudly instead of being swallowed by an upstream handler. The
+         // StreamReadWrite NBT layout is now an exact mirror, so reaching here means a real decode mismatch.
          throw MillCrash.fail("Entity", "MillVillager.readSpawnData: spawn-packet parse failed for " + this + ": " + var4);
       }
    }

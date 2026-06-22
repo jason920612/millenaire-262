@@ -132,10 +132,18 @@ public class StreamReadWrite {
    }
 
    private static CompoundTag readNBTTagCompound(FriendlyByteBuf par1PacketBuffer) throws IOException {
-      // PROTOCOL-OPTIONAL: writeNBTTagCompound encodes an absent tag as writeShort(-1); the negative
-      // length sentinel is the intentional "no NBT" encoding, so returning null here is correct.
-      short tagPresenceMarker = par1PacketBuffer.readShort();
-      return tagPresenceMarker < 0 ? null : par1PacketBuffer.readNbt();
+      // EXACT MIRROR of writeNBTTagCompound: both sides use the native NbtIo codec (writeNbt/readNbt) with NO
+      // manual length/sentinel prefix.
+      //
+      // The 1.12 protocol used a writeShort(-1)/readShort sentinel because 1.12 FriendlyByteBuf.writeCompoundTag
+      // prefixed the NBT with a 2-byte length. In 26.2 writeNbt() delegates to NbtIo.writeAnyTag, which writes a
+      // SINGLE type byte (0x00/EndTag for null) and NO length prefix; readNbt() mirrors via NbtIo.readAnyTag.
+      // The previous code wrote writeShort(-1) only for null but writeNbt (no prefix) for non-null, while the read
+      // side ALWAYS consumed a leading short -> a 2-byte desync on every damageable held item, shifting all
+      // subsequent fields (manifested as the IndexOutOfBoundsException in readInventory and the
+      // "minecraft:" IdentifierException in clothTexture). readNbt() returns an empty CompoundTag (or null
+      // for EndTag) when the written tag was null/empty, which the caller already null/empty-checks.
+      return par1PacketBuffer.readNbt();
    }
 
    public static BuildingLocation readNullableBuildingLocation(FriendlyByteBuf ds) {
@@ -543,11 +551,10 @@ public class StreamReadWrite {
    }
 
    private static void writeNBTTagCompound(CompoundTag par1NBTTagCompound, FriendlyByteBuf par2PacketBuffer) {
-      if (par1NBTTagCompound == null) {
-         par2PacketBuffer.writeShort(-1);
-      } else {
-         par2PacketBuffer.writeNbt(par1NBTTagCompound);
-      }
+      // EXACT MIRROR of readNBTTagCompound: native writeNbt with NO manual short sentinel. writeNbt(null)
+      // encodes an EndTag (single 0x00 byte); readNbt() decodes it back to null/empty. See readNBTTagCompound
+      // for the full rationale on why the legacy writeShort(-1) sentinel caused a 2-byte write/read desync.
+      par2PacketBuffer.writeNbt(par1NBTTagCompound);
    }
 
    public static void writeNullableBuildingLocation(BuildingLocation bl, FriendlyByteBuf data) {

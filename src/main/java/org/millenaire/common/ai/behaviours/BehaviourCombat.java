@@ -326,6 +326,31 @@ public final class BehaviourCombat implements MillBehaviour {
       return hit.getType() == net.minecraft.world.phys.HitResult.Type.MISS;
    }
 
+   /**
+    * Attack the current target IF it is in reach (melee) or shootable (ranged + line of sight, no friendly
+    * fire) — shared so a villager doing something ELSE (e.g. swimming to shore in {@link BehaviourEscapeFluid})
+    * still fights when it can, instead of being a helpless target. Returns the updated ranged cooldown.
+    */
+   public static int attackIfAble(MillVillager villager, int rangedCooldown) {
+      LivingEntity target = villager.getTarget();
+      if (target == null || !target.isAlive()) {
+         return Math.max(0, rangedCooldown - 1);
+      }
+      villager.getLookControl().setLookAt(target, 30.0F, 30.0F);
+      boolean ranged = isRanged(villager);
+      double dist = villager.distanceTo(target);
+      double optimal = ranged ? 11.0 : 2.2;
+      if (!ranged && dist <= MELEE_RANGE) {
+         villager.doHurtTarget(villager.level() instanceof net.minecraft.server.level.ServerLevel sl ? sl : null, target);
+      } else if (ranged && dist <= optimal + 4.0 && villager.hasLineOfSight(target)) {
+         if (rangedCooldown <= 0 && !friendlyFireRisk(villager, target)) {
+            tryRangedAttack(villager, target);
+            return 30;
+         }
+      }
+      return Math.max(0, rangedCooldown - 1);
+   }
+
    private static void tryRangedAttack(MillVillager villager, LivingEntity target) {
       // Prefer the entity's own ranged hook if it has one; otherwise fire a generic arrow so ANY villager
       // holding a (vanilla or modded) ranged weapon can shoot (req 10).

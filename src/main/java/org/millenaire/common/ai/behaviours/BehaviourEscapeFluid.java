@@ -17,6 +17,7 @@ public final class BehaviourEscapeFluid implements MillBehaviour {
    private static final int SEARCH = 8; // how far to look for shore
    private static final double SPEED = 0.9; // hurry
    private BlockPos shore;
+   private int rangedCd; // shared with combat: lets us shoot while swimming to shore
 
    @Override
    public boolean canRun(MillVillager villager) {
@@ -32,21 +33,33 @@ public final class BehaviourEscapeFluid implements MillBehaviour {
    @Override
    public boolean tick(MillVillager villager) {
       if (!villager.isInWater() && !villager.isInLava()) {
+         villager.setJumping(false);
+         villager.setSwimming(false);
          villager.getNavigation().stop();
          return false; // safely out — done
       }
-      // Swim/float upward while submerged (helps clear deep water/lava walls before pathing kicks in).
-      villager.setDeltaMovement(villager.getDeltaMovement().add(0.0, 0.06, 0.0));
-
-      // Re-pick the nearest dry shore if we don't have one or arrived at it.
+      // The 3D pathfinder needs solid ground that deep water lacks (water isn't a standable node), so it can't
+      // route us out — SWIM DIRECTLY toward the nearest shore via the MoveControl instead of pathing.
+      villager.getNavigation().stop();
       if (this.shore == null || villager.blockPosition().closerThan(this.shore, 1.5)) {
          this.shore = nearestShore(villager);
       }
-      if (this.shore != null) {
-         villager.getNavigation().moveTo(this.shore.getX() + 0.5, this.shore.getY(), this.shore.getZ() + 0.5, SPEED);
-      } else {
-         // No shore found nearby — head toward the lowest-danger open air above us as a fallback.
-         villager.getMoveControl().setWantedPosition(villager.getX(), villager.getY() + 1.0, villager.getZ(), SPEED);
+      // Real swimming: rise to the surface (vanilla only swims up while 'jumping'), take the streamlined swim
+      // pose while submerged, and head straight at the shore.
+      if (villager.isUnderWater()) {
+         villager.setSwimming(true);
+         villager.setDeltaMovement(villager.getDeltaMovement().add(0.0, 0.04, 0.0)); // climb toward the surface
+      }
+      villager.setJumping(true); // vanilla jumpInLiquid → surface + stay afloat
+      double sx = this.shore != null ? this.shore.getX() + 0.5 : villager.getX();
+      double sy = this.shore != null ? this.shore.getY() : villager.getY() + 1.0;
+      double sz = this.shore != null ? this.shore.getZ() + 0.5 : villager.getZ();
+      villager.getMoveControl().setWantedPosition(sx, sy, sz, SPEED);
+
+      // In WATER (not suicidal lava), still FIGHT when able: swim to shore AND melee/shoot a reachable enemy,
+      // rather than be a helpless floating target. (Lava: pure escape — trading blows in lava is death.)
+      if (villager.isInWater() && villager.getTarget() != null) {
+         this.rangedCd = BehaviourCombat.attackIfAble(villager, this.rangedCd);
       }
       return true;
    }
@@ -54,6 +67,8 @@ public final class BehaviourEscapeFluid implements MillBehaviour {
    @Override
    public void onStop(MillVillager villager) {
       this.shore = null;
+      villager.setJumping(false);
+      villager.setSwimming(false);
    }
 
    /** Nearest dry, standable, fluid-free cell (preferring the closest) — the shore to climb out onto. */

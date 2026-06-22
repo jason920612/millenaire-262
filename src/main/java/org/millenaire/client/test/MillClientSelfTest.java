@@ -617,6 +617,9 @@ public final class MillClientSelfTest {
                   this.combatStartX = mv.getX();
                   this.combatStartZ = mv.getZ();
                   this.combatEngaged = true;
+                  // Realistic ambush: pretend the sleep goal still wants it lying down. A FIGHTING villager
+                  // must NOT render asleep — combat-check asserts pose != SLEEPING to catch the lie-down bug.
+                  mv.shouldLieDown = true;
                }
                // HOSTILE VILLAGER (village-war): the raider (2nd fighter) targets a SEPARATE victim (3rd fighter)
                // → villager-vs-villager combat, kept apart from fighter 0's mob fight.
@@ -670,6 +673,13 @@ public final class MillClientSelfTest {
             pass("combat-check", "fighter ENGAGED and moved (not frozen): " + detail);
          } else {
             fail("combat-check", new IllegalStateException("fighter did NOT move ~2.5s after targeting — FREEZE suspected: " + detail));
+         }
+         // Realistic lie-down check: a FIGHTING villager must NOT be in the SLEEPING pose even though we forced
+         // shouldLieDown=true at spawn — having a target must keep it standing (the "fights while lying down" bug).
+         if (mv.getPose() == net.minecraft.world.entity.Pose.SLEEPING) {
+            fail("combat-pose", new IllegalStateException("fighter is LYING DOWN while fighting (shouldLieDown=" + mv.shouldLieDown + ", target=" + (mv.getTarget() != null) + ")"));
+         } else {
+            pass("combat-pose", "fighter STANDS while fighting (not asleep) despite shouldLieDown=true");
          }
          if (zombieHurtOrDead) {
             pass("combat-attack", "fighter dealt damage to its target (hurt or killed)");

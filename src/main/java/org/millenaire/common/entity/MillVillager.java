@@ -600,6 +600,13 @@ public abstract class MillVillager extends PathfinderMob implements IAStarPathed
          Entity entity = ds.getEntity();
          this.lastAttackByPlayer = false;
          if (entity != null && entity instanceof LivingEntity) {
+            // Any hit from a living attacker WAKES the villager and breaks off its sleep/rest goal — being
+            // attacked must never leave it lying down asleep (vanilla stopSleeping does this at the top of
+            // hurt). Retaliation target is set per-attacker-type below; this just guarantees it's awake.
+            if (this.shouldLieDown) {
+               this.shouldLieDown = false;
+               this.clearGoal();
+            }
             if (entity instanceof Player) {
                if (!((Player)entity).isSpectator() && !((Player)entity).isCreative()) {
                   this.lastAttackByPlayer = true;
@@ -612,7 +619,9 @@ public abstract class MillVillager extends PathfinderMob implements IAStarPathed
                         }
                      }
 
-                     if (this.level().getDifficulty() != Difficulty.PEACEFUL && this.getHealth() < this.getMaxHealth() - 10.0F) {
+                     // Retaliate on any non-peaceful player hit (was gated behind health < max-10, which left a
+                     // full-health villager — especially one just woken from sleep — passively taking hits).
+                     if (this.level().getDifficulty() != Difficulty.PEACEFUL) {
                         this.setTarget((LivingEntity)entity);
                         this.clearGoal();
                         if (this.getTownHall() != null) {

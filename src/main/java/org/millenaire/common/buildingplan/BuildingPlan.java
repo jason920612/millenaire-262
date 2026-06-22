@@ -2125,9 +2125,11 @@ public class BuildingPlan implements IBuildingPlan, MillCommonUtilities.Weighted
       }
 
       if (bs != null) {
-         b = bs.getBlock();
-         m = 0;
-         bblocks.add(new BuildingBlock(p, b, m));
+         // Preserve the full blockstate (esp. FACING for panels/signs/banners/locked-chests). See the matching
+         // note in getBuildingPoints_buildingSecondPass: collapsing to (p, block, 0) dropped the guessed/rotated
+         // facing on 26.2 (Block+meta constructor ignores meta), so panels reverted to FACING=NORTH and faced
+         // air in rotated buildings. Build straight from the BlockState to keep the orientation-correct facing.
+         bblocks.add(new BuildingBlock(p, bs));
       } else if (b != null) {
          bblocks.add(new BuildingBlock(p, b, m));
       }
@@ -2185,9 +2187,12 @@ public class BuildingPlan implements IBuildingPlan, MillCommonUtilities.Weighted
       }
 
       if (bs != null) {
-         b = bs.getBlock();
-         m = 0;
-         bblocks.add(new BuildingBlock(p, b, m));
+         // Preserve the full blockstate (esp. FACING for panels/signs/banners/locked-chests). 1.12 carried
+         // the facing here via meta (m = block.getMetaFromState(bs)) which the legacy Block+meta constructor
+         // re-expanded into the state. On 26.2 the Block+meta constructor only takes block.defaultBlockState()
+         // (meta is inert), so collapsing to (p, block, 0) DROPPED the guessed/rotated facing — every panel
+         // reverted to FACING=NORTH and faced air in rotated buildings. Build straight from the BlockState.
+         bblocks.add(new BuildingBlock(p, bs));
       } else if (b != null) {
          bblocks.add(new BuildingBlock(p, b, m));
       }

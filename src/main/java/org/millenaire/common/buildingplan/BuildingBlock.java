@@ -383,7 +383,17 @@ public class BuildingBlock {
             }
 
             if (this.blockState != Blocks.DIRT.defaultBlockState() || existingBlock != Blocks.GRASS_BLOCK) {
-               WorldUtilities.setBlockAndMetadata(world, this.p, this.block, this.meta, notifyBlocks, playSound);
+               // If the BuildingBlock carries a deliberately non-default blockState (e.g. a panel/sign/banner
+               // whose FACING was rotated for the building orientation or guessed against the wall), place that
+               // state directly. Routing it through (block, meta) would collapse it to the block's DEFAULT state
+               // (legacyMetaToBlockState(block, 0) = default) — that was why rotated panels faced air. Only the
+               // meta==0 / non-default-state case takes this branch; meta-bearing writes (crop/wart age, log
+               // axis) still go through the legacy block+meta path below, unchanged.
+               if (this.meta == 0 && !this.blockState.equals(this.block.defaultBlockState())) {
+                  WorldUtilities.setBlockstate(world, this.p, this.blockState, notifyBlocks, playSound);
+               } else {
+                  WorldUtilities.setBlockAndMetadata(world, this.p, this.block, this.meta, notifyBlocks, playSound);
+               }
                blockSet = true;
             }
          }

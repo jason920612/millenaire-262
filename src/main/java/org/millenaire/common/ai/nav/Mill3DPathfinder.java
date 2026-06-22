@@ -1,0 +1,131 @@
+package org.millenaire.common.ai.nav;
+
+import java.util.ArrayList;
+import java.util.Collections;
+import java.util.HashMap;
+import java.util.List;
+import java.util.Map;
+import java.util.PriorityQueue;
+
+import net.minecraft.core.BlockPos;
+
+/**
+ * Ground-up 3D pathfinder (no vanilla nav): A* over a rich movement-action graph against a {@link Voxel} —
+ * walk (8 horizontal), step-up one, drop down up to 3, and jump a 1-block gap. Costs are the lexicographic
+ * {@link LexCost} (climbing free, drops/jumps mildly penalised), so it has true vertical/3D awareness and
+ * explores all routes for the optimal one. Decoupled from Minecraft so it is unit-testable on synthetic
+ * obstacle courses.
+ */
+public final class Mill3DPathfinder {
+   private static final double DIAG = 1.4142;
+   private static final double JUMP_GAP = 2.5;
+   private static final double DROP = 0.5;
+   private static final int[][] H8 = {{1, 0}, {-1, 0}, {0, 1}, {0, -1}, {1, 1}, {1, -1}, {-1, 1}, {-1, -1}};
+   private static final int[][] H4 = {{1, 0}, {-1, 0}, {0, 1}, {0, -1}};
+
+   private Mill3DPathfinder() {
+   }
+
+   /** Lexicographic-shortest 3D path start→goal, or {@code null} if none within {@code maxNodes} expansions. */
+   public static List<BlockPos> findPath(Voxel v, BlockPos start, BlockPos goal, int maxNodes) {
+      Map<Long, LexCost> g = new HashMap<>();
+      Map<Long, BlockPos> from = new HashMap<>();
+      PriorityQueue<Node> open = new PriorityQueue<>((a, b) -> a.f.compareTo(b.f));
+      g.put(start.asLong(), LexCost.ZERO);
+      open.add(new Node(start, LexCost.ZERO, heuristic(start, goal)));
+      int expanded = 0;
+      while (!open.isEmpty() && expanded < maxNodes) {
+         Node cur = open.poll();
+         long ck = cur.pos.asLong();
+         LexCost known = g.get(ck);
+         if (known != null && cur.g.compareTo(known) > 0) {
+            continue;
+         }
+         if (cur.pos.equals(goal)) {
+            return reconstruct(from, start, goal);
+         }
+         expanded++;
+         forEachNeighbor(v, cur.pos, (nb, stepCost) -> {
+            LexCost t = cur.g.plus(stepCost);
+            long nk = nb.asLong();
+            LexCost prev = g.get(nk);
+            if (prev == null || t.compareTo(prev) < 0) {
+               g.put(nk, t);
+               from.put(nk, cur.pos);
+               open.add(new Node(nb, t, t.plus(heuristic(nb, goal))));
+            }
+         });
+      }
+      return null;
+   }
+
+   /** Enumerate the 3D move edges out of a standable cell, calling {@code out} with each (neighbour, cost). */
+   public static void forEachNeighbor(Voxel v, BlockPos p, Neighbor out) {
+      int x = p.getX();
+      int y = p.getY();
+      int z = p.getZ();
+      for (int[] d : H8) {
+         int nx = x + d[0];
+         int nz = z + d[1];
+         boolean diag = d[0] != 0 && d[1] != 0;
+         double base = diag ? DIAG : 1.0;
+         // diagonals must not cut a solid corner
+         if (diag && (v.isSolid(nx, y, z) || v.isSolid(x, y, nz) || v.isSolid(nx, y + 1, z) || v.isSolid(x, y + 1, nz))) {
+            continue;
+         }
+         if (v.standable(nx, y, nz)) {
+            out.accept(new BlockPos(nx, y, nz), LexCost.normal(base)); // walk same level
+         } else if (v.standable(nx, y + 1, nz) && v.clearBody(x, y + 2, z) && !v.isSolid(nx, y + 2, nz)) {
+            out.accept(new BlockPos(nx, y + 1, nz), LexCost.normal(base)); // step / jump up one (climbing free)
+         } else if (v.clearBody(nx, y, nz)) {
+            for (int dy = -1; dy >= -3; dy--) { // drop down up to 3
+               if (v.standable(nx, y + dy, nz)) {
+                  out.accept(new BlockPos(nx, y + dy, nz), LexCost.normal(base + DROP * (-dy)));
+                  break;
+               }
+               if (v.isSolid(nx, y + dy - 1, nz)) {
+                  break; // landed-on something not standable / blocked
+               }
+            }
+         }
+      }
+      // jump a 1-block gap (cardinal): gap cell air + same-level landing 2 out, with head clearance
+      for (int[] d : H4) {
+         int gx = x + d[0];
+         int gz = z + d[1];
+         int lx = x + 2 * d[0];
+         int lz = z + 2 * d[1];
+         if (!v.standable(gx, y, gz) && v.clearBody(gx, y, gz) && v.standable(lx, y, lz)
+            && v.clearBody(lx, y, lz) && !v.isSolid(gx, y + 1, gz)) {
+            out.accept(new BlockPos(lx, y, lz), LexCost.normal(JUMP_GAP));
+         }
+      }
+   }
+
+   private static LexCost heuristic(BlockPos a, BlockPos b) {
+      int d = Math.abs(a.getX() - b.getX()) + Math.abs(a.getY() - b.getY()) + Math.abs(a.getZ() - b.getZ());
+      return LexCost.normal(d);
+   }
+
+   private static List<BlockPos> reconstruct(Map<Long, BlockPos> from, BlockPos start, BlockPos goal) {
+      List<BlockPos> path = new ArrayList<>();
+      BlockPos cur = goal;
+      while (cur != null) {
+         path.add(cur);
+         if (cur.equals(start)) {
+            break;
+         }
+         cur = from.get(cur.asLong());
+      }
+      Collections.reverse(path);
+      return path;
+   }
+
+   /** Callback for {@link #forEachNeighbor}. */
+   public interface Neighbor {
+      void accept(BlockPos pos, LexCost cost);
+   }
+
+   private record Node(BlockPos pos, LexCost g, LexCost f) {
+   }
+}

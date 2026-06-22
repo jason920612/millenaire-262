@@ -596,9 +596,28 @@ public abstract class MillVillager extends PathfinderMob implements IAStarPathed
    }
 
    public boolean attackEntityFrom(DamageSource ds, float i) {
+      // ENVIRONMENTAL immunity by damage TYPE (not just the source-less heuristic below): the 1.12 intent is
+      // that village NPCs must not die inexplicably to fall/fire/lava/drown/suffocation/freeze/cactus while
+      // idle or pathing. Blocking by type also covers environmental damage that carries an igniter/source
+      // entity (e.g. lava, a fire block via a credited entity) which the getEntity()==null guard would miss —
+      // this is the "stationary villager takes damage out of nowhere" report.
+      if (ds.is(net.minecraft.tags.DamageTypeTags.IS_FIRE)
+         || ds.is(net.minecraft.tags.DamageTypeTags.IS_FALL)
+         || ds.is(net.minecraft.tags.DamageTypeTags.IS_DROWNING)
+         || ds.is(net.minecraft.tags.DamageTypeTags.IS_FREEZING)
+         || ds.is(net.minecraft.world.damagesource.DamageTypes.IN_WALL)
+         || ds.is(net.minecraft.world.damagesource.DamageTypes.CRAMMING)
+         || ds.is(net.minecraft.world.damagesource.DamageTypes.CACTUS)
+         || ds.is(net.minecraft.world.damagesource.DamageTypes.SWEET_BERRY_BUSH)) {
+         return false;
+      }
+
       if (ds.getEntity() == null && !ds.is(net.minecraft.world.damagesource.DamageTypes.FELL_OUT_OF_WORLD)) {
          return false;
       } else {
+         // DIAGNOSTIC (temporary): surface what actually damages a villager — to pin down "mysterious" deaths.
+         MillLog.major(this, "███ VILLAGER-DAMAGE " + i + " type=" + ds.type().msgId()
+            + " by=" + ds.getEntity() + " direct=" + ds.getDirectEntity());
          boolean hadFullHealth = this.getMaxHealth() == this.getHealth();
          // Apply the real damage via the PARENT's hurtServer (not hurtOrSimulate, which re-dispatches to
          // this.hurtServer and would infinitely recurse through our override).

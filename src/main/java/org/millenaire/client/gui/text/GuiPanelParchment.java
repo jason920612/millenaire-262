@@ -14,6 +14,7 @@ import org.millenaire.common.entity.MillVillager;
 import org.millenaire.common.forge.Mill;
 import org.millenaire.common.ui.MillMapInfo;
 import org.millenaire.common.utilities.LanguageUtilities;
+import org.millenaire.common.utilities.MillCrash;
 import org.millenaire.common.utilities.MillLog;
 import org.millenaire.common.utilities.ThreadSafeUtilities;
 import org.millenaire.common.village.Building;
@@ -87,8 +88,8 @@ public class GuiPanelParchment extends GuiText {
          } else if (this.mapType == 2 && this.pageNum == 0) {
             this.drawChunkMap(i, j);
          }
-      } catch (Exception var5) {
-         MillLog.printException("Exception while rendering map: ", var5);
+      } catch (Exception mapRenderException) {
+         throw MillCrash.fail("UI", "exception while rendering village/chunk map in " + this + ": " + mapRenderException);
       }
    }
 

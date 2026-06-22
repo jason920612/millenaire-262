@@ -27,6 +27,7 @@ import org.millenaire.common.entity.MillVillager;
 import org.millenaire.common.forge.Mill;
 import org.millenaire.common.item.TradeGood;
 import org.millenaire.common.utilities.MillCommonUtilities;
+import org.millenaire.common.utilities.MillCrash;
 import org.millenaire.common.utilities.MillLog;
 import org.millenaire.common.village.VillagerRecord;
 
@@ -289,8 +290,8 @@ public class TravelBookExporter {
       for (ItemStack stack : itemsToRender.values()) {
          try {
             exportItemStack(stack);
-         } catch (IOException var3) {
-            MillLog.printException(var3);
+         } catch (IOException iconExportException) {
+            throw MillCrash.fail("UI", "failed exporting travel-book icon " + getIconKey(stack) + ": " + iconExportException);
          }
       }
 
@@ -318,8 +319,8 @@ public class TravelBookExporter {
          exportAllTradeGoods(travelBookManager, writer, gson, language);
          writer.close();
          MillLog.warning(null, "Exported travel book data to SQL for language: " + language);
-      } catch (IOException var6) {
-         MillLog.printException(var6);
+      } catch (IOException sqlExportException) {
+         throw MillCrash.fail("UI", "failed exporting travel-book SQL data: " + sqlExportException);
       }
    }
 
@@ -359,8 +360,8 @@ public class TravelBookExporter {
                try {
                   exportVillagerPicture(villagerType, false);
                   nb++;
-               } catch (Exception var7) {
-                  MillLog.printException(var7);
+               } catch (Exception villagerExportException) {
+                  throw MillCrash.fail("UI", "failed exporting travel-book picture for villager " + villagerType.key + ": " + villagerExportException);
                }
             }
 
@@ -368,8 +369,8 @@ public class TravelBookExporter {
                try {
                   exportVillagerPicture(villagerType, true);
                   nb++;
-               } catch (Exception var8) {
-                  MillLog.printException(var8);
+               } catch (Exception mainVillagerExportException) {
+                  throw MillCrash.fail("UI", "failed exporting travel-book main-culture picture for villager " + villagerType.key + ": " + mainVillagerExportException);
                }
             }
          }

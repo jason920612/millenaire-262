@@ -26,7 +26,7 @@ import org.millenaire.common.culture.VillageType;
 import org.millenaire.common.culture.VillagerType;
 import org.millenaire.common.item.TradeGood;
 import org.millenaire.common.utilities.LanguageUtilities;
-import org.millenaire.common.utilities.MillLog;
+import org.millenaire.common.utilities.MillCrash;
 
 /**
  * Base class for Mill's custom paginated "book" GUIs.
@@ -204,8 +204,8 @@ public abstract class GuiText extends Screen {
                vpos += line.getLineHeight();
             }
          }
-      } catch (Exception var13) {
-         MillLog.printException("Exception while doing button pagination in GUI " + this, var13);
+      } catch (Exception paginationException) {
+         throw MillCrash.fail("UI", "exception during button pagination in GUI " + this + ": " + paginationException);
       }
    }
 
@@ -403,9 +403,7 @@ public abstract class GuiText extends Screen {
          if (this.textBook != null) {
             int vpos = 6;
             if (this.pageNum < this.textBook.nbPages()) {
-               if (this.textBook.getPage(this.pageNum) == null) {
-                  MillLog.printException(new MillLog.MillenaireException("descText.get(pageNum)==null for pageNum: " + this.pageNum + " in GUI: " + this));
-               }
+               MillCrash.need(this.textBook.getPage(this.pageNum), "UI", "textBook page " + this.pageNum + " in GUI " + this);
 
                for (int linePos = 0; linePos < this.getTextHeight() && linePos < this.textBook.getPage(this.pageNum).getNbLines(); linePos++) {
                   TextLine line = this.textBook.getPage(this.pageNum).getLine(linePos);
@@ -527,8 +525,8 @@ public abstract class GuiText extends Screen {
                this.fontRenderer
             );
          }
-      } catch (Exception var23) {
-         MillLog.printException("Exception in drawScreen of GUI: " + this, var23);
+      } catch (Exception drawException) {
+         throw MillCrash.fail("UI", "exception in drawScreen of GUI " + this + ": " + drawException);
       }
    }
 
@@ -690,8 +688,8 @@ public abstract class GuiText extends Screen {
                net.minecraft.client.resources.sounds.SimpleSoundInstance.forUI(net.minecraft.sounds.SoundEvents.UI_BUTTON_CLICK, 1.0F));
             try {
                this.actionPerformed(b);
-            } catch (Exception e) {
-               MillLog.printException("Exception in button action", e);
+            } catch (Exception actionException) {
+               throw MillCrash.fail("UI", "exception in button action for " + b + " in GUI " + this + ": " + actionException);
             }
             break;
          }
@@ -833,12 +831,8 @@ public abstract class GuiText extends Screen {
 
       public GuiButtonReference(BuildingPlanSet planSet) {
          super(0, 0, 0, 0, 0, "");
-         if (planSet == null) {
-            MillLog.printException(new Exception("Tried creating a ref button to a null planSet."));
-         } else {
-            this.culture = planSet.culture;
-         }
-
+         MillCrash.need(planSet, "UI", "planSet for building-detail reference button");
+         this.culture = planSet.culture;
          this.type = RefType.BUILDING_DETAIL;
          this.key = planSet.key;
       }

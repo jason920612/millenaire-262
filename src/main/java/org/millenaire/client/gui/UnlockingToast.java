@@ -15,7 +15,7 @@ import org.millenaire.common.culture.VillageType;
 import org.millenaire.common.culture.VillagerType;
 import org.millenaire.common.item.TradeGood;
 import org.millenaire.common.utilities.LanguageUtilities;
-import org.millenaire.common.utilities.MillLog;
+import org.millenaire.common.utilities.MillCrash;
 
 /**
  * "Content unlocked" toast shown when the player discovers new Mill content.
@@ -143,8 +143,8 @@ public class UnlockingToast implements Toast {
          if (icon != null) {
             graphics.item(icon, 8, 8);
          }
-      } catch (Exception var9) {
-         MillLog.printException(this.toString(), var9);
+      } catch (Exception toastRenderException) {
+         throw MillCrash.fail("UI", "exception extracting render state for unlocking toast " + this + ": " + toastRenderException);
       }
    }
 

@@ -23,6 +23,7 @@ import org.millenaire.common.entity.MillVillager;
 import org.millenaire.common.forge.Mill;
 import org.millenaire.common.item.TradeGood;
 import org.millenaire.common.utilities.LanguageUtilities;
+import org.millenaire.common.utilities.MillCrash;
 import org.millenaire.common.utilities.MillLog;
 import org.millenaire.common.village.VillagerRecord;
 import org.millenaire.common.world.UserProfile;
@@ -256,8 +257,8 @@ public class GuiTravelBook extends GuiText {
                this.previousScreenStates.remove(this.previousScreenStates.size() - 1);
                this.textBook = null;
             }
-         } catch (Exception var8) {
-            MillLog.printException("Exception while handling button pressed:", var8);
+         } catch (Exception buttonException) {
+            throw MillCrash.fail("UI", "exception handling travel-book button press on screen " + this.currentScreen + ": " + buttonException);
          }
       }
    }
@@ -348,8 +349,8 @@ public class GuiTravelBook extends GuiText {
                this.buttonList.add(nextButton);
             }
          }
-      } catch (Exception var8) {
-         MillLog.printException("Exception in buttonPagination:", var8);
+      } catch (Exception paginationException) {
+         throw MillCrash.fail("UI", "exception during travel-book button pagination on screen " + this.currentScreen + ": " + paginationException);
       }
    }
 
@@ -403,9 +404,8 @@ public class GuiTravelBook extends GuiText {
          }
 
          book = this.bookManager.adjustTextBookLineLength(book);
-      } catch (Exception var3) {
-         MillLog.printException("Error when computing Travel Book", var3);
-         book = new TextBook();
+      } catch (Exception bookBuildException) {
+         throw MillCrash.fail("UI", "exception computing travel-book content on screen " + this.currentScreen + ": " + bookBuildException);
       }
 
       return book;

@@ -12,7 +12,6 @@ import java.util.Collection;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
-import java.util.Random;
 import java.util.stream.Collectors;
 import net.minecraft.core.particles.ParticleTypes;
 import net.minecraft.core.registries.BuiltInRegistries;
@@ -44,11 +43,6 @@ import org.millenaire.common.world.UserProfile;
 
 public class MillCommonUtilities {
    private static final String MILLENAIRE_ORG_ROOT = "http://millenaire.org";
-   public static Random random = new Random();
-
-   public static boolean chanceOn(int i) {
-      return getRandom().nextInt(i) == 0;
-   }
 
    public static void changeMoney(Container chest, int toChange, Player player) {
       boolean hasPurse = false;
@@ -216,15 +210,15 @@ public class MillCommonUtilities {
       float width = ent.getBbWidth();
       float height = ent.getBbHeight();
       for (int var3 = 0; var3 < 7; var3++) {
-         double var4 = random.nextGaussian() * 0.02;
-         double var6 = random.nextGaussian() * 0.02;
-         double var8 = random.nextGaussian() * 0.02;
+         double var4 = MillRandom.random.nextGaussian() * 0.02;
+         double var6 = MillRandom.random.nextGaussian() * 0.02;
+         double var8 = MillRandom.random.nextGaussian() * 0.02;
          ent.level()
             .addParticle(
                ParticleTypes.HEART,
-               ent.getX() + random.nextFloat() * width * 2.0F - width,
-               ent.getY() + 0.5 + random.nextFloat() * height,
-               ent.getZ() + random.nextFloat() * width * 2.0F - width,
+               ent.getX() + MillRandom.random.nextFloat() * width * 2.0F - width,
+               ent.getY() + 0.5 + MillRandom.random.nextFloat() * height,
+               ent.getZ() + MillRandom.random.nextFloat() * width * 2.0F - width,
                var4,
                var6,
                var8
@@ -312,14 +306,6 @@ public class MillCommonUtilities {
       }
    }
 
-   public static Random getRandom() {
-      if (random == null) {
-         random = new Random();
-      }
-
-      return random;
-   }
-
    public static String getShortPrice(int price) {
       String res = "";
       if (price >= 4096) {
@@ -337,36 +323,6 @@ public class MillCommonUtilities {
       }
 
       return res.trim();
-   }
-
-   public static MillCommonUtilities.WeightedChoice getWeightedChoice(List<? extends MillCommonUtilities.WeightedChoice> choices, Player player) {
-      int weightTotal = 0;
-      List<Integer> weights = new ArrayList<>();
-
-      for (MillCommonUtilities.WeightedChoice choice : choices) {
-         weightTotal += choice.getChoiceWeight(player);
-         weights.add(choice.getChoiceWeight(player));
-      }
-
-      if (weightTotal < 1) {
-         return null;
-      } else {
-         int random = randomInt(weightTotal);
-         int count = 0;
-
-         for (int i = 0; i < choices.size(); i++) {
-            count += weights.get(i);
-            if (random < count) {
-               return choices.get(i);
-            }
-         }
-
-         return null;
-      }
-   }
-
-   public static void initRandom(int seed) {
-      random = new Random(seed);
    }
 
    public static void logInstance(Level world) {
@@ -490,10 +446,6 @@ public class MillCommonUtilities {
       }
    }
 
-   public static boolean probability(double probability) {
-      return getRandom().nextDouble() < probability;
-   }
-
    public static int putItemsInChest(Container chest, Block block, int toPut) {
       return putItemsInChest(chest, block.asItem(), 0, toPut);
    }
@@ -555,14 +507,6 @@ public class MillCommonUtilities {
 
          return nb;
       }
-   }
-
-   public static int randomInt(int max) {
-      return getRandom().nextInt(max);
-   }
-
-   public static long randomLong() {
-      return getRandom().nextLong();
    }
 
    public static int readInteger(String line) throws Exception {

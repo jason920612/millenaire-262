@@ -6,6 +6,7 @@ import org.millenaire.common.entity.MillVillager;
 import org.millenaire.common.item.InvItem;
 import org.millenaire.common.item.MillItems;
 import org.millenaire.common.utilities.MillCommonUtilities;
+import org.millenaire.common.utilities.MillRandom;
 
 @DocumentedElement.Documentation("For market merchants, hold their stalls so the player can trade with them.")
 public class GoalForeignMerchantKeepStall extends Goal {
@@ -51,11 +52,11 @@ public class GoalForeignMerchantKeepStall extends Goal {
 
    @Override
    public boolean performAction(MillVillager villager) throws Exception {
-      return MillCommonUtilities.chanceOn(600);
+      return MillRandom.chanceOn(600);
    }
 
    @Override
    public int priority(MillVillager villager) throws Exception {
-      return MillCommonUtilities.randomInt(50);
+      return MillRandom.randomInt(50);
    }
 }

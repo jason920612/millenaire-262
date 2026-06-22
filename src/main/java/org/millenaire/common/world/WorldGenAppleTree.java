@@ -11,6 +11,7 @@ import net.minecraft.world.level.block.state.BlockState;
 
 import org.millenaire.common.block.MillBlocks;
 import org.millenaire.common.utilities.MillCommonUtilities;
+import org.millenaire.common.utilities.MillRandom;
 
 /**
  * Millénaire apple-tree generator, re-implemented for MC 26.2.
@@ -85,7 +86,7 @@ public class WorldGenAppleTree extends MillTreeGenerator {
                   for (int dz = -1; dz < 2; dz++) {
                      for (int dy = -1; dy < 2; dy++) {
                         BlockPos leavePos = branchPos.offset(dx, dy, dz);
-                        if (worldIn.getBlockState(leavePos).isAir() && MillCommonUtilities.randomInt(100) < 50) {
+                        if (worldIn.getBlockState(leavePos).isAir() && MillRandom.randomInt(100) < 50) {
                            this.setBlock(worldIn, leavePos, LEAVES_BS);
                         }
                      }

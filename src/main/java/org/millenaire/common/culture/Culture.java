@@ -32,6 +32,7 @@ import org.millenaire.common.item.TradeGood;
 import org.millenaire.common.network.StreamReadWrite;
 import org.millenaire.common.utilities.LanguageUtilities;
 import org.millenaire.common.utilities.MillCommonUtilities;
+import org.millenaire.common.utilities.MillRandom;
 import org.millenaire.common.utilities.MillFiles;
 import org.millenaire.common.utilities.MillCrash;
 import org.millenaire.common.utilities.MillLog;
@@ -650,7 +651,7 @@ public class Culture {
          }
       }
 
-      return foreignMerchants.size() == 0 ? null : (VillagerType)MillCommonUtilities.getWeightedChoice(foreignMerchants, null);
+      return foreignMerchants.size() == 0 ? null : (VillagerType)MillRandom.getWeightedChoice(foreignMerchants, null);
    }
 
    public String getRandomNameFromList(String listName) {
@@ -659,7 +660,7 @@ public class Culture {
          MillLog.error(this, "Could not find name list: " + listName);
          return null;
       } else {
-         return list.get(MillCommonUtilities.randomInt(list.size()));
+         return list.get(MillRandom.randomInt(list.size()));
       }
    }
 
@@ -675,13 +676,13 @@ public class Culture {
             MillLog.warning(this, "Name list " + listName + " is empty after removing " + namesTaken.size() + ". Provide a bigger list!");
             return this.getRandomNameFromList(listName);
          } else {
-            return (String)var4.get(MillCommonUtilities.randomInt(var4.size()));
+            return (String)var4.get(MillRandom.randomInt(var4.size()));
          }
       }
    }
 
    public VillageType getRandomVillage() {
-      return (VillageType)MillCommonUtilities.getWeightedChoice(this.listVillageTypes, null);
+      return (VillageType)MillRandom.getWeightedChoice(this.listVillageTypes, null);
    }
 
    public CultureLanguage.ReputationLevel getReputationLevel(int reputation) {

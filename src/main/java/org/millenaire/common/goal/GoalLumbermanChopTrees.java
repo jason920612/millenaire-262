@@ -13,6 +13,7 @@ import org.millenaire.common.entity.MillVillager;
 import org.millenaire.common.item.InvItem;
 import org.millenaire.common.pathing.atomicstryker.AStarConfig;
 import org.millenaire.common.utilities.MillCommonUtilities;
+import org.millenaire.common.utilities.MillRandom;
 import org.millenaire.common.utilities.MillLog;
 import org.millenaire.common.utilities.Point;
 import org.millenaire.common.utilities.WorldUtilities;
@@ -122,10 +123,10 @@ public class GoalLumbermanChopTrees extends Goal {
                      // 26.2: leaf species is the leaf block identity (1.12 used meta&3). Give the matching sapling.
                      Block sapling = block == Blocks.ACACIA_LEAVES ? Blocks.ACACIA_SAPLING : Blocks.OAK_SAPLING;
                      if (block == Blocks.OAK_LEAVES) {
-                        if (MillCommonUtilities.randomInt(4) == 0) {
+                        if (MillRandom.randomInt(4) == 0) {
                            villager.addToInv(sapling, 0, 1);
                         }
-                     } else if (MillCommonUtilities.randomInt(4) == 0) {
+                     } else if (MillRandom.randomInt(4) == 0) {
                         villager.addToInv(sapling, 0, 1);
                      }
 

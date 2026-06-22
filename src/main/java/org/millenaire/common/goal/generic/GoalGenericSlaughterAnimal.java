@@ -17,6 +17,7 @@ import org.millenaire.common.goal.Goal;
 import org.millenaire.common.item.InvItem;
 import org.millenaire.common.pathing.atomicstryker.AStarConfig;
 import org.millenaire.common.utilities.MillCommonUtilities;
+import org.millenaire.common.utilities.MillRandom;
 import org.millenaire.common.utilities.MillLog;
 import org.millenaire.common.utilities.Point;
 import org.millenaire.common.utilities.WorldUtilities;
@@ -146,7 +147,7 @@ public class GoalGenericSlaughterAnimal extends GoalGeneric {
                villager.setTarget(entLiving);
 
                for (AnnotedParameter.BonusItem bonusItem : this.bonusItem) {
-                  if ((bonusItem.tag == null || dest.containsTags(bonusItem.tag)) && MillCommonUtilities.randomInt(100) <= bonusItem.chance) {
+                  if ((bonusItem.tag == null || dest.containsTags(bonusItem.tag)) && MillRandom.randomInt(100) <= bonusItem.chance) {
                      villager.addToInv(bonusItem.item, 1);
                   }
                }
@@ -162,7 +163,7 @@ public class GoalGenericSlaughterAnimal extends GoalGeneric {
                villager.setTarget(entLiving);
 
                for (AnnotedParameter.BonusItem bonusItemx : this.bonusItem) {
-                  if ((bonusItemx.tag == null || dest.containsTags(bonusItemx.tag)) && MillCommonUtilities.randomInt(100) <= bonusItemx.chance) {
+                  if ((bonusItemx.tag == null || dest.containsTags(bonusItemx.tag)) && MillRandom.randomInt(100) <= bonusItemx.chance) {
                      villager.addToInv(bonusItemx.item, 1);
                   }
                }

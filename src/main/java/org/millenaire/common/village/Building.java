@@ -103,6 +103,7 @@ import org.millenaire.common.ui.PujaSacrifice;
 import org.millenaire.common.utilities.BlockItemUtilities;
 import org.millenaire.common.utilities.LanguageUtilities;
 import org.millenaire.common.utilities.MillCommonUtilities;
+import org.millenaire.common.utilities.MillRandom;
 import org.millenaire.common.utilities.MillFiles;
 import org.millenaire.common.utilities.MillCrash;
 import org.millenaire.common.utilities.MillLog;
@@ -698,9 +699,9 @@ public class Building {
       } else {
          Building inn;
          if (targets.size() > 0) {
-            inn = targets.get(MillCommonUtilities.randomInt(targets.size()));
+            inn = targets.get(MillRandom.randomInt(targets.size()));
          } else {
-            inn = backupTargets.get(MillCommonUtilities.randomInt(backupTargets.size()));
+            inn = backupTargets.get(MillRandom.randomInt(backupTargets.size()));
          }
 
          if (inn.merchantRecord == null) {
@@ -762,7 +763,7 @@ public class Building {
          }
 
          if (!targets.isEmpty()) {
-            Building target = targets.get(MillCommonUtilities.randomInt(targets.size()));
+            Building target = targets.get(MillRandom.randomInt(targets.size()));
             if (this.isActive || target.isActive) {
                this.planRaid(target);
             }
@@ -1385,7 +1386,7 @@ public class Building {
 
    public void choseAndApplyBrickTheme() {
       if (!this.villageType.brickColourThemes.isEmpty()) {
-         this.brickColourTheme = (VillageType.BrickColourTheme)MillCommonUtilities.getWeightedChoice(this.villageType.brickColourThemes, null);
+         this.brickColourTheme = (VillageType.BrickColourTheme)MillRandom.getWeightedChoice(this.villageType.brickColourThemes, null);
 
          for (Building b : this.getBuildings()) {
             if (b.location.getPlan().randomBrickColours.isEmpty()) {
@@ -1990,8 +1991,8 @@ public class Building {
             MillLog.major(this, "Called to end raid on " + targetVillage);
          }
 
-         float defendingForce = targetVillage.getVillageDefendingStrength() * (1.0F + MillCommonUtilities.random.nextFloat());
-         float attackingForce = targetVillage.getVillageAttackerStrength() * (1.0F + MillCommonUtilities.random.nextFloat());
+         float defendingForce = targetVillage.getVillageDefendingStrength() * (1.0F + MillRandom.random.nextFloat());
+         float attackingForce = targetVillage.getVillageAttackerStrength() * (1.0F + MillRandom.random.nextFloat());
          boolean attackersWon;
          if (attackingForce == 0.0F) {
             attackersWon = false;
@@ -2193,14 +2194,14 @@ public class Building {
          }
 
          for (BuildingPlan.StartingGood sg : this.location.getPlan().startingGoods) {
-            if (MillCommonUtilities.probability(sg.probability)) {
+            if (MillRandom.probability(sg.probability)) {
                int nb = sg.fixedNumber;
                if (sg.randomNumber > 0) {
-                  nb += MillCommonUtilities.randomInt(sg.randomNumber + 1);
+                  nb += MillRandom.randomInt(sg.randomNumber + 1);
                }
 
                if (nb > 0) {
-                  int chestId = MillCommonUtilities.randomInt(this.resManager.chests.size());
+                  int chestId = MillRandom.randomInt(this.resManager.chests.size());
                   TileEntityLockedChest chest = this.resManager.chests.get(chestId).getMillChest(this.world);
                   if (chest != null) {
                      MillCommonUtilities.putItemsInChest(chest, sg.item.getItem(), sg.item.meta, nb);
@@ -2232,8 +2233,8 @@ public class Building {
       }
 
       for (int i = 0; i < 40; i++) {
-         int tx = x + MillCommonUtilities.randomInt(5 + i) - MillCommonUtilities.randomInt(5 + i);
-         int tz = z + MillCommonUtilities.randomInt(5 + i) - MillCommonUtilities.randomInt(5 + i);
+         int tx = x + MillRandom.randomInt(5 + i) - MillRandom.randomInt(5 + i);
+         int tz = z + MillRandom.randomInt(5 + i) - MillRandom.randomInt(5 + i);
          tx = Math.max(Math.min(tx, this.winfo.length - 1), 0);
          tz = Math.max(Math.min(tz, this.winfo.width - 1), 0);
          tx = Math.min(tx, this.winfo.length / 2 + 50);
@@ -2363,7 +2364,7 @@ public class Building {
                   boolean canAffordProject = ignoreCost || this.canAffordProject(goalProject.getPlan(this.buildingGoalVariation, 0));
                   if (System.currentTimeMillis() - this.lastFailedProjectLocationSearch > 80000L && canAffordProject) {
                      BuildingLocation location = goalProject.getPlan(this.buildingGoalVariation, 0)
-                        .findBuildingLocation(this.winfo, this.regionMapper, this.location.pos, this.villageType.radius, MillCommonUtilities.getRandom(), -1);
+                        .findBuildingLocation(this.winfo, this.regionMapper, this.location.pos, this.villageType.radius, MillRandom.getRandom(), -1);
                      this.lastFailedProjectLocationSearch = System.currentTimeMillis();
                      if (location != null) {
                         this.lastFailedProjectLocationSearch = 0L;
@@ -2466,7 +2467,7 @@ public class Building {
                      if (ignoreCost || this.canAffordBuild(plan)) {
                         if (newProject.location == null && System.currentTimeMillis() - this.lastFailedOtherLocationSearch > 80000L) {
                            location = plan.findBuildingLocation(
-                              this.winfo, this.regionMapper, this.location.pos, this.villageType.radius, MillCommonUtilities.getRandom(), -1
+                              this.winfo, this.regionMapper, this.location.pos, this.villageType.radius, MillRandom.getRandom(), -1
                            );
                         } else if (newProject.location != null) {
                            location = newProject.location.createLocationForLevel(0);
@@ -2720,7 +2721,7 @@ public class Building {
       }
 
       if (qualifiers.size() > 0) {
-         this.qualifier = qualifiers.get(MillCommonUtilities.randomInt(qualifiers.size()));
+         this.qualifier = qualifiers.get(MillRandom.randomInt(qualifiers.size()));
       } else {
          this.qualifier = "";
       }
@@ -2739,7 +2740,7 @@ public class Building {
       if (!this.villageType.banner_JSONs.isEmpty()) {
          String bannerJSON = this.villageType
             .banner_JSONs
-            .get(MillCommonUtilities.randomInt(this.villageType.banner_JSONs.size()))
+            .get(MillRandom.randomInt(this.villageType.banner_JSONs.size()))
             .replace("blockentitytag", "BlockEntityTag")
             .replace("base", "Base")
             .replace("pattern", "Pattern")
@@ -2758,7 +2759,7 @@ public class Building {
 
       String baseColor = "black";
       if (!this.villageType.banner_baseColors.isEmpty()) {
-         baseColor = this.villageType.banner_baseColors.get(MillCommonUtilities.randomInt(this.villageType.banner_baseColors.size()));
+         baseColor = this.villageType.banner_baseColors.get(MillRandom.randomInt(this.villageType.banner_baseColors.size()));
       }
 
       DyeColor baseDyeColor = DyeColor.BLACK;
@@ -2772,9 +2773,9 @@ public class Building {
       // Assemble the pattern + charge layers into a legacy {Patterns:[{Pattern,Color}]} list.
       ListTag patternList = new ListTag();
       if (!this.villageType.banner_patternsColors.isEmpty() && !this.villageType.banner_Patterns.isEmpty()) {
-         String patternColor = this.villageType.banner_patternsColors.get(MillCommonUtilities.randomInt(this.villageType.banner_patternsColors.size()));
+         String patternColor = this.villageType.banner_patternsColors.get(MillRandom.randomInt(this.villageType.banner_patternsColors.size()));
          int patternColorDamage = dyeDamageForName(patternColor);
-         String patterns = this.villageType.banner_Patterns.get(MillCommonUtilities.randomInt(this.villageType.banner_Patterns.size()));
+         String patterns = this.villageType.banner_Patterns.get(MillRandom.randomInt(this.villageType.banner_Patterns.size()));
 
          for (String pattern : patterns.split(",")) {
             CompoundTag patternNBT = new CompoundTag();
@@ -2785,9 +2786,9 @@ public class Building {
       }
 
       if (!this.villageType.banner_chargeColors.isEmpty() && !this.villageType.banner_chargePatterns.isEmpty()) {
-         String chargeColor = this.villageType.banner_chargeColors.get(MillCommonUtilities.randomInt(this.villageType.banner_chargeColors.size()));
+         String chargeColor = this.villageType.banner_chargeColors.get(MillRandom.randomInt(this.villageType.banner_chargeColors.size()));
          int chargeColorDamage = dyeDamageForName(chargeColor);
-         String chargePatterns = this.villageType.banner_chargePatterns.get(MillCommonUtilities.randomInt(this.villageType.banner_chargePatterns.size()));
+         String chargePatterns = this.villageType.banner_chargePatterns.get(MillRandom.randomInt(this.villageType.banner_chargePatterns.size()));
 
          for (String chargePattern : chargePatterns.split(",")) {
             CompoundTag chargeNBT = new CompoundTag();
@@ -3274,7 +3275,7 @@ public class Building {
       }
 
       int maleChance = 3 + nbfemales - nbmales;
-      return MillCommonUtilities.randomInt(6) < maleChance ? 1 : 2;
+      return MillRandom.randomInt(6) < maleChance ? 1 : 2;
    }
 
    public PanelManager getPanelManager() {
@@ -5684,7 +5685,7 @@ public class Building {
                if (this.world.isBrightOutside()) {
                   this.nightBackgroundActionPerformed = false;
                } else if (!this.nightBackgroundActionPerformed) {
-                  if (this.villageType.carriesRaid && this.raidTarget == null && MillCommonUtilities.randomInt(100) < MillConfigValues.RaidingRate) {
+                  if (this.villageType.carriesRaid && this.raidTarget == null && MillRandom.randomInt(100) < MillConfigValues.RaidingRate) {
                      if (MillConfigValues.LogDiplomacy >= 3) {
                         MillLog.debug(this, "Calling attemptPlanNewRaid");
                      }
@@ -5866,7 +5867,7 @@ public class Building {
                   }
 
                   this.sendInitialBuildingPackets();
-                  if (MillCommonUtilities.chanceOn(100)) {
+                  if (MillRandom.chanceOn(100)) {
                      for (Point p : this.resManager.chests) {
                         if (p.getMillChest(this.world) != null) {
                            p.getMillChest(this.world).buildingPos = this.getPos();
@@ -5903,7 +5904,7 @@ public class Building {
 
    private void updateDispensers() {
       for (Point p : this.resManager.dispenderUnknownPowder) {
-         if (MillCommonUtilities.chanceOn(5000)) {
+         if (MillRandom.chanceOn(5000)) {
             net.minecraft.world.level.block.entity.DispenserBlockEntity dispenser = p.getDispenser(this.world);
             if (dispenser != null) {
                MillCommonUtilities.putItemsInChest(dispenser, MillItems.UNKNOWN_POWDER, 1);
@@ -5914,8 +5915,8 @@ public class Building {
 
    private void updateGrove() {
       for (Point p : this.resManager.woodspawn) {
-         if (MillCommonUtilities.chanceOn(4000) && WorldUtilities.getBlock(this.world, p) == Blocks.OAK_SAPLING) {
-            this.growTree(this.world, p.getiX(), p.getiY(), p.getiZ(), MillCommonUtilities.random);
+         if (MillRandom.chanceOn(4000) && WorldUtilities.getBlock(this.world, p) == Blocks.OAK_SAPLING) {
+            this.growTree(this.world, p.getiX(), p.getiY(), p.getiZ(), MillRandom.random);
          }
       }
    }
@@ -5950,7 +5951,7 @@ public class Building {
    private void updateMobSpawners() {
       for (int i = 0; i < this.resManager.mobSpawners.size(); i++) {
          for (int j = 0; j < this.resManager.mobSpawners.get(i).size(); j++) {
-            if (MillCommonUtilities.chanceOn(180)) {
+            if (MillRandom.chanceOn(180)) {
                Block block = WorldUtilities.getBlock(this.world, this.resManager.mobSpawners.get(i).get(j));
                if (block == Blocks.SPAWNER) {
                   net.minecraft.world.entity.EntityType<?> spawnerType = net.minecraft.core.registries.BuiltInRegistries.ENTITY_TYPE
@@ -5969,7 +5970,7 @@ public class Building {
 
    private void updateNetherWartSoils() {
       for (Point p : this.resManager.netherwartsoils) {
-         if (MillCommonUtilities.chanceOn(1000) && WorldUtilities.getBlock(this.world, p.getAbove()) == Blocks.NETHER_WART) {
+         if (MillRandom.chanceOn(1000) && WorldUtilities.getBlock(this.world, p.getAbove()) == Blocks.NETHER_WART) {
             int meta = WorldUtilities.getBlockMeta(this.world, p.getAbove());
             if (meta < 3) {
                WorldUtilities.setBlockMetadata(this.world, p.getAbove(), meta + 1);
@@ -6034,14 +6035,14 @@ public class Building {
                }
 
                for (int j = 0; j < this.resManager.spawns.get(i).size() * multipliyer - nb; j++) {
-                  if (completeRespawn || MillCommonUtilities.chanceOn(100)) {
+                  if (completeRespawn || MillRandom.chanceOn(100)) {
                      net.minecraft.world.entity.EntityType<?> spawnType = net.minecraft.core.registries.BuiltInRegistries.ENTITY_TYPE
                         .getValue(this.resManager.spawnTypes.get(i));
                      net.minecraft.world.entity.Entity created = spawnType == null
                         ? null
                         : spawnType.create(this.world, net.minecraft.world.entity.EntitySpawnReason.NATURAL);
                      if (created instanceof Mob animalx) {
-                        Point pen = this.resManager.spawns.get(i).get(MillCommonUtilities.randomInt(this.resManager.spawns.get(i).size()));
+                        Point pen = this.resManager.spawns.get(i).get(MillRandom.randomInt(this.resManager.spawns.get(i).size()));
                         animalx.setPos(pen.getiX() + 0.5, pen.getiY(), pen.getiZ() + 0.5);
                         this.world.addFreshEntity(animalx);
                         this.nbAnimalsRespawned++;
@@ -6145,7 +6146,7 @@ public class Building {
             }
 
             for (Point p : this.relations.keySet()) {
-               if (MillCommonUtilities.chanceOn(10)) {
+               if (MillRandom.chanceOn(10)) {
                   Building village = this.mw.getBuilding(p);
                   if (village != null) {
                      int relation = this.relations.get(p);
@@ -6164,9 +6165,9 @@ public class Building {
                         improveChance = 60;
                      }
 
-                     if (MillCommonUtilities.randomInt(100) < improveChance) {
+                     if (MillRandom.randomInt(100) < improveChance) {
                         if (this.relations.get(p) < 100) {
-                           this.adjustRelation(p, 10 + MillCommonUtilities.randomInt(10), false);
+                           this.adjustRelation(p, 10 + MillRandom.randomInt(10), false);
                            ServerSender.sendTranslatedSentenceInRange(
                               this.world,
                               this.getPos(),
@@ -6179,7 +6180,7 @@ public class Building {
                            );
                         }
                      } else if (this.relations.get(p) > -100) {
-                        this.adjustRelation(p, -10 - MillCommonUtilities.randomInt(10), false);
+                        this.adjustRelation(p, -10 - MillRandom.randomInt(10), false);
                         ServerSender.sendTranslatedSentenceInRange(
                            this.world,
                            this.getPos(),

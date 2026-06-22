@@ -30,6 +30,7 @@ import org.millenaire.common.network.ServerSender;
 import org.millenaire.common.quest.QuestInstance;
 import org.millenaire.common.quest.SpecialQuestActions;
 import org.millenaire.common.utilities.MillCommonUtilities;
+import org.millenaire.common.utilities.MillRandom;
 import org.millenaire.common.utilities.MillCrash;
 import org.millenaire.common.utilities.MillLog;
 import org.millenaire.common.utilities.Point;
@@ -223,7 +224,7 @@ public class GuiActions {
             townHall.getPos(),
             pos.getiX() - townHall.winfo.mapStartX,
             pos.getiZ() - townHall.winfo.mapStartZ,
-            MillCommonUtilities.getRandom(),
+            MillRandom.getRandom(),
             -1,
             true
          );
@@ -286,7 +287,7 @@ public class GuiActions {
             WorldGenVillage genVillage = new WorldGenVillage();
             boolean result = genVillage.generateVillageAtPoint(
                player.level(),
-               MillCommonUtilities.random,
+               MillRandom.random,
                pos.getiX(),
                pos.getiY(),
                pos.getiZ(),
@@ -405,7 +406,7 @@ public class GuiActions {
          } else if (block == Blocks.OBSIDIAN) {
             WorldGenVillage genVillage = new WorldGenVillage();
             genVillage.generateVillageAtPoint(
-               player.level(), MillCommonUtilities.random, pos.getiX(), pos.getiY(), pos.getiZ(), player, false, true, false, 0, null, null, null, 0.0F
+               player.level(), MillRandom.random, pos.getiX(), pos.getiY(), pos.getiZ(), player, false, true, false, 0, null, null, null, 0.0F
             );
             return InteractionResult.SUCCESS;
          } else if (block == Blocks.GOLD_BLOCK) {
@@ -462,7 +463,7 @@ public class GuiActions {
       int reputation = Math.min(chief.getTownHall().getReputation(player), 32768);
       float coeff = (float)((Math.log(reputation) / Math.log(32768.0) * 2.0 + reputation / 32768) / 3.0);
       effect *= coeff;
-      effect = (float)(effect * ((MillCommonUtilities.randomInt(40) + 80) / 100.0));
+      effect = (float)(effect * ((MillRandom.randomInt(40) + 80) / 100.0));
       chief.getTownHall().adjustRelation(village, (int)effect, false);
       UserProfile profile = Mill.getMillWorld(player.level()).getProfile(player);
       profile.adjustDiplomacyPoint(chief.getTownHall(), -1);

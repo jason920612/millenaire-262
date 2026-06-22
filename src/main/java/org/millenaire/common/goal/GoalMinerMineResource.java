@@ -16,6 +16,7 @@ import org.millenaire.common.item.InvItem;
 import org.millenaire.common.item.MillItems;
 import org.millenaire.common.pathing.atomicstryker.AStarConfig;
 import org.millenaire.common.utilities.MillCommonUtilities;
+import org.millenaire.common.utilities.MillRandom;
 import org.millenaire.common.utilities.MillLog;
 import org.millenaire.common.utilities.Point;
 import org.millenaire.common.utilities.WorldUtilities;
@@ -90,7 +91,7 @@ public class GoalMinerMineResource extends Goal {
       if (validSources.isEmpty()) {
          return null;
       } else {
-         int randomTarget = MillCommonUtilities.randomInt(validSources.size());
+         int randomTarget = MillRandom.randomInt(validSources.size());
          return this.packDest(validSources.get(randomTarget), validDests.get(randomTarget));
       }
    }

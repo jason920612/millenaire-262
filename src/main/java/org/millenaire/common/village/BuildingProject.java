@@ -6,6 +6,7 @@ import org.millenaire.common.buildingplan.BuildingCustomPlan;
 import org.millenaire.common.buildingplan.BuildingPlan;
 import org.millenaire.common.buildingplan.BuildingPlanSet;
 import org.millenaire.common.utilities.MillCommonUtilities;
+import org.millenaire.common.utilities.MillRandom;
 import org.millenaire.common.utilities.MillLog;
 
 public class BuildingProject implements MillCommonUtilities.WeightedChoice {
@@ -18,7 +19,7 @@ public class BuildingProject implements MillCommonUtilities.WeightedChoice {
    public BuildingProject.EnumProjects projectTier = BuildingProject.EnumProjects.EXTRA;
 
    public static BuildingProject getRandomProject(List<BuildingProject> possibleProjects) {
-      return (BuildingProject)MillCommonUtilities.getWeightedChoice(possibleProjects, null);
+      return (BuildingProject)MillRandom.getWeightedChoice(possibleProjects, null);
    }
 
    public BuildingProject() {

@@ -16,6 +16,7 @@ import org.millenaire.common.item.InvItem;
 import org.millenaire.common.network.ServerSender;
 import org.millenaire.common.utilities.LanguageUtilities;
 import org.millenaire.common.utilities.MillCommonUtilities;
+import org.millenaire.common.utilities.MillRandom;
 import org.millenaire.common.utilities.MillCrash;
 import org.millenaire.common.utilities.MillLog;
 import org.millenaire.common.utilities.Point;
@@ -299,7 +300,7 @@ public class QuestInstance {
             VillageType vt = Culture.getCultureByName(culture).getLoneBuildingType(village);
 
             try {
-               WorldGenVillage.generateBedrockLoneBuilding(new Point(player), this.world, vt, MillCommonUtilities.random, 50, 120, player);
+               WorldGenVillage.generateBedrockLoneBuilding(new Point(player), this.world, vt, MillRandom.random, 50, 120, player);
             } catch (MillLog.MillenaireException bedrockBuildingException) {
                // FAIL-FAST: the quest step was marked complete but its bedrock-building reward silently
                // failed to generate (1.12 logged-and-continued), leaving the player's quest reward missing.

@@ -11,6 +11,7 @@ import org.millenaire.common.culture.Culture;
 import org.millenaire.common.culture.VillageType;
 import org.millenaire.common.network.StreamReadWrite;
 import org.millenaire.common.utilities.MillCommonUtilities;
+import org.millenaire.common.utilities.MillRandom;
 import org.millenaire.common.utilities.MillFiles;
 import org.millenaire.common.utilities.MillLog;
 import org.millenaire.common.utilities.virtualdir.VirtualDir;
@@ -129,7 +130,7 @@ public class BuildingPlanSet {
             initialPlans.add(variation[0]);
          }
 
-         BuildingPlan variationPicked = (BuildingPlan)MillCommonUtilities.getWeightedChoice(initialPlans, null);
+         BuildingPlan variationPicked = (BuildingPlan)MillRandom.getWeightedChoice(initialPlans, null);
          return variationPicked;
       }
    }

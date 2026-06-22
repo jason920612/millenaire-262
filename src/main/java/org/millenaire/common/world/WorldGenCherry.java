@@ -10,6 +10,7 @@ import net.minecraft.world.level.block.state.BlockState;
 
 import org.millenaire.common.block.MillBlocks;
 import org.millenaire.common.utilities.MillCommonUtilities;
+import org.millenaire.common.utilities.MillRandom;
 
 /**
  * Millénaire cherry-tree generator, re-implemented for MC 26.2 (see {@link MillTreeGenerator}).
@@ -59,7 +60,7 @@ public class WorldGenCherry extends MillTreeGenerator {
                   chanceOn100 = 80;
                }
 
-               if (MillCommonUtilities.randomInt(100) < chanceOn100) {
+               if (MillRandom.randomInt(100) < chanceOn100) {
                   BlockPos pos = new BlockPos(xPos, yPos, zPos);
                   if (this.isAirOrLeaves(worldIn, pos)) {
                      this.setBlock(worldIn, pos, LEAVES_BS);
@@ -79,7 +80,7 @@ public class WorldGenCherry extends MillTreeGenerator {
 
       // Optional spreading branches.
       for (Direction direction : Direction.Plane.HORIZONTAL) {
-         if (MillCommonUtilities.randomInt(100) < 60) {
+         if (MillRandom.randomInt(100) < 60) {
             int branchMaxY = treeHeight - rand.nextInt(2);
             int branchMinY = 3 + rand.nextInt(2);
             int horizontalOffset = 2 - rand.nextInt(2);

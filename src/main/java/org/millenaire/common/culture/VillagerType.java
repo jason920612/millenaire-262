@@ -21,6 +21,7 @@ import org.millenaire.common.goal.Goal;
 import org.millenaire.common.item.InvItem;
 import org.millenaire.common.network.StreamReadWrite;
 import org.millenaire.common.utilities.MillCommonUtilities;
+import org.millenaire.common.utilities.MillRandom;
 import org.millenaire.common.utilities.MillCrash;
 import org.millenaire.common.utilities.MillLog;
 
@@ -494,13 +495,13 @@ public class VillagerType implements MillCommonUtilities.WeightedChoice {
    }
 
    public Identifier getNewTexture() {
-      String texture = this.textures.get(MillCommonUtilities.randomInt(this.textures.size()));
+      String texture = this.textures.get(MillRandom.randomInt(this.textures.size()));
       return texture.contains(":") ? Identifier.parse(texture) : Identifier.fromNamespaceAndPath("millenaire", texture);
    }
 
    public String getRandomClothTexture(String clothType, int layer) {
       return this.clothes.containsKey(clothType + "_" + layer)
-         ? this.clothes.get(clothType + "_" + layer).get(MillCommonUtilities.randomInt(this.clothes.get(clothType + "_" + layer).size()))
+         ? this.clothes.get(clothType + "_" + layer).get(MillRandom.randomInt(this.clothes.get(clothType + "_" + layer).size()))
          : null;
    }
 

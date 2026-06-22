@@ -19,6 +19,7 @@ import org.millenaire.common.forge.Mill;
 import org.millenaire.common.network.ServerSender;
 import org.millenaire.common.utilities.BlockItemUtilities;
 import org.millenaire.common.utilities.MillCommonUtilities;
+import org.millenaire.common.utilities.MillRandom;
 import org.millenaire.common.utilities.MillCrash;
 import org.millenaire.common.utilities.MillLog;
 import org.millenaire.common.utilities.Point;
@@ -251,7 +252,7 @@ public class SpecialQuestActions {
                   int nbSkel = 0;
 
                   for (int i = 0; i < 12; i++) {
-                     Point spawn = b.location.pos.getRelative(-10 + MillCommonUtilities.randomInt(20), 20.0, -10 + MillCommonUtilities.randomInt(20));
+                     Point spawn = b.location.pos.getRelative(-10 + MillRandom.randomInt(20), 20.0, -10 + MillRandom.randomInt(20));
                      EntityTargetedGhast ent = (EntityTargetedGhast)WorldUtilities.spawnMobsSpawner(mw.world, spawn, Mill.ENTITY_TARGETED_GHAST);
                      if (ent != null) {
                         ent.target = b.location.pos.getRelative(0.0, 20.0, 0.0);
@@ -260,7 +261,7 @@ public class SpecialQuestActions {
                   }
 
                   for (int ix = 0; ix < 12; ix++) {
-                     Point spawn = b.location.pos.getRelative(-5 + MillCommonUtilities.randomInt(10), 15.0, -5 + MillCommonUtilities.randomInt(10));
+                     Point spawn = b.location.pos.getRelative(-5 + MillRandom.randomInt(10), 15.0, -5 + MillRandom.randomInt(10));
                      EntityTargetedBlaze ent = (EntityTargetedBlaze)WorldUtilities.spawnMobsSpawner(mw.world, spawn, Mill.ENTITY_TARGETED_BLAZE);
                      if (ent != null) {
                         ent.target = b.location.pos.getRelative(0.0, 10.0, 0.0);
@@ -269,13 +270,13 @@ public class SpecialQuestActions {
                   }
 
                   for (int ixx = 0; ixx < 5; ixx++) {
-                     Point spawn = b.location.pos.getRelative(5.0, 12.0, -5 + MillCommonUtilities.randomInt(10));
+                     Point spawn = b.location.pos.getRelative(5.0, 12.0, -5 + MillRandom.randomInt(10));
                      Entity ent = WorldUtilities.spawnMobsSpawner(mw.world, spawn, Mill.ENTITY_TARGETED_WITHERSKELETON);
                      if (ent != null) {
                         nbSkel++;
                      }
 
-                     spawn = b.location.pos.getRelative(-5.0, 12.0, -5 + MillCommonUtilities.randomInt(10));
+                     spawn = b.location.pos.getRelative(-5.0, 12.0, -5 + MillRandom.randomInt(10));
                      ent = WorldUtilities.spawnMobsSpawner(mw.world, spawn, Mill.ENTITY_TARGETED_WITHERSKELETON);
                      if (ent != null) {
                         nbSkel++;
@@ -454,7 +455,7 @@ public class SpecialQuestActions {
             WorldGenVillage genVillage = new WorldGenVillage();
             boolean result = genVillage.generateVillageAtPoint(
                player.level(),
-               MillCommonUtilities.random,
+               MillRandom.random,
                pos.getiX(),
                pos.getiY(),
                pos.getiZ(),

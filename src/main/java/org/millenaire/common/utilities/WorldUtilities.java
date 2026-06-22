@@ -73,7 +73,7 @@ public class WorldUtilities {
       } else {
          for (int i = 0; i < 50; i++) {
             Point testdest = dest.getRelative(
-               5 - MillCommonUtilities.randomInt(10), 5 - MillCommonUtilities.randomInt(20), 5 - MillCommonUtilities.randomInt(10)
+               5 - MillRandom.randomInt(10), 5 - MillRandom.randomInt(20), 5 - MillRandom.randomInt(10)
             );
             if (BlockItemUtilities.isBlockWalkable(getBlock(world, testdest.getiX(), testdest.getiY() - 1, testdest.getiZ()))
                && !BlockItemUtilities.isBlockSolid(getBlock(world, testdest.getiX(), testdest.getiY(), testdest.getiZ()))
@@ -654,7 +654,7 @@ public class WorldUtilities {
       }
       int nb = minNb;
       if (extraNb > 0) {
-         nb = minNb + MillCommonUtilities.randomInt(extraNb);
+         nb = minNb + MillRandom.randomInt(extraNb);
       }
 
       for (int i = 0; i < nb; i++) {
@@ -695,8 +695,8 @@ public class WorldUtilities {
       if (entityliving == null) {
          return null;
       } else {
-         int x = MillCommonUtilities.randomInt(2) - 1;
-         int z = MillCommonUtilities.randomInt(2) - 1;
+         int x = MillRandom.randomInt(2) - 1;
+         int z = MillRandom.randomInt(2) - 1;
          int ex = (int)(p.x + x);
          int ey = (int)p.y;
          int ez = (int)(p.z + z);

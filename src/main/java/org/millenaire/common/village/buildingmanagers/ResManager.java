@@ -27,6 +27,7 @@ import org.millenaire.common.item.InvItem;
 import org.millenaire.common.network.StreamReadWrite;
 import org.millenaire.common.utilities.BlockItemUtilities;
 import org.millenaire.common.utilities.MillCommonUtilities;
+import org.millenaire.common.utilities.MillRandom;
 import org.millenaire.common.utilities.MillLog;
 import org.millenaire.common.utilities.Point;
 import org.millenaire.common.utilities.WorldUtilities;
@@ -393,7 +394,7 @@ public class ResManager {
       if (this.netherwartsoils.size() == 0) {
          return null;
       } else {
-         int start = MillCommonUtilities.randomInt(this.netherwartsoils.size());
+         int start = MillRandom.randomInt(this.netherwartsoils.size());
 
          for (int i = start; i < this.netherwartsoils.size(); i++) {
             Point p = this.netherwartsoils.get(i);
@@ -419,7 +420,7 @@ public class ResManager {
       if (this.netherwartsoils.size() == 0) {
          return null;
       } else {
-         int start = MillCommonUtilities.randomInt(this.netherwartsoils.size());
+         int start = MillRandom.randomInt(this.netherwartsoils.size());
 
          for (int i = start; i < this.netherwartsoils.size(); i++) {
             Point p = this.netherwartsoils.get(i);
@@ -474,7 +475,7 @@ public class ResManager {
       if (this.silkwormblock.size() == 0) {
          return null;
       } else {
-         int start = MillCommonUtilities.randomInt(this.silkwormblock.size());
+         int start = MillRandom.randomInt(this.silkwormblock.size());
 
          for (int i = start; i < this.silkwormblock.size(); i++) {
             Point p = this.silkwormblock.get(i);
@@ -504,7 +505,7 @@ public class ResManager {
       if (this.snailsoilblock.size() == 0) {
          return null;
       } else {
-         int start = MillCommonUtilities.randomInt(this.snailsoilblock.size());
+         int start = MillRandom.randomInt(this.snailsoilblock.size());
 
          for (int i = start; i < this.snailsoilblock.size(); i++) {
             Point p = this.snailsoilblock.get(i);
@@ -540,7 +541,7 @@ public class ResManager {
       if (this.sugarcanesoils.size() == 0) {
          return null;
       } else {
-         int start = MillCommonUtilities.randomInt(this.sugarcanesoils.size());
+         int start = MillRandom.randomInt(this.sugarcanesoils.size());
 
          for (int i = start; i < this.sugarcanesoils.size(); i++) {
             Point p = this.sugarcanesoils.get(i);
@@ -564,7 +565,7 @@ public class ResManager {
       if (this.sugarcanesoils.size() == 0) {
          return null;
       } else {
-         int start = MillCommonUtilities.randomInt(this.sugarcanesoils.size());
+         int start = MillRandom.randomInt(this.sugarcanesoils.size());
 
          for (int i = start; i < this.sugarcanesoils.size(); i++) {
             Point p = this.sugarcanesoils.get(i);

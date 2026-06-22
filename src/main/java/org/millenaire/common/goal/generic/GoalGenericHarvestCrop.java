@@ -17,6 +17,7 @@ import org.millenaire.common.entity.MillVillager;
 import org.millenaire.common.goal.Goal;
 import org.millenaire.common.item.InvItem;
 import org.millenaire.common.utilities.MillCommonUtilities;
+import org.millenaire.common.utilities.MillRandom;
 import org.millenaire.common.utilities.MillCrash;
 import org.millenaire.common.utilities.MillLog;
 import org.millenaire.common.utilities.Point;
@@ -146,7 +147,7 @@ public class GoalGenericHarvestCrop extends GoalGeneric {
          Building dest = villager.getGoalBuildingDest();
 
          for (AnnotedParameter.BonusItem bonusItem : this.harvestItem) {
-            if ((bonusItem.tag == null || dest != null && dest.containsTags(bonusItem.tag)) && MillCommonUtilities.randomInt(100) <= bonusItem.chance) {
+            if ((bonusItem.tag == null || dest != null && dest.containsTags(bonusItem.tag)) && MillRandom.randomInt(100) <= bonusItem.chance) {
                villager.addToInv(bonusItem.item, 1);
             }
          }

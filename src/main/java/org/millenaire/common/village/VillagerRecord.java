@@ -20,6 +20,7 @@ import org.millenaire.common.entity.VillagerConfig;
 import org.millenaire.common.item.InvItem;
 import org.millenaire.common.item.MillItems;
 import org.millenaire.common.utilities.MillCommonUtilities;
+import org.millenaire.common.utilities.MillRandom;
 import org.millenaire.common.utilities.MillLog;
 import org.millenaire.common.utilities.Point;
 import org.millenaire.common.world.MillWorldData;
@@ -105,7 +106,7 @@ public class VillagerRecord implements Cloneable {
             }
 
             if (villagerId == -1L) {
-               villagerRecord.setVillagerId(Math.abs(MillCommonUtilities.randomLong()));
+               villagerRecord.setVillagerId(Math.abs(MillRandom.randomLong()));
             } else {
                villagerRecord.setVillagerId(villagerId);
             }
@@ -113,7 +114,7 @@ public class VillagerRecord implements Cloneable {
             villagerRecord.gender = vtype.gender;
             villagerRecord.texture = vtype.getNewTexture();
             initialisePersonalizedData(villagerRecord, vtype);
-            villagerRecord.rightHanded = MillCommonUtilities.random.nextDouble() < 0.8;
+            villagerRecord.rightHanded = MillRandom.random.nextDouble() < 0.8;
             if (MillConfigValues.LogVillagerSpawn >= 1) {
                MillLog.major(villagerRecord, "Created new villager record.");
             }
@@ -149,7 +150,7 @@ public class VillagerRecord implements Cloneable {
          villagerRecord.size = 0;
          villagerRecord.scale = villagerRecord.getType().baseScale;
       } else {
-         villagerRecord.scale = villagerRecord.getType().baseScale * ((80.0F + MillCommonUtilities.randomInt(10)) / 100.0F);
+         villagerRecord.scale = villagerRecord.getType().baseScale * ((80.0F + MillRandom.randomInt(10)) / 100.0F);
       }
    }
 
@@ -343,7 +344,7 @@ public class VillagerRecord implements Cloneable {
 
    public VillagerRecord generateRaidRecord(Building target) {
       VillagerRecord raidRecord = this.clone();
-      raidRecord.setVillagerId(Math.abs(MillCommonUtilities.randomLong()));
+      raidRecord.setVillagerId(Math.abs(MillRandom.randomLong()));
       raidRecord.setHousePos(target.getPos());
       raidRecord.setTownHallPos(target.getTownHall().getPos());
       raidRecord.townHall = target.getTownHall();

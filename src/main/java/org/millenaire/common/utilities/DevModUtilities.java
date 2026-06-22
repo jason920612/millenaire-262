@@ -276,7 +276,7 @@ public class DevModUtilities {
       } else if (entityplayer.getInventory().getSelectedItem() != ItemStack.EMPTY
          && entityplayer.getInventory().getSelectedItem().getItem() == Blocks.DIRT.asItem()
          && villager.pathEntity != null) {
-         int meta = MillCommonUtilities.randomInt(16);
+         int meta = MillRandom.randomInt(16);
 
          for (Node p : villager.pathEntity.pointsCopy) {
             if (WorldUtilities.getBlock(villager.level(), p.x, p.y - 1, p.z) != MillBlocks.LOCKED_CHEST) {
@@ -328,7 +328,7 @@ public class DevModUtilities {
 
       @Override
       public void onFoundPath(List<AStarNode> result) {
-         int meta = MillCommonUtilities.randomInt(16);
+         int meta = MillRandom.randomInt(16);
 
          for (AStarNode node : result) {
             if (node != result.get(0) && node != result.get(result.size() - 1)) {

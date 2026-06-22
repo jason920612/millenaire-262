@@ -8,6 +8,7 @@ import org.millenaire.common.config.DocumentedElement;
 import org.millenaire.common.entity.MillVillager;
 import org.millenaire.common.item.InvItem;
 import org.millenaire.common.utilities.MillCommonUtilities;
+import org.millenaire.common.utilities.MillRandom;
 import org.millenaire.common.village.Building;
 
 @DocumentedElement.Documentation("Fish from fishing holes at home, bringing in standard fish.")
@@ -44,7 +45,7 @@ public class GoalFish extends Goal {
       }
 
       return closest != null && closest.getResManager().fishingspots.size() != 0
-         ? this.packDest(closest.getResManager().fishingspots.get(MillCommonUtilities.randomInt(closest.getResManager().fishingspots.size())), closest)
+         ? this.packDest(closest.getResManager().fishingspots.get(MillRandom.randomInt(closest.getResManager().fishingspots.size())), closest)
          : null;
    }
 

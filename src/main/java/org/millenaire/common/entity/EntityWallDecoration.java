@@ -23,6 +23,7 @@ import org.millenaire.common.config.MillConfigValues;
 import org.millenaire.common.item.MillItems;
 import org.millenaire.common.utilities.BlockItemUtilities;
 import org.millenaire.common.utilities.MillCommonUtilities;
+import org.millenaire.common.utilities.MillRandom;
 import org.millenaire.common.utilities.MillCrash;
 import org.millenaire.common.utilities.MillLog;
 import org.millenaire.common.utilities.Point;
@@ -139,7 +140,7 @@ public class EntityWallDecoration extends HangingEntity {
       }
 
       if (arraylist.size() > 0) {
-         this.millArt = (EntityWallDecoration.EnumWallDecoration)MillCommonUtilities.getWeightedChoice(arraylist, null);
+         this.millArt = (EntityWallDecoration.EnumWallDecoration)MillRandom.getWeightedChoice(arraylist, null);
       }
 
       if (MillConfigValues.LogBuildingPlan >= 1 && this.millArt != null) {

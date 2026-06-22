@@ -14,6 +14,7 @@ import org.millenaire.common.config.MillConfigValues;
 import org.millenaire.common.utilities.BlockItemUtilities;
 import org.millenaire.common.utilities.IntPoint;
 import org.millenaire.common.utilities.MillCommonUtilities;
+import org.millenaire.common.utilities.MillRandom;
 import org.millenaire.common.utilities.MillLog;
 import org.millenaire.common.village.BuildingLocation;
 
@@ -87,7 +88,7 @@ public class TreeClearer {
       int x = this.location.pos.getiX();
       int z = this.location.pos.getiZ();
       int orientation = this.location.orientation;
-      int randomWoolColour = MillCommonUtilities.randomInt(16);
+      int randomWoolColour = MillRandom.randomInt(16);
 
       for (int dx = -this.plan.areaToClearLengthBefore - 2; dx < this.plan.length + this.plan.areaToClearLengthAfter + 2; dx++) {
          for (int dz = -this.plan.areaToClearWidthBefore - 2; dz < this.plan.width + this.plan.areaToClearWidthAfter + 2; dz++) {

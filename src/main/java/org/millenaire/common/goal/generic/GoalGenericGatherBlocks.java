@@ -11,6 +11,7 @@ import org.millenaire.common.entity.MillVillager;
 import org.millenaire.common.goal.Goal;
 import org.millenaire.common.pathing.atomicstryker.AStarConfig;
 import org.millenaire.common.utilities.MillCommonUtilities;
+import org.millenaire.common.utilities.MillRandom;
 import org.millenaire.common.utilities.MillCrash;
 import org.millenaire.common.utilities.MillLog;
 import org.millenaire.common.utilities.Point;
@@ -158,7 +159,7 @@ public class GoalGenericGatherBlocks extends GoalGeneric {
    public boolean performAction(MillVillager villager) {
       if (villager.getGoalDestPoint().getBlockActualState(villager.level()) == this.gatherBlockState) {
          for (AnnotedParameter.BonusItem bonusItem : this.harvestItem) {
-            if (MillCommonUtilities.randomInt(100) <= bonusItem.chance) {
+            if (MillRandom.randomInt(100) <= bonusItem.chance) {
                if (this.collectInBuilding) {
                   villager.getGoalBuildingDest().storeGoods(bonusItem.item, 1);
                } else {

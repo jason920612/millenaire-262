@@ -10,6 +10,7 @@ import net.minecraft.world.level.block.state.BlockState;
 
 import org.millenaire.common.block.MillBlocks;
 import org.millenaire.common.utilities.MillCommonUtilities;
+import org.millenaire.common.utilities.MillRandom;
 
 /**
  * Millénaire pistachio-tree generator, re-implemented for MC 26.2 (see {@link MillTreeGenerator}).
@@ -58,7 +59,7 @@ public class WorldGenPistachio extends MillTreeGenerator {
                   chanceOn100 = 80;
                }
 
-               if (MillCommonUtilities.randomInt(100) < chanceOn100) {
+               if (MillRandom.randomInt(100) < chanceOn100) {
                   BlockPos pos = new BlockPos(xPos, yPos, zPos);
                   if (this.isAirOrLeaves(worldIn, pos)) {
                      this.setBlock(worldIn, pos, LEAVES_BS);
@@ -76,7 +77,7 @@ public class WorldGenPistachio extends MillTreeGenerator {
       }
 
       for (Direction direction : Direction.Plane.HORIZONTAL) {
-         if (MillCommonUtilities.randomInt(100) < 70) {
+         if (MillRandom.randomInt(100) < 70) {
             int branchMaxY = treeHeight - rand.nextInt(2);
             int branchMinY = 3 + rand.nextInt(2);
             int horizontalOffset = 3 - rand.nextInt(2);

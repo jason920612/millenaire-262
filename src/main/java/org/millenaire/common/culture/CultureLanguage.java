@@ -18,6 +18,7 @@ import org.millenaire.common.entity.MillVillager;
 import org.millenaire.common.item.TradeGood;
 import org.millenaire.common.utilities.LanguageData;
 import org.millenaire.common.utilities.MillCommonUtilities;
+import org.millenaire.common.utilities.MillRandom;
 import org.millenaire.common.utilities.MillFiles;
 import org.millenaire.common.utilities.MillCrash;
 import org.millenaire.common.utilities.MillLog;
@@ -186,7 +187,7 @@ public class CultureLanguage {
       if (possibleDialogues.isEmpty()) {
          return null;
       } else {
-         MillCommonUtilities.WeightedChoice wc = MillCommonUtilities.getWeightedChoice(possibleDialogues, null);
+         MillCommonUtilities.WeightedChoice wc = MillRandom.getWeightedChoice(possibleDialogues, null);
          return (CultureLanguage.Dialogue)wc;
       }
    }

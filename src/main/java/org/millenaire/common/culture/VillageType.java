@@ -23,6 +23,7 @@ import org.millenaire.common.forge.Mill;
 import org.millenaire.common.item.InvItem;
 import org.millenaire.common.network.StreamReadWrite;
 import org.millenaire.common.utilities.MillCommonUtilities;
+import org.millenaire.common.utilities.MillRandom;
 import org.millenaire.common.utilities.MillFiles;
 import org.millenaire.common.utilities.MillCrash;
 import org.millenaire.common.utilities.MillLog;
@@ -951,7 +952,7 @@ public class VillageType implements MillCommonUtilities.WeightedChoice {
             totalWeight += colourMap.get(possibleColor);
          }
 
-         int pickedValue = MillCommonUtilities.randomInt(totalWeight);
+         int pickedValue = MillRandom.randomInt(totalWeight);
          int currentWeightTotal = 0;
 
          for (DyeColor possibleColor : colourMap.keySet()) {

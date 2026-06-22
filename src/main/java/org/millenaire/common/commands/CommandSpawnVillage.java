@@ -16,6 +16,7 @@ import org.millenaire.common.culture.Culture;
 import org.millenaire.common.culture.VillageType;
 import org.millenaire.common.utilities.LanguageUtilities;
 import org.millenaire.common.utilities.MillCommonUtilities;
+import org.millenaire.common.utilities.MillRandom;
 import org.millenaire.common.utilities.MillLog;
 import org.millenaire.common.world.WorldGenVillage;
 
@@ -97,7 +98,7 @@ public class CommandSpawnVillage {
       MillLog.major(null, "Attempting to spawn village of type " + cultureParam + ":" + villageTypeParam + " at " + x + "/" + z + ".");
       WorldGenVillage genVillage = new WorldGenVillage();
       boolean result = genVillage.generateVillageAtPoint(
-         world, MillCommonUtilities.random, x, 0, z, player, false, true, false, 0, villageType, null, null, completion
+         world, MillRandom.random, x, 0, z, player, false, true, false, 0, villageType, null, null, completion
       );
       MillLog.major(null, "Result of spawn attempt: " + result);
       return result ? 1 : 0;

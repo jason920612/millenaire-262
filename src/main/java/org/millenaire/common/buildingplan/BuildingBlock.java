@@ -40,6 +40,7 @@ import org.millenaire.common.item.ItemMockBanner;
 import org.millenaire.common.item.MillItems;
 import org.millenaire.common.utilities.BlockItemUtilities;
 import org.millenaire.common.utilities.MillCommonUtilities;
+import org.millenaire.common.utilities.MillRandom;
 import org.millenaire.common.utilities.MillLog;
 import org.millenaire.common.utilities.PathUtilities;
 import org.millenaire.common.utilities.Point;
@@ -607,7 +608,7 @@ public class BuildingBlock {
       }
 
       net.minecraft.core.BlockPos pos = this.p.getBlockPos();
-      java.util.Random rand = MillCommonUtilities.random;
+      java.util.Random rand = MillRandom.random;
 
       // Vanilla tree types: place the matching vanilla ConfiguredFeature via the registry.
       net.minecraft.resources.ResourceKey<net.minecraft.world.level.levelgen.feature.ConfiguredFeature<?, ?>> vanillaKey = null;

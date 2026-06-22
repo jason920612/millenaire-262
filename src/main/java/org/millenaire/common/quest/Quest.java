@@ -12,6 +12,7 @@ import org.millenaire.common.culture.VillagerType;
 import org.millenaire.common.forge.Mill;
 import org.millenaire.common.item.InvItem;
 import org.millenaire.common.utilities.MillCommonUtilities;
+import org.millenaire.common.utilities.MillRandom;
 import org.millenaire.common.utilities.MillFiles;
 import org.millenaire.common.utilities.MillCrash;
 import org.millenaire.common.utilities.MillLog;
@@ -275,7 +276,7 @@ public class Quest {
    }
 
    public QuestInstance testQuest(MillWorldData mw, UserProfile profile) {
-      if (!MillCommonUtilities.probability(this.chanceperhour)) {
+      if (!MillRandom.probability(this.chanceperhour)) {
          return null;
       } else {
          int nb = 0;
@@ -363,7 +364,7 @@ public class Quest {
                                  }
 
                                  if (newVillagers.size() > 0) {
-                                    VillagerRecord chosen = newVillagers.get(MillCommonUtilities.randomInt(newVillagers.size()));
+                                    VillagerRecord chosen = newVillagers.get(MillRandom.randomInt(newVillagers.size()));
                                     villagers.put(qv.key, new QuestInstanceVillager(mw, p, chosen.getVillagerId(), chosen));
                                  } else {
                                     error = true;
@@ -381,7 +382,7 @@ public class Quest {
                                     }
 
                                     if (newVillagers.size() > 0) {
-                                       VillagerRecord chosen = newVillagers.get(MillCommonUtilities.randomInt(newVillagers.size()));
+                                       VillagerRecord chosen = newVillagers.get(MillRandom.randomInt(newVillagers.size()));
                                        villagers.put(qv.key, new QuestInstanceVillager(mw, p, chosen.getVillagerId(), chosen));
                                     } else {
                                        error = true;
@@ -412,7 +413,7 @@ public class Quest {
                                  }
 
                                  if (newVillagers.size() > 0) {
-                                    villagers.put(qv.key, newVillagers.get(MillCommonUtilities.randomInt(newVillagers.size())));
+                                    villagers.put(qv.key, newVillagers.get(MillRandom.randomInt(newVillagers.size())));
                                  } else {
                                     error = true;
                                  }
@@ -434,7 +435,7 @@ public class Quest {
             if (possibleVillagers.isEmpty()) {
                return null;
             } else {
-               HashMap<String, QuestInstanceVillager> selectedOption = possibleVillagers.get(MillCommonUtilities.randomInt(possibleVillagers.size()));
+               HashMap<String, QuestInstanceVillager> selectedOption = possibleVillagers.get(MillRandom.randomInt(possibleVillagers.size()));
                QuestInstance qix = new QuestInstance(mw, this, profile, selectedOption, mw.world.getOverworldClockTime());
                profile.questInstances.add(qix);
 

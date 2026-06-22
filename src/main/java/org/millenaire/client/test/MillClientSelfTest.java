@@ -52,6 +52,7 @@ import org.millenaire.common.item.TradeGood;
 import org.millenaire.common.ui.ContainerTrade;
 import org.millenaire.common.culture.VillageType;
 import org.millenaire.common.utilities.MillCommonUtilities;
+import org.millenaire.common.utilities.MillRandom;
 import org.millenaire.common.utilities.MillLog;
 import org.millenaire.common.utilities.Point;
 import org.millenaire.common.utilities.WorldUtilities;
@@ -435,7 +436,7 @@ public final class MillClientSelfTest {
                   }
                   int surfaceY = WorldUtilities.findTopSoilBlock(level, tx, tz);
                   result = gen.generateVillageAtPoint(
-                     level, MillCommonUtilities.random, tx, 0, tz, null, false, true, false, 0, vtype, null, null, 1.0F
+                     level, MillRandom.random, tx, 0, tz, null, false, true, false, 0, vtype, null, null, 1.0F
                   );
                   log("spawn-village (server): try " + tx + "/" + tz + " surfaceY=" + surfaceY + " -> " + result);
                   if (result) {

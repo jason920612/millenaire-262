@@ -22,6 +22,7 @@ import org.millenaire.common.advancements.MillAdvancements;
 import org.millenaire.common.item.MillItems;
 import org.millenaire.common.network.ServerSender;
 import org.millenaire.common.utilities.MillCommonUtilities;
+import org.millenaire.common.utilities.MillRandom;
 import org.millenaire.common.utilities.MillCrash;
 import org.millenaire.common.utilities.MillLog;
 import org.millenaire.common.utilities.Point;
@@ -61,7 +62,7 @@ public class MillEventController {
       } else if (dying instanceof Wolf) {
          this.inuitDropsWolfMeat(dying, source, drops);
       } else if (dying instanceof net.minecraft.world.entity.animal.polarbear.PolarBear) {
-         int quantity = 1 + MillCommonUtilities.randomInt(2);
+         int quantity = 1 + MillRandom.randomInt(2);
          drops.add(new ItemEntity(dying.level(), dying.getX(), dying.getY(), dying.getZ(),
             new ItemStack(MillItems.BEARMEAT_RAW, quantity)));
       }
@@ -134,13 +135,13 @@ public class MillEventController {
          if (profile.isTagSet("huntingdrop_" + itemPath(MillItems.SEAFOOD_RAW))) {
             int quantity = 0;
             if (dying instanceof Squid) {
-               if (MillCommonUtilities.chanceOn(10)) {
+               if (MillRandom.chanceOn(10)) {
                   quantity = 1;
                }
             } else if (dying instanceof ElderGuardian) {
-               quantity = 5 + MillCommonUtilities.randomInt(5);
+               quantity = 5 + MillRandom.randomInt(5);
             } else if (dying instanceof Guardian) {
-               quantity = 2 + MillCommonUtilities.randomInt(2);
+               quantity = 2 + MillRandom.randomInt(2);
             }
 
             if (quantity > 0) {
@@ -156,7 +157,7 @@ public class MillEventController {
       if (source != null && source.getEntity() instanceof Player player) {
          UserProfile profile = Mill.getMillWorld(dying.level()).getProfile(player);
          if (profile.isTagSet("huntingdrop_" + itemPath(MillItems.WOLFMEAT_RAW))) {
-            int quantity = MillCommonUtilities.randomInt(3);
+            int quantity = MillRandom.randomInt(3);
             if (quantity > 0) {
                drops.add(new ItemEntity(dying.level(), dying.getX(), dying.getY(), dying.getZ(),
                   new ItemStack(MillItems.WOLFMEAT_RAW, quantity)));

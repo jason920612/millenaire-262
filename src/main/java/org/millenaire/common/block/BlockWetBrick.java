@@ -13,6 +13,7 @@ import net.minecraft.world.level.block.state.properties.EnumProperty;
 
 import org.millenaire.common.forge.MillRegistry;
 import org.millenaire.common.utilities.MillCommonUtilities;
+import org.millenaire.common.utilities.MillRandom;
 
 /**
  * Canonical example of porting a 1.12 metadata-variant block to 26.2:
@@ -42,7 +43,7 @@ public class BlockWetBrick extends Block {
    public void randomTick(BlockState state, ServerLevel level, BlockPos pos, RandomSource random) {
       int currentValue = state.getValue(PROGRESS).getMetadata();
       if (level.getMaxLocalRawBrightness(pos.above()) > 14) {
-         if (++currentValue < 2 && MillCommonUtilities.chanceOn(2)) {
+         if (++currentValue < 2 && MillRandom.chanceOn(2)) {
             level.setBlockAndUpdate(pos, state.setValue(PROGRESS, EnumType.byMetadata(++currentValue)));
          } else if (currentValue < 3) {
             level.setBlockAndUpdate(pos, state.setValue(PROGRESS, EnumType.byMetadata(currentValue)));

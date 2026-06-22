@@ -6,6 +6,7 @@ import org.millenaire.common.config.DocumentedElement;
 import org.millenaire.common.entity.MillVillager;
 import org.millenaire.common.goal.Goal;
 import org.millenaire.common.utilities.MillCommonUtilities;
+import org.millenaire.common.utilities.MillRandom;
 import org.millenaire.common.utilities.Point;
 import org.millenaire.common.village.Building;
 
@@ -43,7 +44,7 @@ public class GoalGoSocialise extends Goal {
          possibleDests.add(villager.getTownHall());
       }
 
-      destB = possibleDests.get(MillCommonUtilities.randomInt(possibleDests.size()));
+      destB = possibleDests.get(MillRandom.randomInt(possibleDests.size()));
       dest = destB.getResManager().getLeasurePos();
       return this.packDest(dest, destB);
    }

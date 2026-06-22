@@ -9,6 +9,7 @@ import org.millenaire.common.culture.VillagerType;
 import org.millenaire.common.entity.MillVillager;
 import org.millenaire.common.item.InvItem;
 import org.millenaire.common.utilities.MillCommonUtilities;
+import org.millenaire.common.utilities.MillRandom;
 import org.millenaire.common.utilities.MillLog;
 import org.millenaire.common.utilities.Point;
 import org.millenaire.common.village.Building;
@@ -55,12 +56,12 @@ public class VisitorManager {
 
             int foreignChance = Math.min(1 + merchantTypesOtherVillages.size(), 5);
             VillagerType type;
-            if (merchantTypesOtherVillages.size() <= 0 || MillCommonUtilities.randomInt(11) >= foreignChance) {
+            if (merchantTypesOtherVillages.size() <= 0 || MillRandom.randomInt(11) >= foreignChance) {
                type = this.building.culture.getRandomForeignMerchant();
             } else if (merchantTypesOtherVillages.size() == 0) {
                type = this.building.culture.getRandomForeignMerchant();
             } else {
-               type = merchantTypesOtherVillages.get(MillCommonUtilities.randomInt(merchantTypesOtherVillages.size()));
+               type = merchantTypesOtherVillages.get(MillRandom.randomInt(merchantTypesOtherVillages.size()));
             }
 
             VillagerRecord merchantRecord = VillagerRecord.createVillagerRecord(
@@ -108,7 +109,7 @@ public class VisitorManager {
             VillagerType type = this.building.culture.getVillagerType(visitorTypex);
 
             for (int i = currentCount; i < targetCount.get(visitorTypex); i++) {
-               if (MillCommonUtilities.chanceOn(2)) {
+               if (MillRandom.chanceOn(2)) {
                   VillagerRecord visitorRecord = VillagerRecord.createVillagerRecord(
                      type.culture, type.key, this.building.mw, this.building.getPos(), this.building.getTownHall().getPos(), null, null, -1L, false
                   );

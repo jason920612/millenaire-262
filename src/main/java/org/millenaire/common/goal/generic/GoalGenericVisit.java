@@ -8,6 +8,7 @@ import org.millenaire.common.annotedparameters.ConfigAnnotations;
 import org.millenaire.common.entity.MillVillager;
 import org.millenaire.common.goal.Goal;
 import org.millenaire.common.utilities.MillCommonUtilities;
+import org.millenaire.common.utilities.MillRandom;
 import org.millenaire.common.utilities.MillLog;
 import org.millenaire.common.village.Building;
 
@@ -45,7 +46,7 @@ public class GoalGenericVisit extends GoalGeneric {
             }
          }
 
-         return targets.isEmpty() ? null : this.packDest(null, null, (Entity)targets.get(MillCommonUtilities.randomInt(targets.size())));
+         return targets.isEmpty() ? null : this.packDest(null, null, (Entity)targets.get(MillRandom.randomInt(targets.size())));
       } else {
          for (Building dest : this.getBuildings(villager)) {
             if (this.isDestPossible(villager, dest)) {

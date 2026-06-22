@@ -27,6 +27,7 @@ import org.millenaire.common.entity.MillVillager;
 import org.millenaire.common.forge.Mill;
 import org.millenaire.common.item.TradeGood;
 import org.millenaire.common.utilities.MillCommonUtilities;
+import org.millenaire.common.utilities.MillRandom;
 import org.millenaire.common.utilities.MillFiles;
 import org.millenaire.common.utilities.MillCrash;
 import org.millenaire.common.utilities.MillLog;
@@ -335,7 +336,7 @@ public class TravelBookExporter {
     * pre-baked.
     */
    public static void exportVillagerPicture(VillagerType villagerType, boolean mainPageExport) throws IOException {
-      MillCommonUtilities.initRandom(villagerType.key.hashCode());
+      MillRandom.initRandom(villagerType.key.hashCode());
       VillagerRecord villagerRecord = VillagerRecord.createVillagerRecord(
          villagerType.culture, villagerType.key, Mill.getMillWorld(Minecraft.getInstance().level), null, null, null, null, -1L, true
       );

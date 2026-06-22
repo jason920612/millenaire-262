@@ -80,6 +80,7 @@ import org.millenaire.common.utilities.BlockItemUtilities;
 import org.millenaire.common.utilities.BlockStateUtilities;
 import org.millenaire.common.utilities.DevModUtilities;
 import org.millenaire.common.utilities.MillCommonUtilities;
+import org.millenaire.common.utilities.MillRandom;
 import org.millenaire.common.utilities.MillCrash;
 import org.millenaire.common.utilities.MillLog;
 import org.millenaire.common.utilities.Point;
@@ -799,7 +800,7 @@ public abstract class MillVillager extends PathfinderMob implements IAStarPathed
                      conceptionChances += this.getConfig().foodsConception.get(conceptionFood);
                   }
 
-                  if (MillCommonUtilities.randomInt(10) < conceptionChances) {
+                  if (MillRandom.randomInt(10) < conceptionChances) {
                      createChild = true;
                      if (MillConfigValues.LogChildren >= 2) {
                         MillLog.minor(this, "Conceiving child. Food available: " + conceptionFood);
@@ -1413,7 +1414,7 @@ public abstract class MillVillager extends PathfinderMob implements IAStarPathed
          if (WorldUtilities.getBlock(this.level(), rp.getBelow()) == Blocks.FARMLAND) {
             return -50.0F;
          } else {
-            return dist > 10.0 ? -((float)dist) : MillCommonUtilities.randomInt(10);
+            return dist > 10.0 ? -((float)dist) : MillRandom.randomInt(10);
          }
       }
    }
@@ -1801,13 +1802,13 @@ public abstract class MillVillager extends PathfinderMob implements IAStarPathed
          int nb = 0;
          nb = this.getHouse().takeGoods(Items.EGG, 1);
          if (nb == 1) {
-            growth += 1 + MillCommonUtilities.randomInt(5);
+            growth += 1 + MillRandom.randomInt(5);
          }
 
          for (InvItem food : this.getConfig().foodsGrowthSorted) {
             if (growth < 10 && this.getRecord().size + growth < 20 && this.getHouse().countGoods(food) > 0) {
                this.getHouse().takeGoods(food, 1);
-               growth += this.getConfig().foodsGrowth.get(food) + MillCommonUtilities.randomInt(this.getConfig().foodsGrowth.get(food));
+               growth += this.getConfig().foodsGrowth.get(food) + MillRandom.randomInt(this.getConfig().foodsGrowth.get(food));
             }
          }
 
@@ -2406,7 +2407,7 @@ public abstract class MillVillager extends PathfinderMob implements IAStarPathed
 
          try {
             this.timer++;
-            if (this.getHealth() < this.getMaxHealth() & MillCommonUtilities.randomInt(1600) == 0) {
+            if (this.getHealth() < this.getMaxHealth() & MillRandom.randomInt(1600) == 0) {
                this.setHealth(this.getHealth() + 1.0F);
             }
 
@@ -3398,7 +3399,7 @@ public abstract class MillVillager extends PathfinderMob implements IAStarPathed
 
    public void speakSentence(String key, int delay, int distance, int chanceOn) {
       if (delay <= this.level().getOverworldClockTime() - this.speech_started) {
-         if (MillCommonUtilities.chanceOn(chanceOn)) {
+         if (MillRandom.chanceOn(chanceOn)) {
             if (this.getTownHall() != null
                && this.getTownHall().closestPlayer != null
                && !(this.getPos().distanceTo(this.getTownHall().closestPlayer) > distance)) {
@@ -3413,7 +3414,7 @@ public abstract class MillVillager extends PathfinderMob implements IAStarPathed
                }
 
                if (this.speech_key != null) {
-                  this.speech_variant = MillCommonUtilities.randomInt(this.getCulture().getSentences(this.speech_key).size());
+                  this.speech_variant = MillRandom.randomInt(this.getCulture().getSentences(this.speech_key).size());
                   this.speech_started = this.level().getOverworldClockTime();
                   this.sendVillagerPacket();
                   ServerSender.sendVillageSentenceInRange(this.level(), this.getPos(), 30, this);
@@ -3770,7 +3771,7 @@ public abstract class MillVillager extends PathfinderMob implements IAStarPathed
 
    private void updateHired() {
       try {
-         if (this.getHealth() < this.getMaxHealth() & MillCommonUtilities.randomInt(1600) == 0) {
+         if (this.getHealth() < this.getMaxHealth() & MillRandom.randomInt(1600) == 0) {
             this.setHealth(this.getHealth() + 1.0F);
          }
 
@@ -3919,7 +3920,7 @@ public abstract class MillVillager extends PathfinderMob implements IAStarPathed
       if (dest != null) {
          if (this.pathEntity != null
             && this.pathEntity.getNodeCount() > 0
-            && !MillCommonUtilities.chanceOn(50)
+            && !MillRandom.chanceOn(50)
             && this.pathEntity.getCurrentTargetPathPoint() != null) {
             // Bridge Mill's A* AS_PathEntity (Node[]) onto vanilla navigation as a Path.
             net.minecraft.world.level.pathfinder.Node end = this.pathEntity.pointsCopy[this.pathEntity.getNodeCount() - 1];

@@ -18,6 +18,7 @@ import org.millenaire.common.culture.VillageType;
 import org.millenaire.common.forge.Mill;
 import org.millenaire.common.utilities.LanguageUtilities;
 import org.millenaire.common.utilities.MillCommonUtilities;
+import org.millenaire.common.utilities.MillRandom;
 import org.millenaire.common.utilities.MillLog;
 import org.millenaire.common.utilities.Point;
 
@@ -494,7 +495,7 @@ public class BuildingLocation implements Cloneable {
             totalWeight += plan.randomBrickColours.get(color).get(possibleColor);
          }
 
-         int pickedValue = MillCommonUtilities.randomInt(totalWeight);
+         int pickedValue = MillRandom.randomInt(totalWeight);
          DyeColor pickedColor = null;
          int currentWeightTotal = 0;
 

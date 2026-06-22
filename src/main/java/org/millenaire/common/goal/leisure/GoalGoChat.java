@@ -7,6 +7,7 @@ import org.millenaire.common.culture.CultureLanguage;
 import org.millenaire.common.entity.MillVillager;
 import org.millenaire.common.goal.Goal;
 import org.millenaire.common.utilities.MillCommonUtilities;
+import org.millenaire.common.utilities.MillRandom;
 import org.millenaire.common.utilities.WorldUtilities;
 
 @DocumentedElement.Documentation("Make the villager meet a villager looking for someone to chat, to initiate a dialog")
@@ -58,7 +59,7 @@ public class GoalGoChat extends Goal {
             int role = dialog.validRoleFor(villager);
             villager.setGoalInformation(null);
             villager.setGoalDestEntity(target);
-            char col = this.chatColours[MillCommonUtilities.randomInt(this.chatColours.length)];
+            char col = this.chatColours[MillRandom.randomInt(this.chatColours.length)];
             char var12 = 102;
             if (dialog != null) {
                List<? extends Entity> entities = WorldUtilities.getEntitiesWithinAABB(villager.level(), MillVillager.class, villager.getPos(), 5, 5);

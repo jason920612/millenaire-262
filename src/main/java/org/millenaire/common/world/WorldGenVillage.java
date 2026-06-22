@@ -20,6 +20,7 @@ import org.millenaire.common.item.ItemParchment;
 import org.millenaire.common.network.ServerSender;
 import org.millenaire.common.pathing.atomicstryker.RegionMapper;
 import org.millenaire.common.utilities.MillCommonUtilities;
+import org.millenaire.common.utilities.MillRandom;
 import org.millenaire.common.utilities.MillCrash;
 import org.millenaire.common.utilities.MillLog;
 import org.millenaire.common.utilities.Point;
@@ -68,13 +69,13 @@ public class WorldGenVillage {
          BuildingLocation location = null;
 
          for (int i = 0; i < 100 && location == null; i++) {
-            int x = minDistance + MillCommonUtilities.randomInt(maxDistance - minDistance);
-            int z = minDistance + MillCommonUtilities.randomInt(maxDistance - minDistance);
-            if (MillCommonUtilities.chanceOn(2)) {
+            int x = minDistance + MillRandom.randomInt(maxDistance - minDistance);
+            int z = minDistance + MillRandom.randomInt(maxDistance - minDistance);
+            if (MillRandom.chanceOn(2)) {
                x = -x;
             }
 
-            if (MillCommonUtilities.chanceOn(2)) {
+            if (MillRandom.chanceOn(2)) {
                z = -z;
             }
 
@@ -84,13 +85,13 @@ public class WorldGenVillage {
 
          if (location == null) {
             MillLog.major(null, "No spot found for: " + village);
-            int xx = minDistance + MillCommonUtilities.randomInt(maxDistance - minDistance);
-            int zx = minDistance + MillCommonUtilities.randomInt(maxDistance - minDistance);
-            if (MillCommonUtilities.chanceOn(2)) {
+            int xx = minDistance + MillRandom.randomInt(maxDistance - minDistance);
+            int zx = minDistance + MillRandom.randomInt(maxDistance - minDistance);
+            if (MillRandom.chanceOn(2)) {
                xx = -xx;
             }
 
-            if (MillCommonUtilities.chanceOn(2)) {
+            if (MillRandom.chanceOn(2)) {
                zx = -zx;
             }
 
@@ -262,11 +263,11 @@ public class WorldGenVillage {
       boolean generated = false;
 
       for (int minRadius = 250; !generated && minRadius < 350; minRadius += 50) {
-         double angle = 0.06280000000000001 * MillCommonUtilities.randomInt(100);
+         double angle = 0.06280000000000001 * MillRandom.randomInt(100);
 
          for (int attempts = 0; !generated && attempts < 36; attempts++) {
             angle += 0.17444444444444446;
-            int radius = minRadius + MillCommonUtilities.randomInt(40);
+            int radius = minRadius + MillRandom.randomInt(40);
             int dx = (int)(Math.cos(angle) * radius);
             int dz = (int)(Math.sin(angle) * radius);
             if (MillConfigValues.LogWorldGeneration >= 1) {
@@ -727,7 +728,7 @@ public class WorldGenVillage {
                      MillLog.debug(this, "Called for point: " + x + "/" + y + "/" + z);
                   }
 
-                  MillCommonUtilities.random = random;
+                  MillRandom.random = random;
                   if (checkForUnloaded) {
                      int villageRadius = MillConfigValues.VillageRadius;
                      if (specificVillageType != null) {
@@ -850,7 +851,7 @@ public class WorldGenVillage {
                      if (acceptableLoneBuildingsType.size() == 0) {
                         return false;
                      } else {
-                        VillageType loneBuilding = (VillageType)MillCommonUtilities.getWeightedChoice(acceptableLoneBuildingsType, closestPlayer);
+                        VillageType loneBuilding = (VillageType)MillRandom.getWeightedChoice(acceptableLoneBuildingsType, closestPlayer);
                         if (MillConfigValues.LogWorldGeneration >= 2) {
                            MillLog.minor(null, "Attempting to find lone building: " + loneBuilding);
                         }
@@ -992,7 +993,7 @@ public class WorldGenVillage {
 
       VillageType village;
       if (acceptableVillageType.size() != 0) {
-         village = (VillageType)MillCommonUtilities.getWeightedChoice(acceptableVillageType, closestPlayer);
+         village = (VillageType)MillRandom.getWeightedChoice(acceptableVillageType, closestPlayer);
       } else {
          village = null;
       }

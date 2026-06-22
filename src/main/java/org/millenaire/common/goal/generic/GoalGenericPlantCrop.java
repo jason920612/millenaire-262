@@ -21,6 +21,7 @@ import org.millenaire.common.goal.Goal;
 import org.millenaire.common.item.InvItem;
 import org.millenaire.common.utilities.BlockItemUtilities;
 import org.millenaire.common.utilities.MillCommonUtilities;
+import org.millenaire.common.utilities.MillRandom;
 import org.millenaire.common.utilities.MillCrash;
 import org.millenaire.common.utilities.MillLog;
 import org.millenaire.common.utilities.Point;
@@ -162,7 +163,7 @@ public class GoalGenericPlantCrop extends GoalGeneric {
          }
 
          if (!this.plantBlockState.isEmpty()) {
-            BlockState cropState = this.plantBlockState.get(MillCommonUtilities.randomInt(this.plantBlockState.size()));
+            BlockState cropState = this.plantBlockState.get(MillRandom.randomInt(this.plantBlockState.size()));
             villager.setBlockstate(villager.getGoalDestPoint(), cropState);
             if (cropState.getBlock() instanceof DoublePlantBlock) {
                villager.setBlockstate(villager.getGoalDestPoint().getAbove(), cropState.setValue(DoublePlantBlock.HALF, DoubleBlockHalf.UPPER));

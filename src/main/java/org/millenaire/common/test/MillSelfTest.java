@@ -39,6 +39,7 @@ import org.millenaire.common.forge.MillRegistry;
 import org.millenaire.common.item.TradeGood;
 import org.millenaire.common.ui.ContainerTrade;
 import org.millenaire.common.utilities.MillCommonUtilities;
+import org.millenaire.common.utilities.MillRandom;
 import org.millenaire.common.utilities.MillLog;
 import org.millenaire.common.utilities.Point;
 import org.millenaire.common.village.Building;
@@ -683,7 +684,7 @@ public final class MillSelfTest {
             WorldGenVillage gen = new WorldGenVillage();
             // Same entry point CommandSpawnVillage uses: full completion so buildings are placed.
             boolean result = gen.generateVillageAtPoint(
-               level, MillCommonUtilities.random, x, 0, z, fakePlayer, false, true, false, 0, vtype, null, null, 1.0F
+               level, MillRandom.random, x, 0, z, fakePlayer, false, true, false, 0, vtype, null, null, 1.0F
             );
             villageByCulture.put(cKey, result);
             villageDetailByCulture.put(cKey, "type=" + vtype.key + " at " + x + "/" + z + " -> " + result);

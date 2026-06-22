@@ -6,6 +6,7 @@ import org.millenaire.common.config.DocumentedElement;
 import org.millenaire.common.config.MillConfigValues;
 import org.millenaire.common.entity.MillVillager;
 import org.millenaire.common.utilities.MillCommonUtilities;
+import org.millenaire.common.utilities.MillRandom;
 import org.millenaire.common.utilities.MillLog;
 import org.millenaire.common.utilities.Point;
 import org.millenaire.common.village.Building;
@@ -50,7 +51,7 @@ public class GoalChildBecomeAdult extends Goal {
          }
 
          if (possibleDest.size() > 0) {
-            int rand = MillCommonUtilities.randomInt(possibleDest.size());
+            int rand = MillRandom.randomInt(possibleDest.size());
             return this.packDest(possibleDest.get(rand), possibleDestBuilding.get(rand));
          } else {
             return null;

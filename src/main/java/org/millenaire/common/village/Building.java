@@ -103,6 +103,7 @@ import org.millenaire.common.ui.PujaSacrifice;
 import org.millenaire.common.utilities.BlockItemUtilities;
 import org.millenaire.common.utilities.LanguageUtilities;
 import org.millenaire.common.utilities.MillCommonUtilities;
+import org.millenaire.common.utilities.MillCrash;
 import org.millenaire.common.utilities.MillLog;
 import org.millenaire.common.utilities.PathUtilities;
 import org.millenaire.common.utilities.Point;
@@ -4285,11 +4286,11 @@ public class Building {
                }
             }
          }
-      } catch (Exception var9) {
-         Mill.proxy.sendChatAdmin("Error when trying to load building. Check millenaire.log.");
-         MillLog.error(this, "Error when trying to load building of type: " + this.location);
-         MillLog.printException(var9);
-         return false;
+      } catch (Exception loadError) {
+         // Swallowing this previously dropped the whole building from the save (it
+         // silently vanished). An unexpected exception mid-read means corrupt NBT:
+         // fail loudly. Deliberate skip cases above still return false normally.
+         throw MillCrash.fail("Save", "loading building of type " + this.location + " at " + this.pos + ": " + loadError);
       }
    }
 
@@ -4337,8 +4338,10 @@ public class Building {
 
                this.pathsToBuild.add(path);
             }
-         } catch (Exception var13) {
-            MillLog.printException("Error when reading pathsToBuild: ", var13);
+         } catch (Exception readError) {
+            // Half-read path file would leave pathsToBuild partially populated and the
+            // building silently mis-pathed: fail loudly instead of hiding the corruption.
+            throw MillCrash.fail("Save", "reading pathsToBuild for " + this.getPos() + ": " + readError);
          }
       }
 
@@ -4353,8 +4356,8 @@ public class Building {
                Point p = new Point(ds.readInt(), ds.readShort(), ds.readInt());
                this.oldPathPointsToClear.add(p);
             }
-         } catch (Exception var12) {
-            MillLog.printException("Error when reading oldPathPointsToClear: ", var12);
+         } catch (Exception readError) {
+            throw MillCrash.fail("Save", "reading oldPathPointsToClear for " + this.getPos() + ": " + readError);
          }
       }
    }
@@ -6334,8 +6337,9 @@ public class Building {
                   ds.writeByte(b.special);
                }
             }
-         } catch (IOException var10) {
-            MillLog.printException("Error when writing pathsToBuild: ", var10);
+         } catch (IOException writeError) {
+            // A swallowed write leaves a truncated paths file that mis-loads next time.
+            throw MillCrash.fail("Save", "writing pathsToBuild for " + this.getPos() + ": " + writeError);
          }
       } else {
          file1.renameTo(new File(buildingsDir, this.getPos().getPathString() + "ToDelete"));
@@ -6353,8 +6357,8 @@ public class Building {
                ds.writeShort(p.getiY());
                ds.writeInt(p.getiZ());
             }
-         } catch (IOException var9) {
-            MillLog.printException("Error when writing oldPathPointsToClear: ", var9);
+         } catch (IOException writeError) {
+            throw MillCrash.fail("Save", "writing oldPathPointsToClear for " + this.getPos() + ": " + writeError);
          }
       } else {
          file1.delete();
@@ -6624,10 +6628,10 @@ public class Building {
             if (this.isTownhall && this.bannerStack != null && !this.bannerStack.isEmpty()) {
                nbttagcompound.store("bannerStack", ItemStack.CODEC, this.bannerStack);
             }
-         } catch (Exception var11) {
-            Mill.proxy.sendChatAdmin("Error when trying to save building. Check millenaire.log.");
-            MillLog.error(this, "Exception in Villager.onUpdate(): ");
-            MillLog.printException(var11);
+         } catch (Exception saveError) {
+            // Swallowing this previously wrote a partial/empty building tag, silently
+            // corrupting the save. Fail loudly so the save is not committed half-written.
+            throw MillCrash.fail("Save", "saving building of type " + this.location + " at " + this.pos + ": " + saveError);
          }
       }
    }

@@ -10,6 +10,7 @@ import java.nio.file.Files;
 import org.millenaire.common.buildingplan.BuildingBlock;
 import org.millenaire.common.entity.MillVillager;
 import org.millenaire.common.utilities.MillCommonUtilities;
+import org.millenaire.common.utilities.MillCrash;
 import org.millenaire.common.utilities.MillLog;
 import org.millenaire.common.utilities.Point;
 import org.millenaire.common.utilities.WorldUtilities;
@@ -89,31 +90,32 @@ public class ConstructionIP {
 
    public void readBblocks() {
       File buildingsDir = MillCommonUtilities.getBuildingsDir(this.townHall.world);
-      File file1 = new File(buildingsDir, this.townHall.getPos().getPathString() + "_bblocks_" + this.id + ".bin");
-      if (file1.exists()) {
-         try (FileInputStream fis = new FileInputStream(file1);
-              DataInputStream ds = new DataInputStream(fis)) {
-            int size = ds.readInt();
-            this.bblocks = new BuildingBlock[size];
+      File bblocksFile = new File(buildingsDir, this.townHall.getPos().getPathString() + "_bblocks_" + this.id + ".bin");
+      if (bblocksFile.exists()) {
+         try (FileInputStream fileStream = new FileInputStream(bblocksFile);
+              DataInputStream dataStream = new DataInputStream(fileStream)) {
+            int blockCount = dataStream.readInt();
+            this.bblocks = new BuildingBlock[blockCount];
 
-            for (int i = 0; i < size; i++) {
-               Point p = new Point(ds.readInt(), ds.readShort(), ds.readInt());
-               BuildingBlock b = new BuildingBlock(p, ds);
+            for (int i = 0; i < blockCount; i++) {
+               Point p = new Point(dataStream.readInt(), dataStream.readShort(), dataStream.readInt());
+               BuildingBlock b = new BuildingBlock(p, dataStream);
                this.bblocks[i] = b;
             }
+         } catch (Exception readError) {
+            // Persisted construction-block file is corrupt: fail loudly rather than
+            // silently dropping the building's in-progress construction blocks.
+            throw MillCrash.fail("Save", "reading bblocks for " + this.townHall.getPos() + " id " + this.id + ": " + readError);
+         }
 
-            if (this.bblocks.length == 0) {
-               MillLog.error(this, "Saved bblocks had zero elements. Rushing construction.");
+         if (this.bblocks.length == 0) {
+            MillLog.error(this, "Saved bblocks had zero elements. Rushing construction.");
 
-               try {
-                  this.townHall.rushCurrentConstructions(false);
-               } catch (Exception var9) {
-                  MillLog.printException("Exception when trying to rush building:", var9);
-               }
+            try {
+               this.townHall.rushCurrentConstructions(false);
+            } catch (Exception rushError) {
+               MillLog.printException("Exception when trying to rush building:", rushError);
             }
-         } catch (Exception var10) {
-            MillLog.printException("Error when reading bblocks: ", var10);
-            this.bblocks = null;
          }
       }
    }
@@ -145,29 +147,31 @@ public class ConstructionIP {
       File blocksFile = new File(buildingsDir, this.townHall.getPos().getPathString() + "_bblocks_" + this.id + ".bin");
       BuildingBlock[] blocks = this.getBblocks();
       if (blocks != null) {
-         try (FileOutputStream fos = new FileOutputStream(blocksFile);
-              DataOutputStream ds = new DataOutputStream(fos)) {
-            ds.writeInt(blocks.length);
+         try (FileOutputStream fileStream = new FileOutputStream(blocksFile);
+              DataOutputStream dataStream = new DataOutputStream(fileStream)) {
+            dataStream.writeInt(blocks.length);
 
             for (int i = 0; i < blocks.length; i++) {
                BuildingBlock b = blocks[i];
-               ds.writeInt(b.p.getiX());
-               ds.writeShort(b.p.getiY());
-               ds.writeInt(b.p.getiZ());
-               ds.writeInt(WorldUtilities.getBlockId(b.block));
-               ds.writeByte(b.getMeta());
-               ds.writeByte(b.special);
+               dataStream.writeInt(b.p.getiX());
+               dataStream.writeShort(b.p.getiY());
+               dataStream.writeInt(b.p.getiZ());
+               dataStream.writeInt(WorldUtilities.getBlockId(b.block));
+               dataStream.writeByte(b.getMeta());
+               dataStream.writeByte(b.special);
             }
-         } catch (IOException var9) {
-            MillLog.printException("Error when writing bblocks: ", var9);
+         } catch (IOException writeError) {
+            // A swallowed write leaves a truncated bblocks file on disk that will be
+            // mis-read on next load: fail loudly so the save is not silently corrupted.
+            throw MillCrash.fail("Save", "writing bblocks for " + this.townHall.getPos() + " id " + this.id + ": " + writeError);
          }
       } else {
          try {
             if (blocksFile.exists()) {
                Files.delete(blocksFile.toPath());
             }
-         } catch (IOException var8) {
-            MillLog.printException("Error when deleting bblocks: ", var8);
+         } catch (IOException deleteError) {
+            throw MillCrash.fail("Save", "deleting stale bblocks for " + this.townHall.getPos() + " id " + this.id + ": " + deleteError);
          }
       }
 

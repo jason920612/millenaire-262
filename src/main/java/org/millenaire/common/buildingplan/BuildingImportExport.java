@@ -51,6 +51,7 @@ import org.millenaire.common.network.ServerSender;
 import org.millenaire.common.utilities.BlockItemUtilities;
 import org.millenaire.common.utilities.BlockStateUtilities;
 import org.millenaire.common.utilities.MillCommonUtilities;
+import org.millenaire.common.utilities.MillCrash;
 import org.millenaire.common.utilities.MillLog;
 import org.millenaire.common.utilities.Point;
 import org.millenaire.common.utilities.WorldUtilities;
@@ -530,8 +531,9 @@ public class BuildingImportExport {
                   importTable.exportRegularChests()
                );
             }
-         } catch (Exception var4) {
-            MillLog.printException("Error when exporting building:", var4);
+         } catch (Exception exportException) {
+            // 1.12.2 swallowed this, leaving a partial/corrupt export on disk with no signal. Fatalize.
+            throw MillCrash.fail("Buildings", "Error exporting building '" + importTable.getBuildingKey() + "': " + exportException);
          }
       }
    }
@@ -682,8 +684,10 @@ public class BuildingImportExport {
 
       try {
          parentBuildingSet.loadPictPlans(true);
-      } catch (Exception var6) {
-         MillLog.printException("Exception when loading plan:", var6);
+      } catch (Exception planLoadException) {
+         // 1.12.2 swallowed this and returned a partially-loaded plan set, hiding the load failure from
+         // every caller that then builds from it. A plan that fails to load is corruption — fatalize.
+         throw MillCrash.fail("Buildings", "Exception loading plan set '" + parentBuildingKey + "' from export dir: " + planLoadException);
       }
 
       return parentBuildingSet;
@@ -1014,8 +1018,10 @@ public class BuildingImportExport {
          }
 
          exportBuilding(world, startPoint, planName, variation, length, width, orientation, upgradeLevel, startLevel, exportSnow, false, true);
-      } catch (Exception var18) {
-         MillLog.printException("Error when trying to store a building: ", var18);
+      } catch (Exception exportException) {
+         // 1.12.2 swallowed this. The inner try/catches above already handle bad sign input with translated
+         // messages; reaching here is an actual export failure (partial output) — fatalize.
+         throw MillCrash.fail("Buildings", "Error storing/exporting building at " + startPoint + ": " + exportException);
       }
    }
 
@@ -1325,8 +1331,10 @@ public class BuildingImportExport {
                adjustedStartPoint = new Point(startPoint.x, startPoint.y, adjustedStartPoint.z + existingSet.plans.get(variationPos)[0].width + 10.0);
             }
          }
-      } catch (Exception var23) {
-         MillLog.printException("Error when importing a building:", var23);
+      } catch (Exception importException) {
+         // 1.12.2 swallowed this. The inner try/catch above handles bad sign input with a translated
+         // message; reaching here is an actual import failure that may leave a partial build — fatalize.
+         throw MillCrash.fail("Buildings", "Error importing building at " + startPoint + ": " + importException);
       }
    }
 }

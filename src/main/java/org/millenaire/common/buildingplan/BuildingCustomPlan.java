@@ -20,6 +20,7 @@ import org.millenaire.common.config.MillConfigValues;
 import org.millenaire.common.culture.Culture;
 import org.millenaire.common.forge.Mill;
 import org.millenaire.common.utilities.MillCommonUtilities;
+import org.millenaire.common.utilities.MillCrash;
 import org.millenaire.common.utilities.MillLog;
 import org.millenaire.common.utilities.Point;
 import org.millenaire.common.utilities.virtualdir.VirtualDir;
@@ -58,8 +59,9 @@ public class BuildingCustomPlan implements IBuildingPlan {
 
             BuildingCustomPlan buildingCustom = new BuildingCustomPlan(file, culture);
             buildingCustoms.put(buildingCustom.buildingKey, buildingCustom);
-         } catch (Exception var8) {
-            MillLog.printException("Error when loading " + file.getAbsolutePath(), var8);
+         } catch (Exception customLoadException) {
+            // 1.12.2 swallowed this, silently dropping a custom building from the culture. Fatalize.
+            throw MillCrash.fail("Buildings", "Error loading custom building " + file.getAbsolutePath() + ": " + customLoadException);
          }
       }
 
@@ -138,28 +140,29 @@ public class BuildingCustomPlan implements IBuildingPlan {
 
       for (int currentRadius = 0; currentRadius < this.radius; currentRadius++) {
          for (int y = pos.getiY() - this.heightRadius + 1; y < pos.getiY() + this.heightRadius + 1; y++) {
+            // Scan the perimeter of the square ring at this radius: north edge, west edge, south edge, east edge.
             int z = pos.getiZ() - currentRadius;
 
             for (int x = pos.getiX() - currentRadius; x <= pos.getiX() + currentRadius; x++) {
                this.handlePoint(x, y, z, world, resources, townHall, currentLocation);
             }
 
-            int var10 = pos.getiX() - currentRadius;
+            int westEdgeX = pos.getiX() - currentRadius;
 
-            for (int var13 = pos.getiZ() - currentRadius + 1; var13 <= pos.getiZ() + currentRadius - 1; var13++) {
-               this.handlePoint(var10, y, var13, world, resources, townHall, currentLocation);
+            for (int edgeZ = pos.getiZ() - currentRadius + 1; edgeZ <= pos.getiZ() + currentRadius - 1; edgeZ++) {
+               this.handlePoint(westEdgeX, y, edgeZ, world, resources, townHall, currentLocation);
             }
 
             z = pos.getiZ() + currentRadius;
 
-            for (int var11 = pos.getiX() - currentRadius; var11 <= pos.getiX() + currentRadius; var11++) {
-               this.handlePoint(var11, y, z, world, resources, townHall, currentLocation);
+            for (int x = pos.getiX() - currentRadius; x <= pos.getiX() + currentRadius; x++) {
+               this.handlePoint(x, y, z, world, resources, townHall, currentLocation);
             }
 
-            var10 = pos.getiX() + currentRadius;
+            int eastEdgeX = pos.getiX() + currentRadius;
 
-            for (int var15 = pos.getiZ() - currentRadius + 1; var15 <= pos.getiZ() + currentRadius - 1; var15++) {
-               this.handlePoint(var10, y, var15, world, resources, townHall, currentLocation);
+            for (int edgeZ = pos.getiZ() - currentRadius + 1; edgeZ <= pos.getiZ() + currentRadius - 1; edgeZ++) {
+               this.handlePoint(eastEdgeX, y, edgeZ, world, resources, townHall, currentLocation);
             }
          }
       }
@@ -367,10 +370,13 @@ public class BuildingCustomPlan implements IBuildingPlan {
                            this.minResources.put(typeRes, Integer.parseInt(value));
                            this.maxResources.put(typeRes, Integer.parseInt(value));
                         }
-                     } catch (Exception var15) {
-                        MillLog.printException(
-                           "Exception while parsing res " + typeRes.key + " in custom file " + this.buildingKey + " of culture " + this.culture.key + ":",
-                           var15
+                     } catch (Exception resParseException) {
+                        // 1.12.2 swallowed this, leaving the resource min/max count unset (defaulting the
+                        // building's resource requirements). A malformed res count is corruption — fatalize.
+                        throw MillCrash.fail(
+                           "Buildings",
+                           "Exception parsing res " + typeRes.key + " in custom file " + this.buildingKey + " of culture " + this.culture.key + ": "
+                              + resParseException
                         );
                      }
                   }

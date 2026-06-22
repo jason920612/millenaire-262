@@ -58,6 +58,7 @@ import org.millenaire.common.utilities.BlockStateUtilities;
 import org.millenaire.common.utilities.IntPoint;
 import org.millenaire.common.utilities.LanguageUtilities;
 import org.millenaire.common.utilities.MillCommonUtilities;
+import org.millenaire.common.utilities.MillCrash;
 import org.millenaire.common.utilities.MillLog;
 import org.millenaire.common.utilities.Point;
 import org.millenaire.common.utilities.WorldUtilities;
@@ -695,18 +696,22 @@ public class BuildingPlan implements IBuildingPlan, MillCommonUtilities.Weighted
                   }
 
                   PointType.colourPoints.put(cp.colour, cp);
-               } catch (MillLog.MillenaireException var6) {
-                  MillLog.error(null, "Error when loading a block type: " + var6.getMessage());
-               } catch (Exception var7) {
-                  MillLog.printException("Exception when parsing blocklist line: " + line, var7);
+               } catch (MillLog.MillenaireException contentException) {
+                  // 1.12.2 logged-and-skipped per malformed line (duplicate colour / unknown block). This is
+                  // declared content validation with a specific message — keep the per-line skip.
+                  MillLog.error(null, "Error when loading a block type: " + contentException.getMessage());
+               } catch (Exception parseException) {
+                  // 1.12.2 swallowed this catch-all, hiding an actual parse bug behind the per-line skip. Fatalize.
+                  throw MillCrash.fail("Buildings", "Exception parsing blocklist line <" + line + "> in " + file.getName() + ": " + parseException);
                }
             }
          }
 
          return false;
-      } catch (IOException var8) {
-         MillLog.printException(var8);
-         return true;
+      } catch (IOException blocklistIoException) {
+         // 1.12.2 swallowed this and returned true, which makes loadBuildingPoints() stop scanning and
+         // treat the master colour→block table as loaded. A read failure here is fatal — crash.
+         throw MillCrash.fail("Buildings", "Error reading blocklist file " + file.getAbsolutePath() + ": " + blocklistIoException);
       }
    }
 
@@ -728,8 +733,11 @@ public class BuildingPlan implements IBuildingPlan, MillCommonUtilities.Weighted
             }
 
             plans.put(set.key, set);
-         } catch (Exception var8) {
-            MillLog.printException("Exception when loading " + file.getName() + " plan set in culture " + culture.key + ":", var8);
+         } catch (Exception planSetLoadException) {
+            // 1.12.2 swallowed this, silently dropping the building from the culture's plan list. Fatalize.
+            throw MillCrash.fail(
+               "Buildings", "Exception loading " + file.getName() + " plan set in culture " + culture.key + ": " + planSetLoadException
+            );
          }
       }
 
@@ -822,8 +830,10 @@ public class BuildingPlan implements IBuildingPlan, MillCommonUtilities.Weighted
          } else {
             this.resCost.put(key, nb);
          }
-      } catch (Exception var5) {
-         MillLog.printException("Exception when calculating cost of: " + this, var5);
+      } catch (Exception costException) {
+         // 1.12.2 swallowed this, silently producing a wrong build cost (villagers then gather the wrong
+         // materials). A failure forming the InvItem key is a bug — fatalize.
+         throw MillCrash.fail("Buildings", "Exception calculating cost of " + this + ": " + costException);
       }
    }
 
@@ -839,8 +849,9 @@ public class BuildingPlan implements IBuildingPlan, MillCommonUtilities.Weighted
          } else {
             this.resCost.put(invitem, nb);
          }
-      } catch (Exception var4) {
-         MillLog.printException("Exception when calculating cost of: " + this, var4);
+      } catch (Exception costException) {
+         // 1.12.2 swallowed this, silently producing a wrong build cost. Fatalize.
+         throw MillCrash.fail("Buildings", "Exception calculating cost of " + this + ": " + costException);
       }
    }
 
@@ -853,8 +864,9 @@ public class BuildingPlan implements IBuildingPlan, MillCommonUtilities.Weighted
          } else {
             this.resCost.put(key, nb);
          }
-      } catch (Exception var4) {
-         MillLog.printException("Exception when calculating cost of: " + this, var4);
+      } catch (Exception costException) {
+         // 1.12.2 swallowed this, silently producing a wrong build cost. Fatalize.
+         throw MillCrash.fail("Buildings", "Exception calculating cost of " + this + ": " + costException);
       }
    }
 

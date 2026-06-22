@@ -20,6 +20,7 @@ import org.millenaire.common.item.ItemParchment;
 import org.millenaire.common.network.ServerSender;
 import org.millenaire.common.pathing.atomicstryker.RegionMapper;
 import org.millenaire.common.utilities.MillCommonUtilities;
+import org.millenaire.common.utilities.MillCrash;
 import org.millenaire.common.utilities.MillLog;
 import org.millenaire.common.utilities.Point;
 import org.millenaire.common.utilities.WorldUtilities;
@@ -55,8 +56,9 @@ public class WorldGenVillage {
       } else if (isWithinSpawnRadiusProtection(world, village, p)) {
          return false;
       } else if (village.centreBuilding == null) {
-         MillLog.printException(new MillLog.MillenaireException("Tried to create a bedrock lone building without a centre."));
-         return false;
+         // 1.12.2 logged and returned false. A bedrock lone building type without a centre is a malformed
+         // VillageType definition, not a runtime condition — fatalize.
+         throw MillCrash.fail("Buildings", "Bedrock lone building '" + village + "' has no centre building defined.");
       } else {
          if (MillConfigValues.LogWorldGeneration >= 1) {
             MillLog.major(null, "Generating bedrockbuilding: " + village);
@@ -216,10 +218,14 @@ public class WorldGenVillage {
             this.generateVillageAtPoint(
                world, random, chunkX * 16, 0, chunkZ * 16, null, true, false, true, Integer.MAX_VALUE, null, null, null, completionRatio
             );
-         } catch (Exception var13) {
-            MillLog.milldebug("WorldGen", "EXCEPTION during generate() at chunk " + chunkX + "/" + chunkZ + ": " + var13);
-            MillLog.printException(
-               "Exception when attempting to generate village in " + world + " (dimension: " + world.dimension().identifier() + ")", var13
+         } catch (Exception worldGenException) {
+            // 1.12.2 logged and swallowed this, leaving a partially-built / missing village in the world.
+            // A worldgen failure mid-placement is corruption — fatalize instead of degrading.
+            MillLog.milldebug("WorldGen", "EXCEPTION during generate() at chunk " + chunkX + "/" + chunkZ + ": " + worldGenException);
+            throw MillCrash.fail(
+               "Buildings",
+               "Exception generating village in " + world + " (dimension: " + world.dimension().identifier() + ") at chunk "
+                  + chunkX + "/" + chunkZ + ": " + worldGenException
             );
          }
       }
@@ -884,10 +890,11 @@ public class WorldGenVillage {
                   } else {
                      return false;
                   }
-               } catch (Exception var31) {
-                  MillLog.milldebug("WorldGen", "EXCEPTION generating village at " + p + ": " + var31);
-                  MillLog.printException("Exception when generating village:", var31);
-                  return false;
+               } catch (Exception villageBuildException) {
+                  // 1.12.2 logged and returned false, leaving a half-placed village in the world. A failure
+                  // partway through placement is corruption — fatalize instead of degrading.
+                  MillLog.milldebug("WorldGen", "EXCEPTION generating village at " + p + ": " + villageBuildException);
+                  throw MillCrash.fail("Buildings", "Exception generating village at " + p + ": " + villageBuildException);
                }
             } else {
                return false;
@@ -1009,14 +1016,12 @@ public class WorldGenVillage {
 
       for (int x = p.getiX() - villageType.radius; x <= p.getiX() + villageType.radius; x += 16) {
          for (int z = p.getiZ() - villageType.radius; z <= p.getiZ() + villageType.radius; z += 16) {
-            try {
-               String localBiome = this.getBiomeNameAtPos(world, x, z);
-               biomeTotalCounter++;
-               if (villageType.biomes.contains(localBiome)) {
-                  biomeValidCounter++;
-               }
-            } catch (Exception var9) {
-               MillLog.printException(var9);
+            // 1.12.2 wrapped the per-tile biome read in a swallow, silently undercounting valid tiles on
+            // failure (skewing the validity percentage). A biome read that throws is a bug — fatalize.
+            String localBiome = this.getBiomeNameAtPos(world, x, z);
+            biomeTotalCounter++;
+            if (villageType.biomes.contains(localBiome)) {
+               biomeValidCounter++;
             }
          }
       }

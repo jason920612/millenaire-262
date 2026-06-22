@@ -29,6 +29,7 @@ import org.millenaire.common.quest.QuestInstance;
 import org.millenaire.common.quest.QuestInstanceVillager;
 import org.millenaire.common.utilities.LanguageUtilities;
 import org.millenaire.common.utilities.MillCommonUtilities;
+import org.millenaire.common.utilities.MillCrash;
 import org.millenaire.common.utilities.MillLog;
 import org.millenaire.common.utilities.Point;
 import org.millenaire.common.village.Building;
@@ -599,8 +600,9 @@ public class UserProfile {
             if (MillConfigValues.LogWorldGeneration >= 1) {
                MillLog.major(null, "Loaded " + this.actionData.size() + " action data.");
             }
-         } catch (Exception var4) {
-            MillLog.printException(var4);
+         } catch (Exception actionDataLoadException) {
+            // 1.12.2 swallowed this, silently losing the player's quest/action data. Fatalize.
+            throw MillCrash.fail("World", "Error loading profile action data from " + dataFile.getAbsolutePath() + ": " + actionDataLoadException);
          }
       }
    }
@@ -643,8 +645,9 @@ public class UserProfile {
             }
 
             reader.close();
-         } catch (IOException var9) {
-            MillLog.printException(var9);
+         } catch (IOException profileConfigLoadException) {
+            // 1.12.2 swallowed this, silently losing the player's reputation/language/diplomacy. Fatalize.
+            throw MillCrash.fail("World", "Error loading profile config from " + configFile.getAbsolutePath() + ": " + profileConfigLoadException);
          }
       }
 
@@ -669,8 +672,9 @@ public class UserProfile {
             if (MillConfigValues.LogWorldGeneration >= 1) {
                MillLog.major(this, "Loaded " + this.profileTags.size() + " tags.");
             }
-         } catch (Exception var4) {
-            MillLog.printException(var4);
+         } catch (Exception profileTagsLoadException) {
+            // 1.12.2 swallowed this, silently losing the player's profile tags. Fatalize.
+            throw MillCrash.fail("World", "Error loading profile tags from " + tagsFile.getAbsolutePath() + ": " + profileTagsLoadException);
          }
       }
    }
@@ -699,8 +703,9 @@ public class UserProfile {
 
             reader.close();
          }
-      } catch (IOException var7) {
-         MillLog.printException(var7);
+      } catch (IOException questInstancesLoadException) {
+         // 1.12.2 swallowed this, silently losing the player's in-progress quests. Fatalize.
+         throw MillCrash.fail("World", "Error loading quest instances from " + questDataFile.getAbsolutePath() + ": " + questInstancesLoadException);
       }
    }
 
@@ -732,8 +737,9 @@ public class UserProfile {
             if (MillConfigValues.LogWorldGeneration >= 1) {
                MillLog.major(null, "Loaded " + this.actionData.size() + " action data.");
             }
-         } catch (Exception var6) {
-            MillLog.printException(var6);
+         } catch (Exception unlockedContentLoadException) {
+            // 1.12.2 swallowed this, silently losing the player's unlocked villagers/villages/trades. Fatalize.
+            throw MillCrash.fail("World", "Error loading unlocked content from " + dataFile.getAbsolutePath() + ": " + unlockedContentLoadException);
          }
       }
    }
@@ -877,8 +883,9 @@ public class UserProfile {
             }
 
             writer.flush();
-         } catch (IOException var5) {
-            MillLog.printException(var5);
+         } catch (IOException actionDataSaveException) {
+            // 1.12.2 swallowed this; a failed actiondata.txt write silently loses quest/action progress. Fatalize.
+            throw MillCrash.fail("World", "Error saving profile action data to " + configFile.getAbsolutePath() + ": " + actionDataSaveException);
          }
       }
    }
@@ -919,8 +926,9 @@ public class UserProfile {
             }
 
             writer.flush();
-         } catch (IOException var5) {
-            MillLog.printException(var5);
+         } catch (IOException profileConfigSaveException) {
+            // 1.12.2 swallowed this; a failed config.txt write silently loses reputation/language/diplomacy. Fatalize.
+            throw MillCrash.fail("World", "Error saving profile config to " + configFile.getAbsolutePath() + ": " + profileConfigSaveException);
          }
       }
    }
@@ -937,8 +945,9 @@ public class UserProfile {
             }
 
             writer.flush();
-         } catch (IOException var5) {
-            MillLog.printException(var5);
+         } catch (IOException profileTagsSaveException) {
+            // 1.12.2 swallowed this; a failed tags.txt write silently loses profile tags. Fatalize.
+            throw MillCrash.fail("World", "Error saving profile tags to " + configFile.getAbsolutePath() + ": " + profileTagsSaveException);
          }
       }
    }
@@ -955,8 +964,9 @@ public class UserProfile {
             }
 
             writer.flush();
-         } catch (IOException var5) {
-            MillLog.printException(var5);
+         } catch (IOException questInstancesSaveException) {
+            // 1.12.2 swallowed this; a failed quests.txt write silently loses in-progress quests. Fatalize.
+            throw MillCrash.fail("World", "Error saving quest instances to " + questDataFile.getAbsolutePath() + ": " + questInstancesSaveException);
          }
       }
    }
@@ -985,8 +995,9 @@ public class UserProfile {
             }
 
             writer.flush();
-         } catch (IOException var5) {
-            MillLog.printException(var5);
+         } catch (IOException unlockedContentSaveException) {
+            // 1.12.2 swallowed this; a failed unlockedcontent.txt write silently loses unlocked content. Fatalize.
+            throw MillCrash.fail("World", "Error saving unlocked content to " + configFile.getAbsolutePath() + ": " + unlockedContentSaveException);
          }
       }
    }

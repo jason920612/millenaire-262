@@ -40,6 +40,7 @@ import org.millenaire.common.network.StreamReadWrite;
 import org.millenaire.common.quest.SpecialQuestActions;
 import org.millenaire.common.utilities.DevModUtilities;
 import org.millenaire.common.utilities.MillCommonUtilities;
+import org.millenaire.common.utilities.MillCrash;
 import org.millenaire.common.utilities.MillLog;
 import org.millenaire.common.utilities.Point;
 import org.millenaire.common.village.Building;
@@ -329,13 +330,12 @@ public class MillWorldData {
 
    public Building getBuilding(Point p) {
       if (this.buildings.containsKey(p)) {
-         if (this.buildings.get(p) == null) {
-            MillLog.error(this, "Building record for " + p + " is null.");
-         } else if (this.buildings.get(p).location == null) {
-            MillLog.printException("Building location for " + p + " is null.", new Exception());
-         }
-
-         return this.buildings.get(p);
+         Building building = this.buildings.get(p);
+         // 1.12.2 logged (MillLog.error / printException) and returned the broken building. A null
+         // record or a building with a null location is corruption — fatalize instead of returning it.
+         MillCrash.check(building != null, "World", "Building record for " + p + " is null.");
+         MillCrash.check(building.location != null, "World", "Building location for " + p + " is null.");
+         return building;
       } else {
          if (MillConfigValues.LogWorldInfo >= 2) {
             MillLog.minor(this, "Could not find a building at location " + p + " amoung " + this.buildings.size() + " records.");
@@ -426,17 +426,17 @@ public class MillWorldData {
 
       for (File file : buildingsDir.listFiles(new MillCommonUtilities.ExtFileFilter("gz"))) {
          try (FileInputStream fileinputstream = new FileInputStream(file)) {
-            CompoundTag nbttagcompound = NbtIo.readCompressed(fileinputstream, net.minecraft.nbt.NbtAccounter.unlimitedHeap());
-            ListTag nbttaglist = nbttagcompound.getListOrEmpty("buildings");
+            CompoundTag buildingsFileTag = NbtIo.readCompressed(fileinputstream, net.minecraft.nbt.NbtAccounter.unlimitedHeap());
+            ListTag buildingTagList = buildingsFileTag.getListOrEmpty("buildings");
 
-            for (int i = 0; i < nbttaglist.size(); i++) {
-               CompoundTag nbttagcompound1 = nbttaglist.getCompoundOrEmpty(i);
-               new Building(this, nbttagcompound1);
+            for (int buildingIndex = 0; buildingIndex < buildingTagList.size(); buildingIndex++) {
+               CompoundTag buildingTag = buildingTagList.getCompoundOrEmpty(buildingIndex);
+               new Building(this, buildingTag);
             }
-         } catch (Exception var13) {
-            MillLog.printException("Error when attempting to load building file " + file.getAbsolutePath() + ":", var13);
-         } catch (OutOfMemoryError var14) {
-            MillLog.printException("Out of memory error when attempting to load building file " + file.getAbsolutePath() + ":", var14);
+         } catch (Exception loadException) {
+            // 1.12.2 logged this and skipped the file, silently dropping a village's buildings.
+            // A building file that fails to load is corruption / data loss — fatalize instead.
+            throw MillCrash.fail("World", "Error loading building file " + file.getAbsolutePath() + ": " + loadException);
          }
       }
 
@@ -476,8 +476,9 @@ public class MillWorldData {
             if (MillConfigValues.LogWorldGeneration >= 1) {
                MillLog.major(null, "Loaded " + this.globalTags.size() + " tags.");
             }
-         } catch (Exception var4) {
-            MillLog.printException(var4);
+         } catch (Exception tagsLoadException) {
+            // 1.12.2 swallowed this; an existing tags.txt that fails to read is corruption — fatalize.
+            throw MillCrash.fail("World", "Error loading global tags from " + tagsFile.getAbsolutePath() + ": " + tagsLoadException);
          }
       }
    }
@@ -526,8 +527,9 @@ public class MillWorldData {
                if (MillConfigValues.LogHybernation >= 1) {
                   MillLog.major(this, "Loading from main list over. Count at end: " + this.villagerRecords.size());
                }
-            } catch (Exception var8) {
-               MillLog.printException("Error when attempting to load villager records file " + file1.getAbsolutePath() + ":", var8);
+            } catch (Exception recordsLoadException) {
+               // 1.12.2 swallowed this, silently losing every villager record. Fatalize.
+               throw MillCrash.fail("World", "Error loading villager records file " + file1.getAbsolutePath() + ": " + recordsLoadException);
             }
          }
       }
@@ -577,8 +579,9 @@ public class MillWorldData {
             if (MillConfigValues.LogWorldGeneration >= 1) {
                MillLog.major(null, "Loaded " + this.villagesList.names.size() + " village positions.");
             }
-         } catch (Exception var10) {
-            MillLog.printException(var10);
+         } catch (Exception villagesLoadException) {
+            // 1.12.2 swallowed this; a malformed villages.txt silently loses all village locations. Fatalize.
+            throw MillCrash.fail("World", "Error loading villages list from " + villageLog.getAbsolutePath() + ": " + villagesLoadException);
          }
       }
 
@@ -621,8 +624,9 @@ public class MillWorldData {
             if (MillConfigValues.LogWorldGeneration >= 1) {
                MillLog.major(null, "Loaded " + this.loneBuildingsList.names.size() + " lone buildings positions.");
             }
-         } catch (Exception var9) {
-            MillLog.printException(var9);
+         } catch (Exception loneBuildingsLoadException) {
+            // 1.12.2 swallowed this; a malformed lonebuildings.txt silently loses all lone-building locations. Fatalize.
+            throw MillCrash.fail("World", "Error loading lone buildings list from " + villageLog.getAbsolutePath() + ": " + loneBuildingsLoadException);
          }
       }
    }
@@ -650,8 +654,9 @@ public class MillWorldData {
             }
 
             reader.close();
-         } catch (IOException var7) {
-            MillLog.printException(var7);
+         } catch (IOException configLoadException) {
+            // 1.12.2 swallowed this; a config.txt read failure silently leaves generateVillages wrong. Fatalize.
+            throw MillCrash.fail("World", "Error loading world config from " + configFile.getAbsolutePath() + ": " + configLoadException);
          }
       }
 
@@ -948,8 +953,10 @@ public class MillWorldData {
                }
             }
          }
-      } catch (Exception var7) {
-         MillLog.printException("Exception raised while logging Millénaire time usage:", var7);
+      } catch (Exception reportTimeException) {
+         // 1.12.2 swallowed this. A throw here means the per-village timing lists (rankByPos vs
+         // buildingsTime/villagersTime) are out of sync — a structural bug, not a transient. Fatalize.
+         throw MillCrash.fail("World", "Exception while logging Millénaire time usage: " + reportTimeException);
       }
    }
 
@@ -981,8 +988,9 @@ public class MillWorldData {
             }
 
             writer.flush();
-         } catch (IOException var5) {
-            MillLog.printException(var5);
+         } catch (IOException tagsSaveException) {
+            // 1.12.2 swallowed this; a failed tags.txt write silently loses global tags. Fatalize.
+            throw MillCrash.fail("World", "Error saving global tags to " + configFile.getAbsolutePath() + ": " + tagsSaveException);
          }
       }
    }
@@ -1028,8 +1036,9 @@ public class MillWorldData {
             if (MillConfigValues.LogWorldGeneration >= 1) {
                MillLog.major(null, "Saved " + this.loneBuildingsList.names.size() + " lone buildings.txt positions.");
             }
-         } catch (IOException var7) {
-            MillLog.printException(var7);
+         } catch (IOException loneBuildingsSaveException) {
+            // 1.12.2 swallowed this; a failed lonebuildings.txt write silently loses lone-building positions. Fatalize.
+            throw MillCrash.fail("World", "Error saving lone buildings to " + villageLog.getAbsolutePath() + ": " + loneBuildingsSaveException);
          }
       }
    }
@@ -1075,8 +1084,9 @@ public class MillWorldData {
             if (MillConfigValues.LogWorldGeneration >= 1) {
                MillLog.major(null, "Saved " + this.villagesList.names.size() + " village positions.");
             }
-         } catch (IOException var7) {
-            MillLog.printException(var7);
+         } catch (IOException villagesSaveException) {
+            // 1.12.2 swallowed this; a failed villages.txt write silently loses village positions. Fatalize.
+            throw MillCrash.fail("World", "Error saving villages to " + villageLog.getAbsolutePath() + ": " + villagesSaveException);
          }
       }
    }
@@ -1110,8 +1120,9 @@ public class MillWorldData {
 
             Path finalPath = new File(this.millenaireDir, "villagerRecords.gz").toPath();
             Files.move(tempFile.toPath(), finalPath, StandardCopyOption.REPLACE_EXISTING);
-         } catch (IOException var6) {
-            MillLog.printException(var6);
+         } catch (IOException recordsSaveException) {
+            // 1.12.2 swallowed this; a failed villagerRecords.gz write silently loses every villager record. Fatalize.
+            throw MillCrash.fail("World", "Error saving villager records to " + tempFile.getAbsolutePath() + ": " + recordsSaveException);
          }
       }
    }
@@ -1127,8 +1138,9 @@ public class MillWorldData {
             }
 
             writer.flush();
-         } catch (IOException var3) {
-            MillLog.printException(var3);
+         } catch (IOException configSaveException) {
+            // 1.12.2 swallowed this; a failed config.txt write silently loses the generate_villages setting. Fatalize.
+            throw MillCrash.fail("World", "Error saving world config to " + configFile.getAbsolutePath() + ": " + configSaveException);
          }
       }
    }

@@ -17,6 +17,7 @@ public final class BehaviourGoToPoint implements MillBehaviour {
    private double lastX = Double.NaN;
    private double lastZ;
    private int stuckTicks;
+   private org.millenaire.common.ai.nav.Mill3DNavigator nav3d; // ground-up 3D path executor (ValueFieldNav)
    private net.minecraft.core.BlockPos detour; // side waypoint to re-route around a stuck spot
    private int detourTicks;
    private int detourSide = 1;
@@ -60,6 +61,16 @@ public final class BehaviourGoToPoint implements MillBehaviour {
       // in-reach jumps, climbs, going around obstacles) and explores all routes for the optimal one. The
       // flow-field cell-by-cell follow was cruder (±1 Y horizontal neighbours only) so it got blocked easily;
       // the field stays as infrastructure (escape/long-range) but normal movement goes through the real A*.
+      // Ground-up 3D navigator (ValueFieldNav): drive movement along a real 3D path (jumps over gaps, climbs)
+      // via the MoveControl. Falls through to the vanilla navigation as a safety net if it finds no 3D route.
+      if (org.millenaire.common.config.MillConfigValues.ValueFieldNav) {
+         if (this.nav3d == null) {
+            this.nav3d = new org.millenaire.common.ai.nav.Mill3DNavigator();
+         }
+         if (this.nav3d.navigateTo(villager, new net.minecraft.core.BlockPos(d.getiX(), d.getiY(), d.getiZ()))) {
+            return true;
+         }
+      }
       if (villager.getNavigation().isDone()) {
          boolean pathed = villager.getNavigation().moveTo(d.getiX() + 0.5, d.getiY(), d.getiZ() + 0.5, SPEED);
          if (!pathed) {
@@ -93,6 +104,9 @@ public final class BehaviourGoToPoint implements MillBehaviour {
       this.lastX = Double.NaN;
       this.stuckTicks = 0;
       this.detour = null;
+      if (this.nav3d != null) {
+         this.nav3d.reset();
+      }
    }
 
    /**

@@ -14,7 +14,6 @@ import org.millenaire.common.entity.MillVillager;
  */
 public final class Mill3DNavigator {
    private static final int MAX_NODES = 8000; // bigger budget for medium-range 3D routes (long range → HPA*)
-   private static final double SPEED = 1.0;
    private static final int REPLAN_TICKS = 40;
 
    private List<BlockPos> path;
@@ -26,8 +25,13 @@ public final class Mill3DNavigator {
    private double lastZ;
    private int stuckTicks;
 
-   /** Drive {@code villager} toward {@code goal} for one tick. @return false when arrived or unreachable. */
-   public boolean navigateTo(MillVillager villager, BlockPos goal) {
+   /**
+    * Drive {@code villager} toward {@code goal} for one tick at {@code speed} (the MOVEMENT_SPEED multiplier —
+    * SAME scale as PathNavigation.moveTo's speedModifier and MoveControl.setWantedPosition's speed, so 0.5 is
+    * the normal Mill walking speed; passing it through means task movement matches normal walking, and combat
+    * can ask for its own faster approach). @return false when arrived or unreachable.
+    */
+   public boolean navigateTo(MillVillager villager, BlockPos goal, double speed) {
       BlockPos here = villager.blockPosition();
       if (here.closerThan(goal, 1.6)) {
          return false; // arrived
@@ -60,7 +64,7 @@ public final class Mill3DNavigator {
       }
       BlockPos target = this.path.get(Math.min(this.index, this.path.size() - 1));
 
-      villager.getMoveControl().setWantedPosition(target.getX() + 0.5, target.getY(), target.getZ() + 0.5, SPEED);
+      villager.getMoveControl().setWantedPosition(target.getX() + 0.5, target.getY(), target.getZ() + 0.5, speed);
       // Jump ONLY when actually needed: climbing UP, or an actual air GAP (a hole — no floor) one step toward
       // the target. Do NOT jump just because the next node is far (that caused pointless in-place jumping on
       // flat ground). A wall ahead is a climb (handled by 'climbs'), not a gap.

@@ -76,7 +76,7 @@ public final class BehaviourCombat implements MillBehaviour {
          if (this.nav3d == null) {
             this.nav3d = new org.millenaire.common.ai.nav.Mill3DNavigator();
          }
-         this.nav3d.navigateTo(villager, goal); // must run EVERY tick (drives the MoveControl)
+         this.nav3d.navigateTo(villager, goal, sp); // must run EVERY tick (drives the MoveControl); sp = combat pace
       } else if (recompute) {
          double gx = goal != null ? goal.getX() + 0.5 : target.getX();
          double gy = goal != null ? goal.getY() : target.getY();

@@ -68,7 +68,7 @@ public final class BehaviourGoToPoint implements MillBehaviour {
          if (this.nav3d == null) {
             this.nav3d = new org.millenaire.common.ai.nav.Mill3DNavigator();
          }
-         this.nav3d.navigateTo(villager, new net.minecraft.core.BlockPos(d.getiX(), d.getiY(), d.getiZ()));
+         this.nav3d.navigateTo(villager, new net.minecraft.core.BlockPos(d.getiX(), d.getiY(), d.getiZ()), SPEED);
       } else if (villager.getNavigation().isDone()) {
          // ValueFieldNav OFF → legacy vanilla navigation.
          boolean pathed = villager.getNavigation().moveTo(d.getiX() + 0.5, d.getiY(), d.getiZ() + 0.5, SPEED);

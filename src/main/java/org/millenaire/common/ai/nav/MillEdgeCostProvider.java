@@ -75,6 +75,14 @@ public final class MillEdgeCostProvider implements EdgeCostProvider {
       BlockState ground = level.getBlockState(foot.below());
       BlockState at = level.getBlockState(foot);
       BlockState head = level.getBlockState(foot.above());
-      return ground.isSolid() && at.getFluidState().isEmpty() && at.isAir() && head.isAir();
+      // Ground = anything with collision to stand ON — dirt, grass, paths, slabs, farmland, stone, etc. —
+      // NOT just full isSolid() blocks (the old test excluded the very paths/slabs/farmland villagers walk on,
+      // so the flow field covered almost nothing → villagers couldn't reach worksites and falsely read as
+      // "trapped"). Foot+head must be PASSABLE (empty collision, so tall grass / crops / snow are walk-through),
+      // with no fluid hazard underfoot.
+      return !ground.getCollisionShape(level, foot.below()).isEmpty()
+         && at.getFluidState().isEmpty()
+         && at.getCollisionShape(level, foot).isEmpty()
+         && head.getCollisionShape(level, foot.above()).isEmpty();
    }
 }

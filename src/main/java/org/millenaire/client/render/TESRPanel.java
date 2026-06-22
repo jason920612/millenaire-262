@@ -115,15 +115,7 @@ public class TESRPanel implements BlockEntityRenderer<TileEntityPanel, PanelRend
       // Board: scale 2/3 (Y/Z flipped as in the original), submit the sign-board part.
       poseStack.pushPose();
       poseStack.scale(0.6666667F, -0.6666667F, -0.6666667F);
-      // 26.2 PORT FIX: 1.12 ModelPanel.renderSign() called ModelRenderer.render(0.0625F), which applied the
-      // model-pixel->block (1/16) scale internally. 26.2's submitModelPart does NOT auto-apply it, so without
-      // this push/scale(1/16)/pop the 24x24x2 board rendered 16x too large and floated far off the wall.
-      // The icons/text below are intentionally drawn in the unscaled-by-1/16 0.6666667 space (as in 1.12),
-      // so the 1/16 scale must wrap ONLY the board submit.
-      poseStack.pushPose();
-      poseStack.scale(0.0625F, 0.0625F, 0.0625F);
       this.model.renderSign(poseStack, collector, RenderTypes.entitySolid(state.texture), state.lightCoords);
-      poseStack.popPose();
       poseStack.translate(0.0F, 0.24F, 0.0F);
 
       // Icons (within the board's local space, like the original drawIcon calls).

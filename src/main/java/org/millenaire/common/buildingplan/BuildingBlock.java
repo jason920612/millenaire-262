@@ -12,7 +12,7 @@ import net.minecraft.world.level.block.FurnaceBlock;
 import net.minecraft.world.level.block.HorizontalDirectionalBlock;
 import net.minecraft.world.level.block.LeavesBlock;
 import net.minecraft.world.level.block.LiquidBlock;
-import net.minecraft.world.level.block.TorchBlock;
+import net.minecraft.world.level.block.WallTorchBlock;
 import net.minecraft.world.level.block.state.properties.DoubleBlockHalf;
 import net.minecraft.world.level.block.state.properties.DoorHingeSide;
 import net.minecraft.world.level.block.state.BlockState;
@@ -25,6 +25,7 @@ import net.minecraft.world.entity.EntityType;
 import net.minecraft.world.level.block.entity.BlockEntity;
 import net.minecraft.world.level.block.entity.SpawnerBlockEntity;
 import net.minecraft.world.level.block.entity.DispenserBlockEntity;
+import net.minecraft.core.BlockPos;
 import net.minecraft.core.Direction;
 import net.minecraft.resources.Identifier;
 import net.minecraft.world.level.Level;
@@ -226,8 +227,7 @@ public class BuildingBlock {
             world.setBlock(this.p.getBlockPos(), chestBS, 3);
             blockSet = true;
          } else if (this.special == TORCHGUESS) {
-            TorchBlock blockTorch = (TorchBlock)Blocks.TORCH;
-            BlockState bs = blockTorch.defaultBlockState();
+            BlockState bs = this.guessTorchState(world);
             world.setBlock(this.p.getBlockPos(), bs, 3);
             blockSet = true;
          } else if (this.special == INVERTED_DOOR) {
@@ -714,6 +714,33 @@ public class BuildingBlock {
       } else {
          return !bsWest.isSolidRender() ? Direction.WEST : Direction.NORTH;
       }
+   }
+
+   /**
+    * Replicates 1.12 {@code BlockTorch.getStateForPlacement} for a {@code torchGuess} special point.
+    *
+    * <p>In 1.12 a single {@code BlockTorch} encoded both the floor torch (FACING=UP) and the wall
+    * torches (FACING=NORTH/SOUTH/EAST/WEST) and {@code getStateForPlacement} picked the floor variant
+    * if it could stand on the block below, otherwise it attached to the first solid horizontal
+    * neighbour. 26.2 split these into {@code minecraft:torch} (no facing) and {@code minecraft:wall_torch}
+    * (facing). The straight port hard-coded the floor torch, so torchGuess torches with air below ended
+    * up FLOATING. This restores the original guess: floor torch when it can survive, else a wall_torch
+    * whose FACING points away from a solid neighbour (the wall it hangs on is at relative(opposite)).</p>
+    */
+   private BlockState guessTorchState(Level world) {
+      BlockPos pos = this.p.getBlockPos();
+      BlockState floor = Blocks.TORCH.defaultBlockState();
+      if (floor.canSurvive(world, pos)) {
+         return floor;
+      }
+      for (Direction facing : Direction.Plane.HORIZONTAL) {
+         // wall_torch FACING points away from the wall; the supporting block is at the OPPOSITE side.
+         BlockState wall = Blocks.WALL_TORCH.defaultBlockState().setValue(WallTorchBlock.FACING, facing);
+         if (wall.canSurvive(world, pos)) {
+            return wall;
+         }
+      }
+      return floor;
    }
 
    public void pathBuild(Building th) {

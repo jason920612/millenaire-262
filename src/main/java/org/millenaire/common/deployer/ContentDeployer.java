@@ -47,6 +47,50 @@ public class ContentDeployer {
       }
    }
 
+   /**
+    * Fingerprint of the millenaire/ content packaged in the jar. Computed from each jar entry's
+    * name + uncompressed size + CRC-32 (all available from JarEntry metadata, so no stream reads).
+    * Written to millenaire/content-hash.txt on deploy and compared on the next launch so that ANY
+    * content change (e.g. a corrected blocklist.txt) forces a redeploy, even when the mod version
+    * string is unchanged. Upstream 1.12.2 only gated on the version string, which silently served a
+    * stale deployed folder whenever content was fixed without a version bump (the byzantines
+    * architect_A NPE: a stale blocklist.txt with 1.12 block names was never overwritten).
+    */
+   private static String computeContentFingerprint(String modJarPath, String deployLocation, String folder) throws IOException {
+      try (JarFile file = new JarFile(modJarPath)) {
+         java.util.TreeMap<String, String> sorted = new java.util.TreeMap<>();
+         Enumeration<JarEntry> e = file.entries();
+         while (e.hasMoreElements()) {
+            JarEntry entry = e.nextElement();
+            String jarEntryName = entry.getName();
+            if (jarEntryName.startsWith(deployLocation + folder) && !entry.isDirectory()) {
+               // exclude the bookkeeping files we write ourselves so they don't perturb the hash
+               if (jarEntryName.endsWith("/version.txt") || jarEntryName.endsWith("/content-hash.txt")) {
+                  continue;
+               }
+               sorted.put(jarEntryName, entry.getSize() + ":" + entry.getCrc());
+            }
+         }
+
+         StringBuilder sb = new StringBuilder();
+         for (java.util.Map.Entry<String, String> ent : sorted.entrySet()) {
+            sb.append(ent.getKey()).append('=').append(ent.getValue()).append('\n');
+         }
+
+         try {
+            java.security.MessageDigest md = java.security.MessageDigest.getInstance("SHA-1");
+            byte[] digest = md.digest(sb.toString().getBytes(java.nio.charset.StandardCharsets.UTF_8));
+            StringBuilder hex = new StringBuilder();
+            for (byte b : digest) {
+               hex.append(Character.forDigit((b >> 4) & 0xF, 16)).append(Character.forDigit(b & 0xF, 16));
+            }
+            return hex.toString();
+         } catch (java.security.NoSuchAlgorithmException sha1Missing) {
+            throw new IOException("SHA-1 unavailable for content fingerprint", sha1Missing);
+         }
+      }
+   }
+
    public static void deployContent(File ourJar) {
       if (!ContentDeployer.class.getResource("ContentDeployer.class").toString().startsWith("jar")) {
          Mill.LOGGER.warn("No need to redeploy Millénaire as we are in a dev environment.");
@@ -56,6 +100,7 @@ public class ContentDeployer {
          try {
             boolean redeployMillenaire = false;
             File millenaireDir = new File(modsDir, "millenaire");
+            String packagedHash = computeContentFingerprint(ourJar.getAbsolutePath(), "todeploy/", "millenaire/");
             if ("8.1.2".equals("@VERSION@")) {
                redeployMillenaire = true;
                Mill.LOGGER.warn("Deploying millenaire/ as we are using a dev version and can't test whether it has changed.");
@@ -76,7 +121,33 @@ public class ContentDeployer {
                      MillCommonUtilities.deleteDir(millenaireDir);
                      Mill.LOGGER.warn("Redeploying millenaire/ to version 8.1.2 as it has version " + versionString + ".");
                   } else {
-                     Mill.LOGGER.warn("No need to redeploy Millénaire as the millenaire folder is already at vesion " + versionString + ".");
+                     // Version matches: also compare the content fingerprint. A content-only fix (same version)
+                     // must still refresh the deployed folder, otherwise a stale blocklist.txt/plan set is served.
+                     File hashFile = new File(millenaireDir, "content-hash.txt");
+                     String deployedHash = null;
+                     if (hashFile.exists()) {
+                        try (BufferedReader hashReader = MillCommonUtilities.getReader(hashFile)) {
+                           deployedHash = hashReader.readLine();
+                        }
+                     }
+
+                     if (!packagedHash.equals(deployedHash)) {
+                        redeployMillenaire = true;
+                        MillCommonUtilities.deleteDir(millenaireDir);
+                        Mill.LOGGER
+                           .warn(
+                              "Redeploying millenaire/ at version "
+                                 + versionString
+                                 + ": packaged content fingerprint ("
+                                 + packagedHash
+                                 + ") differs from deployed ("
+                                 + deployedHash
+                                 + ")."
+                           );
+                     } else {
+                        Mill.LOGGER
+                           .warn("No need to redeploy Millénaire as the millenaire folder is already at version " + versionString + " with matching content.");
+                     }
                   }
                }
             }
@@ -86,6 +157,7 @@ public class ContentDeployer {
                   long startTime = System.currentTimeMillis();
                   copyFolder(ourJar.getAbsolutePath(), "todeploy/", "millenaire/", modsDir);
                   Files.write(Paths.get(modsDir.getAbsolutePath() + "/millenaire/version.txt"), "8.1.2".getBytes());
+                  Files.write(Paths.get(modsDir.getAbsolutePath() + "/millenaire/content-hash.txt"), packagedHash.getBytes());
                   Mill.LOGGER.warn("Deployed millenaire folder in " + (System.currentTimeMillis() - startTime) + " ms.");
                } catch (IOException deployException) {
                   // FAIL-FAST: a failed millenaire/ deploy leaves the content folder absent/partial, so every

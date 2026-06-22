@@ -153,6 +153,44 @@ public class VillagerRecord implements Cloneable {
       }
    }
 
+   /** The Unicode replacement character that marks a name decoded with the wrong charset (see read()). */
+   private static final char CORRUPT_NAME_MARKER = '\uFFFD';
+
+   private static boolean isCorruptName(String name) {
+      return name != null && name.indexOf(CORRUPT_NAME_MARKER) >= 0;
+   }
+
+   /**
+    * Regenerate any villager name that was persisted with the U+FFFD replacement char (charset-mangled
+    * before getReader was fixed). Reuses the new-villager naming path (VillagerType.getRandomFirstName /
+    * getRandomFamilyName) so the save self-heals on load. No-op for valid names.
+    */
+   private static void repairCorruptName(VillagerRecord vr) {
+      VillagerType vtype = vr.getType();
+      if (vtype == null) {
+         return;
+      }
+
+      if (isCorruptName(vr.firstName)) {
+         String old = vr.firstName;
+         vr.firstName = vtype.getRandomFirstName();
+         MillLog.major(vr, "Regenerated corrupt firstName (was '" + old + "') -> '" + vr.firstName + "'");
+      }
+
+      if (isCorruptName(vr.familyName)) {
+         String old = vr.familyName;
+         Set<String> namesTaken;
+         if (vr.getTownHallPos() != null && vr.mw.getBuilding(vr.getTownHallPos()) != null) {
+            namesTaken = vr.mw.getBuilding(vr.getTownHallPos()).getAllFamilyNames();
+         } else {
+            namesTaken = new HashSet<>();
+         }
+
+         vr.familyName = vtype.getRandomFamilyName(namesTaken);
+         MillLog.major(vr, "Regenerated corrupt familyName (was '" + old + "') -> '" + vr.familyName + "'");
+      }
+   }
+
    public static VillagerRecord read(MillWorldData mw, CompoundTag nbttagcompound, String label) {
       if (!nbttagcompound.contains(label + "_id") && !nbttagcompound.contains(label + "_lid")) {
          return null;
@@ -220,6 +258,13 @@ public class VillagerRecord implements Cloneable {
             if (vr.scale == 0.0F || vr.scale == 1.0F) {
                initialisePersonalizedData(vr, vr.getType());
             }
+
+            // 26.2 PORT FIX: pre-fix saves persisted names that getReader had decoded as UTF-8 from a
+            // Windows-1252 source, turning bytes like 0xFC ('ü') into the U+FFFD replacement char. The
+            // original bytes are gone, so the stored name is unrecoverable -> regenerate from the culture's
+            // name lists (the same path new villagers use) so the save self-heals on load. Only triggers on
+            // names actually containing U+FFFD, never on valid names.
+            repairCorruptName(vr);
 
             return vr;
          }

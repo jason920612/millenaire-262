@@ -1696,6 +1696,10 @@ public abstract class MillVillager extends PathfinderMob implements IAStarPathed
       return this.getCulture().getRandomNameFromList(this.vtype.familyNameList);
    }
 
+   public String getRandomFirstName() {
+      return this.getCulture().getRandomNameFromList(this.vtype.firstNameList);
+   }
+
    public VillagerRecord getRecord() {
       return this.mw == null ? null : this.mw.getVillagerRecordById(this.getVillagerId());
    }
@@ -2896,6 +2900,21 @@ public abstract class MillVillager extends PathfinderMob implements IAStarPathed
 
       this.familyName = input.getStringOr("familyName", "");
       this.firstName = input.getStringOr("firstName", "");
+      // 26.2 PORT FIX: pre-fix saves baked the U+FFFD replacement char into names (Windows-1252 bytes
+      // mis-decoded as UTF-8 before getReader was fixed). The original chars are unrecoverable, so
+      // regenerate from the culture name lists (same path as a new villager) so the entity NBT self-heals.
+      if (this.vtype != null && this.getCulture() != null) {
+         if (this.firstName != null && this.firstName.indexOf('\uFFFD') >= 0) {
+            String old = this.firstName;
+            this.firstName = this.getRandomFirstName();
+            MillLog.major(this, "Regenerated corrupt firstName (was '" + old + "') -> '" + this.firstName + "'");
+         }
+         if (this.familyName != null && this.familyName.indexOf('\uFFFD') >= 0) {
+            String old = this.familyName;
+            this.familyName = this.getRandomFamilyName();
+            MillLog.major(this, "Regenerated corrupt familyName (was '" + old + "') -> '" + this.familyName + "'");
+         }
+      }
       this.gender = input.getIntOr("gender", 0);
       if (input.contains("villager_lid")) {
          this.setVillagerId(Math.abs(input.getLongOr("villager_lid", 0L)));

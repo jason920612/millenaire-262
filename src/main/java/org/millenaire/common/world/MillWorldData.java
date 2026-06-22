@@ -1260,7 +1260,11 @@ public class MillWorldData {
    }
 
    private void testTimeReset() {
-      if (this.world.getGameTime() < this.lastWorldTime) {
+      // lastWorldTime starts at the Long.MAX_VALUE "uninitialised" sentinel, so the FIRST tick after a load
+      // always reads getGameTime() < MAX_VALUE and fired a spurious "World time has gone from
+      // 9223372036854775807 ... will break Millénaire" warning. Only warn once we hold a REAL previous time
+      // (time genuinely moved backward during play, e.g. /time set) — not on that uninitialised first tick.
+      if (this.lastWorldTime != Long.MAX_VALUE && this.world.getGameTime() < this.lastWorldTime) {
          ServerSender.sendTranslatedSentenceInRange(
             this.world, new Point(0.0, 0.0, 0.0), Integer.MAX_VALUE, '4', "error.backwardtime", "" + this.lastWorldTime, "" + this.world.getGameTime()
          );

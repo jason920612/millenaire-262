@@ -44,6 +44,8 @@ import net.minecraft.world.level.storage.LevelResource;
 import org.millenaire.common.advancements.GenericAdvancement;
 import org.millenaire.common.advancements.MillAdvancements;
 import org.millenaire.common.config.MillConfigValues;
+import org.millenaire.common.convert.ContentFile;
+import org.millenaire.common.convert.MillConvert;
 import org.millenaire.common.culture.Culture;
 import org.millenaire.common.culture.VillagerType;
 import org.millenaire.common.forge.Mill;
@@ -423,29 +425,9 @@ public class MillCommonUtilities {
    }
 
    public static BufferedReader getReader(File file) throws IOException {
-      byte[] bytes;
-      try (FileInputStream fis = new FileInputStream(file)) {
-         bytes = fis.readAllBytes();
-      }
-
-      String content;
-      try {
-         // Strict UTF-8 first: newer / translation content (including CJK like the Chinese villager speech)
-         // is UTF-8 and decodes cleanly here.
-         content = java.nio.charset.StandardCharsets.UTF_8.newDecoder()
-            .onMalformedInput(java.nio.charset.CodingErrorAction.REPORT)
-            .onUnmappableCharacter(java.nio.charset.CodingErrorAction.REPORT)
-            .decode(java.nio.ByteBuffer.wrap(bytes))
-            .toString();
-      } catch (java.nio.charset.CharacterCodingException notUtf8) {
-         // Legacy Millénaire content (culture name lists, sentences, dialogues) is Windows-1252: single-byte
-         // accents like ü=0xFC that are INVALID UTF-8 — reading them as UTF-8 produced the villager-name
-         // mojibake ("Türkoglu" → "T�rkoglu"). Decode those as Windows-1252. (1.12 read with the platform
-         // default, which was Windows-1252 on the author's system; this detects per file so both encodings work.)
-         content = new String(bytes, java.nio.charset.Charset.forName("windows-1252"));
-      }
-
-      return new BufferedReader(new java.io.StringReader(content));
+      // Single canonical implementation of the UTF-8 → Windows-1252 encoding detection now lives in the
+      // unified conversion protocol; getReader stays the public entry point and forwards to it.
+      return MillConvert.contentFileToReader(new ContentFile(file));
    }
 
    public static String getShortPrice(int price) {

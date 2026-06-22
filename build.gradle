@@ -90,6 +90,13 @@ processResources {
 	}
 }
 
+// The sourcesJar (and any other Jar) packages the same overlay+upstream resource dirs, so it sees the same
+// duplicate (e.g. todeploy/millenaire/blocklist.txt) that processResources already handles. Without this it
+// fails "duplicate but no duplicate handling strategy". Keep ours (listed last), matching processResources.
+tasks.withType(Jar).configureEach {
+	duplicatesStrategy = DuplicatesStrategy.INCLUDE
+}
+
 tasks.withType(JavaCompile).configureEach {
 	it.options.release = 25
 	// Force UTF-8 source encoding. ~66 Mill source files contain non-ASCII string literals (§ colour

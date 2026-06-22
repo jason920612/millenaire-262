@@ -30,7 +30,9 @@ public final class BehaviourEscapePit implements MillBehaviour {
 
    @Override
    public boolean canRun(MillVillager villager) {
-      return villager.onGround() && isInPit(villager);
+      // Under ValueFieldNav the unified BehaviourValueFieldEscape (feasibility-gated G1 repair) supersedes
+      // this legacy pit-escape; don't run both.
+      return !org.millenaire.common.config.MillConfigValues.ValueFieldNav && villager.onGround() && isInPit(villager);
    }
 
    @Override

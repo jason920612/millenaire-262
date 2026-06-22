@@ -2253,6 +2253,9 @@ public abstract class MillVillager extends PathfinderMob implements IAStarPathed
             // Priorities: EscapeFluid(lava 100 / water 60) > EscapePit(55) > Combat(50) > GoToPoint(10) > Wander(0).
             this.millAI = new org.millenaire.common.ai.MillAI(java.util.List.of(
                new org.millenaire.common.ai.behaviours.BehaviourEscapeFluid(),
+               // Value-field unified escape (Phase 2) — active only under ValueFieldNav; supersedes the legacy
+               // BehaviourEscapePit + GoToPoint detour via the G0-feasibility certificate + policy-gated G1.
+               new org.millenaire.common.ai.behaviours.BehaviourValueFieldEscape(),
                new org.millenaire.common.ai.behaviours.BehaviourEscapePit(),
                new org.millenaire.common.ai.behaviours.BehaviourCombat(),
                new org.millenaire.common.ai.behaviours.BehaviourGoToPoint(),

@@ -72,7 +72,7 @@ public class MillConfigValues {
    /** Opt-in flag for the value-field navigation rewrite (org.millenaire.common.ai.nav) — the principled
     *  "one objective, layered solvers" replacement for the heuristic movement behaviours. Default off; flipped
     *  on per phase as it is built + harness-validated. See Millenaire/AI-NAV-REWRITE-PLAN.md. */
-   public static boolean ValueFieldNav = false;
+   public static boolean ValueFieldNav = true;
    public static boolean displayNames = true;
    public static boolean displayStart = true;
    public static final String NEOL = System.getProperty("line.separator");

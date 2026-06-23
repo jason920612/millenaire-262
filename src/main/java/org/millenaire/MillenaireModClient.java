@@ -125,6 +125,10 @@ public class MillenaireModClient implements ClientModInitializer {
       final org.millenaire.client.forge.ClientTickHandler clientTickHandler =
          new org.millenaire.client.forge.ClientTickHandler();
       net.fabricmc.fabric.api.client.event.lifecycle.v1.ClientTickEvents.END_CLIENT_TICK.register(client -> {
+         // SILENT "open the game but roam autonomously" variant: when MILLENAIRE_SIM is set under the
+         // client harness, mute ALL sound (every SoundSource volume -> 0) so the autonomous roam makes no
+         // noise. Primary deliverable is the headless server sim (no sound at all); this is the small add.
+         maybeMuteSoundForSim(client);
          if (client.level != null) {
             if (org.millenaire.common.forge.Mill.clientWorld == null
                || org.millenaire.common.forge.Mill.clientWorld.world != client.level) {
@@ -164,5 +168,38 @@ public class MillenaireModClient implements ClientModInitializer {
             }
          }
       });
+   }
+
+   /** True when MILLENAIRE_SIM=1 / -Dmillenaire.sim=true (mirrors MillSimObserver.isEnabled, client-safe). */
+   private static boolean simFlagSet() {
+      if ("true".equalsIgnoreCase(System.getProperty("millenaire.sim"))) {
+         return true;
+      }
+      String env = System.getenv("MILLENAIRE_SIM");
+      return "true".equalsIgnoreCase(env) || "1".equals(env);
+   }
+
+   private static boolean simSoundMuted = false;
+
+   /**
+    * SILENT roam variant: when the sim flag is set under the client, force every sound-category volume to
+    * 0 so the autonomous "open the game but roam" run is completely silent and doesn't disturb the user.
+    * Idempotent + cheap (no-op once muted, or when the flag is absent / options aren't ready yet).
+    */
+   private static void maybeMuteSoundForSim(net.minecraft.client.Minecraft client) {
+      if (simSoundMuted || !simFlagSet() || client == null || client.options == null) {
+         return;
+      }
+      try {
+         for (net.minecraft.sounds.SoundSource source : net.minecraft.sounds.SoundSource.values()) {
+            client.options.getSoundSourceOptionInstance(source).set(0.0);
+         }
+         simSoundMuted = true;
+         org.millenaire.common.utilities.MillLog.major(null,
+            "███ SIM CLIENT muted all sound categories (MILLENAIRE_SIM silent roam — no noise)");
+      } catch (Throwable t) {
+         // Never let the mute break the client tick; just stop trying.
+         simSoundMuted = true;
+      }
    }
 }

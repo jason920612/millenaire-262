@@ -115,6 +115,14 @@ public class MillenaireMod implements ModInitializer {
 			if (org.millenaire.common.test.MillSelfTest.isEnabled()) {
 				org.millenaire.common.test.MillSelfTest.register(server);
 			}
+			// --- Headless village-life + village-war SIMULATION / OBSERVER (only with MILLENAIRE_SIM=1) ---
+			// Out of the normal code path otherwise. On the dedicated server it generates 2 villages of
+			// different cultures, runs the full lifecycle, deliberately triggers + observes a village war,
+			// textualises everything as greppable ███ SIM lines, then halts the server (clean exit). No
+			// game window / no sound — it never interferes with the user's machine. See com.coderyo.jason.sim.
+			if (com.coderyo.jason.sim.MillSimObserver.isEnabled()) {
+				com.coderyo.jason.sim.MillSimObserver.register(server);
+			}
 		});
 		ServerLifecycleEvents.SERVER_STOPPING.register(server -> {
 			for (ServerLevel level : server.getAllLevels()) {

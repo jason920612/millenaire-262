@@ -3133,6 +3133,21 @@ public class Building {
       }
    }
 
+   /**
+    * A snapshot of every good the village currently stocks (its real chest/furnace/firepit contents), as an
+    * {@link InvItem}→count map. Exposed for the procedural-construction economy
+    * ({@code com.coderyo.jason.build.MillProceduralConstruction}) so a procedural building is funded from the
+    * village's ACTUAL accumulated wealth (whatever its villagers gathered, crafted or mined) rather than a
+    * hard-coded material list — "village stocks feed the build". Returns a copy; mutate stock via
+    * {@code takeGoods}/{@code storeGoods}.
+    */
+   public Map<InvItem, Integer> getInventoryGoods() {
+      if (this.inventoryCache == null) {
+         this.calculateInventoryCache();
+      }
+      return new HashMap<>(this.inventoryCache);
+   }
+
    private int getInventoryCountFromCache(InvItem invItem) {
       if (this.inventoryCache == null) {
          this.calculateInventoryCache();
@@ -5892,6 +5907,17 @@ public class Building {
       boolean change = false;
       if (MillConfigValues.ignoreResourceCost) {
          ignoreCost = true;
+      }
+
+      // Phase 2 (#6) PROCEDURAL BUILDING: the village's ONGOING / ambient construction is driven by the
+      // needs-model + procedural generator (com.coderyo.jason.build), NOT the fixed culture-plan list. This is
+      // the DEFAULT path (com.coderyo.jason.build.MillBuildEngine.ENABLED defaults on); there is deliberately NO
+      // fixed-plan fallback for ambient construction — when procedural is on we route the town hall's normal
+      // construction tick entirely through the procedural driver. The fixed-plan findBuildingProject/
+      // findBuildingConstruction path below is only taken for the WORLDGEN SEED (the initial village laid down by
+      // WorldGenVillage at generation time, ignoreCost==worldGeneration==true) and when procedural is disabled.
+      if (com.coderyo.jason.build.MillBuildEngine.ENABLED && this.isTownhall && !ignoreCost) {
+         return com.coderyo.jason.build.MillProceduralConstruction.tick(this);
       }
 
       change = this.findBuildingProject();

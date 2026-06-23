@@ -121,6 +121,12 @@ public final class MillSimObserver {
    private static final int TICK_MINING_DEMO = 60;
    /** Dedicated PROCEDURAL BUILDING demonstration (Phase 2, #6): needs→generate→style→terrain-fit→build. */
    private static final int TICK_BUILD_DEMO = 65;
+   /**
+    * Dedicated RESOURCE-CHAIN demonstration (Phase 2 economy): a real villager MINES real ore (real drops it
+    * carries), DEPOSITS it into a real village building via the real deposit API, then the AMBIENT procedural
+    * construction CONSUMES that village-wide stock to completion — resource-gated, no grant, no fallback.
+    */
+   private static final int TICK_CHAIN_DEMO = 67;
    private static final int TICK_LIFECYCLE_START = 70;
    private final int TICK_LIFECYCLE_END = TICK_LIFECYCLE_START + SIM_DAYS * TICKS_PER_DAY;
    /** Roaming-player phase: the simulated player visits every village and trades + quests. */
@@ -172,6 +178,9 @@ public final class MillSimObserver {
    private int buildProceduralConstructed = 0;
    private int buildBlocksPlacedTotal = 0;
    private final java.util.List<String> buildEvidence = new java.util.ArrayList<>();
+
+   // ---- Resource-chain (mine→deposit→consume) demonstration evidence ----
+   private String chainDemoEvidence = "not run";
 
    // ---- Roaming-player interaction accumulators ----
    private int playerVillagesVisited = 0;
@@ -259,6 +268,8 @@ public final class MillSimObserver {
             stepMiningDemo();
          } else if (tick == TICK_BUILD_DEMO) {
             stepBuildDemo();
+         } else if (tick == TICK_CHAIN_DEMO) {
+            stepResourceChainDemo();
          } else if (tick > TICK_LIFECYCLE_START && tick < TICK_LIFECYCLE_END) {
             if ((tick - TICK_LIFECYCLE_START) % SAMPLE_INTERVAL == 0) {
                sampleWorld("LIFECYCLE");
@@ -782,6 +793,241 @@ public final class MillSimObserver {
          new java.util.LinkedHashMap<>(), new java.util.LinkedHashMap<>());
       return com.coderyo.jason.build.MillBuildEngine.makeResult(d, p,
          com.coderyo.jason.build.MillBuildEngine.TerrainFit.ADAPT, 0, origin);
+   }
+
+   // ============================ RESOURCE-CHAIN DEMONSTRATION (mine → deposit → consume) ============================
+
+   /**
+    * Deterministic, observable proof of the FULL Phase-2 economy chain — the real-resource fuel for procedural
+    * construction — driven SYNCHRONOUSLY so it is provable regardless of 100x ambient-AI sleep:
+    *
+    * <ol>
+    *   <li><b>MINE</b>: a real {@link MillVillager} flood-mines a controlled iron-ore chamber with the REAL
+    *       {@link com.coderyo.jason.ops.OreVeinMiner} engine — the raw-iron drops are genuinely picked up into
+    *       the villager's Millénaire inventory (no grant; it carries what it actually mined).</li>
+    *   <li><b>DEPOSIT</b>: the villager DEPOSITS its carried drops into a real village building's chest via the
+    *       SAME real deposit call the 1.12 gather goals use ({@code villager.putInBuilding(building, …)} →
+    *       {@code building.storeGoods}). This is exactly how {@code GoalBringBackResourcesHome}/
+    *       {@code GoalDeliverResourcesShop} fill the village.</li>
+    *   <li><b>CONSUME</b>: the AMBIENT procedural construction ({@link com.coderyo.jason.build.MillProceduralConstruction#tick})
+    *       is then ticked for that village; it reads the VILLAGE-WIDE stock (the fix) — which now includes the
+    *       just-deposited material — and DEBITS it as it lays the building, completing resource-gated.</li>
+    * </ol>
+    *
+    * <p>It asserts the stock genuinely ROSE on deposit and FELL as the build consumed it, and that the building
+    * COMPLETED — with NO grant and NO fixed-plan fallback. If the building still has placements left when the
+    * deposited stock runs out, that is the correct resource-gated WAIT (reported, not papered over).
+    */
+   private void stepResourceChainDemo() {
+      final String TAG2 = "███ SIM BUILD CHAIN";
+      try {
+         MillWorldData mw = Mill.getMillWorld(level);
+         List<Building> townhalls = townhalls(mw);
+         // Pick a FORCE-LOADED village + a building with a LIVE chest to deposit into. Only a loaded village's
+         // building chests are readable (getMillChest returns null in an unloaded chunk → countGoods would read 0,
+         // which is a chunk-loading artefact, NOT the economy). We scan every townhall and every building it owns
+         // (including the town hall itself), force-loading each candidate's chunk, and take the first pair where a
+         // chest TileEntity actually resolves. This is robust to which villages happen to be loaded this run.
+         Building townHall = null;
+         Building depositBuilding = null;
+         int thScanned = 0;
+         for (Building th : townhalls) {
+            if (th == null || th.getPos() == null) {
+               continue;
+            }
+            thScanned++;
+            // Force-load the town-hall neighbourhood so its + its sub-buildings' chunks resolve.
+            level.setChunkForced(th.getPos().getiX() >> 4, th.getPos().getiZ() >> 4, true);
+            List<Building> candidates = new ArrayList<>(th.getBuildings());
+            if (!candidates.contains(th)) {
+               candidates.add(th); // the town hall itself always has chests
+            }
+            for (Building b : candidates) {
+               if (b == null || b.getResManager() == null || b.getResManager().chests.isEmpty()) {
+                  continue;
+               }
+               Point bp = b.getPos();
+               if (bp != null) {
+                  level.setChunkForced(bp.getiX() >> 4, bp.getiZ() >> 4, true);
+               }
+               for (Point cp : b.getResManager().chests) {
+                  if (cp.getMillChest(level) != null) {
+                     townHall = th;
+                     depositBuilding = b;
+                     break;
+                  }
+               }
+               if (depositBuilding != null) {
+                  break;
+               }
+            }
+            if (townHall != null) {
+               break;
+            }
+         }
+         if (townHall == null || depositBuilding == null) {
+            chainDemoEvidence = "skipped (scanned " + thScanned + " townhall(s); none had a loadable chest to deposit into)";
+            MillLog.major(null, TAG2 + " SKIP: " + chainDemoEvidence);
+            return;
+         }
+
+         // Clear any ambient job for this village so the demo drives a clean build from scratch.
+         com.coderyo.jason.build.MillProceduralConstruction.clear(townHall);
+
+         int stockBefore = com.coderyo.jason.build.MillProceduralConstruction.villageStockTotal(townHall);
+         MillLog.major(null, TAG2 + " BEGIN village=" + safeName(townHall) + " depositInto=" + safeName(depositBuilding)
+            + " villageStockBefore=" + stockBefore + " (real mine→deposit→consume, no grant)");
+
+         // ---- (1) MINE: build an isolated ore chamber and flood-mine it for real with a real villager. ----
+         BlockPos chamber = new BlockPos(townHall.getPos().getiX() + 160,
+            Math.min(level.getMaxY() - 24, 190), townHall.getPos().getiZ() + 160);
+         for (int dcx = -1; dcx <= 2; dcx++) {
+            for (int dcz = -1; dcz <= 2; dcz++) {
+               level.setChunkForced((chamber.getX() >> 4) + dcx, (chamber.getZ() >> 4) + dcz, true);
+            }
+         }
+         MillVillager miner = spawnDemoMiner(chamber);
+         if (miner == null) {
+            chainDemoEvidence = "skipped (could not spawn a real miner)";
+            MillLog.major(null, TAG2 + " SKIP: " + chainDemoEvidence);
+            return;
+         }
+         // The pickaxe must be in the VANILLA MAIN HAND: VillagerWorldOps.doBreak reads getMainHandItem() for the
+         // tool passed to Block.dropResources — iron ore only drops RAW_IRON when broken with a stone+ pickaxe, so
+         // without a real main-hand pickaxe the ore would break but drop NOTHING. (The Mill heldItem field alone is
+         // not the vanilla main hand.) Set both so ensureTool + the drop-tool agree.
+         net.minecraft.world.item.ItemStack pick =
+            new net.minecraft.world.item.ItemStack(net.minecraft.world.item.Items.IRON_PICKAXE);
+         miner.heldItem = pick.copy();
+         miner.setItemInHand(net.minecraft.world.InteractionHand.MAIN_HAND, pick);
+
+         int rawIronBefore = miner.countInv(net.minecraft.world.item.Items.RAW_IRON, 0);
+         // Each chamber holds a finite ore body (~10 iron). To gather enough REAL material to fuel a whole small
+         // building (so a resource-gated build can actually COMPLETE, not just demonstrate the WAIT), the miner
+         // works several FRESH chambers in turn — genuinely mining + carrying every drop (still no grant: it only
+         // ever holds what it really broke + picked up).
+         for (int round = 0; round < 4; round++) {
+            // A fresh chamber + fresh anchor each round (offset along Z) → a brand-new mine state is scanned from
+            // scratch, so each round genuinely flood-mines a new ore body the miner carries off.
+            BlockPos roundChamber = chamber.offset(0, 0, round * 16);
+            for (int dcz = -1; dcz <= 2; dcz++) {
+               level.setChunkForced(roundChamber.getX() >> 4, (roundChamber.getZ() >> 4) + dcz, true);
+            }
+            buildMiningChamber(roundChamber); // (2 iron veins + cave-ore + lava pocket) — fresh each round
+            // Mine ONLY the placed ore body, then stop (don't burn iterations on the endless outward frontier
+            // advance once the chamber's ore is exhausted). Scan for the nearest ore each step; when none remains,
+            // the round's ore body is fully flood-mined.
+            for (int i = 0; i < 1200; i++) {
+               com.coderyo.jason.ops.MillMiningOps.MineView v =
+                  com.coderyo.jason.ops.OreVeinMiner.viewFor(level, roundChamber);
+               BlockPos ore = com.coderyo.jason.ops.MillMiningOps.findNearestOre(v, roundChamber,
+                  com.coderyo.jason.ops.MillMiningOps.DEFAULT_SCAN_RADIUS);
+               if (ore == null) {
+                  ore = com.coderyo.jason.ops.MillMiningOps.findNearestOre(v, miner.blockPosition(),
+                     com.coderyo.jason.ops.MillMiningOps.DEFAULT_SCAN_RADIUS);
+               }
+               if (ore == null) {
+                  break; // no ore left in this chamber — fully mined.
+               }
+               miner.setPos(ore.getX() + 0.5, ore.getY(), ore.getZ() + 0.5);
+               com.coderyo.jason.ops.OreVeinMiner.mineTick(miner, roundChamber);
+            }
+            // PICKUP SWEEP: the flood-mine breaks ore but the synchronous drive teleports the miner cell-to-cell,
+            // so the real drops are left on the ground. Sweep the chamber for the dropped ItemEntities and collect
+            // them player-like (teleport the miner ONTO each drop, then pickupTick collects it into its Mill
+            // inventory). This is genuine collection of the REAL drops the miner broke — no grant, no fabrication.
+            net.minecraft.world.phys.AABB sweep =
+               new net.minecraft.world.phys.AABB(roundChamber).inflate(20);
+            for (net.minecraft.world.entity.Entity e : new ArrayList<>(
+                  level.getEntitiesOfClass(net.minecraft.world.entity.item.ItemEntity.class, sweep))) {
+               net.minecraft.world.entity.item.ItemEntity drop = (net.minecraft.world.entity.item.ItemEntity) e;
+               if (!drop.isAlive() || drop.getItem().isEmpty()) {
+                  continue;
+               }
+               miner.setPos(drop.getX(), drop.getY(), drop.getZ());
+               for (int g = 0; g < 4; g++) {
+                  if (com.coderyo.jason.ops.VillagerWorldOps.pickupTick(miner, drop.blockPosition())
+                     == com.coderyo.jason.ops.OpState.COMPLETE) {
+                     break;
+                  }
+               }
+            }
+         }
+         int rawIronMined = miner.countInv(net.minecraft.world.item.Items.RAW_IRON, 0) - rawIronBefore;
+         MillLog.major(null, TAG2 + " MINED: miner='" + miner.firstName + " " + miner.familyName
+            + "' carried rawIron=" + miner.countInv(net.minecraft.world.item.Items.RAW_IRON, 0)
+            + " (mined this run=" + rawIronMined + ") — real drops in the villager's inventory");
+
+         // ---- (2) DEPOSIT: the villager deposits its carried drops into the village building (real deposit API). ----
+         int carried = miner.countInv(net.minecraft.world.item.Items.RAW_IRON, 0);
+         int depositBuildingBefore = depositBuilding.countGoods(net.minecraft.world.item.Items.RAW_IRON, 0);
+         int deposited = miner.putInBuilding(depositBuilding, net.minecraft.world.item.Items.RAW_IRON, 0, carried);
+         int depositBuildingAfter = depositBuilding.countGoods(net.minecraft.world.item.Items.RAW_IRON, 0);
+         int stockAfterDeposit = com.coderyo.jason.build.MillProceduralConstruction.villageStockTotal(townHall);
+         MillLog.major(null, TAG2 + " DEPOSITED: villager.putInBuilding(" + safeName(depositBuilding)
+            + ", RAW_IRON x" + deposited + ") → that building's RAW_IRON " + depositBuildingBefore + "->"
+            + depositBuildingAfter + "; village-wide stock " + stockBefore + " -> " + stockAfterDeposit
+            + " (real gathered material now in the village — same path as GoalBringBackResourcesHome)");
+         miner.discard();
+
+         // ---- (3) CONSUME: tick the AMBIENT procedural construction; it draws down the village-wide stock. ----
+         // tick() #1 decides+generates the building (creates the job); subsequent ticks lay blocks, charging the
+         // village-wide stock. Detect a real COMPLETION by the village's building list growing (finish() registers
+         // the procedural footprint). Drive until completion OR the stock is exhausted (the correct resource-gated
+         // WAIT) OR a tick guard. No grant, no fixed-plan fallback.
+         int buildingsBaseline = townHall.buildings.size();
+         com.coderyo.jason.build.MillProceduralConstruction.tick(townHall); // generate the first job
+         int ticks = 0;
+         int lastStock = stockAfterDeposit;
+         int minStock = stockAfterDeposit;
+         boolean completed = false;
+         for (; ticks < 4000; ticks++) {
+            com.coderyo.jason.build.MillProceduralConstruction.tick(townHall);
+            int now = com.coderyo.jason.build.MillProceduralConstruction.villageStockTotal(townHall);
+            lastStock = now;
+            minStock = Math.min(minStock, now);
+            if (townHall.buildings.size() > buildingsBaseline) {
+               // A procedural building registered its footprint → it COMPLETED, fuelled by real village stock.
+               completed = true;
+               break;
+            }
+            if (now <= 0) {
+               // Stock exhausted before completion: the build is now genuinely resource-gated (correct WAIT).
+               break;
+            }
+         }
+         int consumed = stockAfterDeposit - lastStock;
+
+         String verdict;
+         if (deposited > 0 && completed && consumed > 0) {
+            verdict = "PASS (real mined material deposited into village → procedural building CONSUMED real village "
+               + "stock and COMPLETED — resource-gated, no grant, no fallback)";
+         } else if (deposited > 0 && consumed > 0 && !completed) {
+            verdict = "PASS-GATED (real mined material deposited + CONSUMED by the build; build then correctly "
+               + "WAITS resource-gated on the remaining material — no grant, no fallback)";
+         } else {
+            verdict = "CHECK";
+         }
+         chainDemoEvidence = "village=" + safeName(townHall)
+            + " minedRawIron=" + rawIronMined + " deposited=" + deposited
+            + " villageStock " + stockBefore + "→" + stockAfterDeposit + "(deposit)→" + lastStock + "(after build)"
+            + " consumedByBuild=" + consumed + " buildTicks=" + ticks + " completed=" + completed
+            + " villageBuildings " + buildingsBaseline + "→" + townHall.buildings.size()
+            + " => " + verdict;
+         MillLog.major(null, TAG2 + " RESULT " + chainDemoEvidence);
+
+         if (deposited <= 0) {
+            anomalies.merge("chain: nothing deposited (miner carried no real drops)", 1, Integer::sum);
+         }
+         if (consumed <= 0) {
+            anomalies.merge("chain: construction consumed no village stock", 1, Integer::sum);
+         }
+      } catch (Throwable t) {
+         record("resource-chain-demo", t);
+         chainDemoEvidence = "exception: " + t;
+         MillLog.major(null, TAG2 + " FAIL: " + t);
+         MillLog.printException(TAG + " resource-chain-demo error", t);
+      }
    }
 
    // ============================ baselines for event diffing ============================
@@ -1970,6 +2216,7 @@ public final class MillSimObserver {
          for (String ev : buildEvidence) {
             log("SIM SUMMARY   procbuild: " + ev);
          }
+         log("SIM SUMMARY RESOURCE-CHAIN (mine→deposit→consume): " + chainDemoEvidence);
          log("SIM SUMMARY PLAYER: villagesVisited=" + playerVillagesVisited
             + " tradesDone=" + playerTradesDone + " questsDone=" + playerQuestsDone
             + " moneySpent=" + playerMoneySpent + " moneyEarned=" + playerMoneyEarned

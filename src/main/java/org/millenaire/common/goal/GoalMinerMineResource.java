@@ -160,54 +160,11 @@ public class GoalMinerMineResource extends Goal {
             return false;
          case NO_ORE:
          default:
-            break; // no real ore reachable — fall through to the legacy regrowing-source heuristic.
-      }
-
-      BlockPos pos = dest.getBlockPos();
-      BlockState blockState = WorldUtilities.getBlockState(villager.level(), dest);
-      Block block = blockState.getBlock();
-
-      // Air already (mid-cycle, after the break): move straight to the pickup phase against the worksite.
-      if (blockState.isAir()) {
-         return runPickupAndFinish(villager, pos, block);
-      }
-
-      // Strict tool: snow/ice are knife(ULU)-mined in 1.12, not pickaxe/shovel — exempt them from the strict
-      // pickaxe/shovel gate (the goal's getHeldItemsTravelling already equips the ULU for those).
-      boolean uluMined = block == Blocks.SNOW || block == Blocks.ICE;
-      if (!uluMined) {
-         VillagerWorldOps.ToolKind kind = VillagerWorldOps.miningToolFor(block);
-         if (!VillagerWorldOps.ensureTool(villager, kind)) {
-            // No correct tool: do NOT break (no drop). Stay in-goal; GoalGetTool (priority 500) will pre-empt and
-            // fetch one. Returning false keeps this goal active without faking a yield.
-            if (MillConfigValues.LogMiner >= 2 && villager.extraLog) {
-               MillLog.debug(this, "No " + kind + " to mine " + block + " at " + dest + "; waiting for tool.");
-            }
-            return false;
-         }
-      }
-
-      // Remember the exact source state so the regrow restores the same block (renewable mine, as 1.12).
-      BlockState sourceState = blockState;
-
-      OpState st = VillagerWorldOps.breakTick(villager, pos);
-      switch (st) {
-         case APPROACHING:
-         case EXTENDING_REACH:
-         case IN_PROGRESS:
-            return false; // keep breaking / walking closer next tick.
-         case BLOCKED:
-            // Unbreakable (shouldn't happen for mine sources) — abandon so the goal re-picks rather than spinning.
-            if (MillConfigValues.LogMiner >= 1) {
-               MillLog.debug(this, "Blocked mining " + block + " at " + dest + "; abandoning.");
-            }
+            // No reachable ore AND the frontier can't advance (boxed in by hazards/bedrock): this mine spot is
+            // exhausted/blocked. Let the goal re-pick so the village relocates the mine / picks a new lead — do
+            // NOT revert to the old regrowing-source-block heuristic. (Emergent vision, per the user: REAL ore-
+            // vein mining ONLY — no fallback to the original logic.)
             return true;
-         case COMPLETE:
-            // Block just broke this tick. Schedule the regrow on the point and proceed to pickup.
-            scheduleRegrow(villager, pos, sourceState);
-            return runPickupAndFinish(villager, pos, block);
-         default:
-            return false;
       }
    }
 

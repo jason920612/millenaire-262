@@ -1200,7 +1200,9 @@ public abstract class MillVillager extends PathfinderMob implements IAStarPathed
             }
          }
 
-         this.mw.clearVillagerOfId(this.getVillagerId());
+         if (this.mw != null) {              // a mock/unregistered villager (e.g. sim test entity) has no world-data → nothing to clear
+            this.mw.clearVillagerOfId(this.getVillagerId());
+         }
          super.discard();
       }
    }
@@ -1215,7 +1217,9 @@ public abstract class MillVillager extends PathfinderMob implements IAStarPathed
          MillLog.milldebug("Villager", "DESPAWN(silent) id=" + this.getVillagerId() + " name='" + this.firstName + " " + this.familyName + "' type=" + (this.vtype != null ? this.vtype.key : "null") + " at " + this.getPos());
       }
 
-      this.mw.clearVillagerOfId(this.getVillagerId());
+      if (this.mw != null) {              // mock/unregistered villager → no world-data to clear from
+         this.mw.clearVillagerOfId(this.getVillagerId());
+      }
       super.discard();
    }
 

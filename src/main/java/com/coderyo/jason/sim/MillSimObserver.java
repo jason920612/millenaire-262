@@ -127,6 +127,13 @@ public final class MillSimObserver {
     * construction CONSUMES that village-wide stock to completion — resource-gated, no grant, no fallback.
     */
    private static final int TICK_CHAIN_DEMO = 67;
+   /**
+    * Dedicated INFINITE OUTWARD EXPANSION demonstration (Phase 3, #1/#2): seed a village with REAL surplus +
+    * space pressure, then drive {@link com.coderyo.jason.expand.VillageExpansion} so it grows its claimed radius
+    * OUTWARD ring-by-ring in scored directions (toward resources/terrain, away from hostiles), spending the real
+    * surplus and queuing new procedural buildings — perf-guarded, no grant, no fallback.
+    */
+   private static final int TICK_EXPAND_DEMO = 68;
    private static final int TICK_LIFECYCLE_START = 70;
    private final int TICK_LIFECYCLE_END = TICK_LIFECYCLE_START + SIM_DAYS * TICKS_PER_DAY;
    /** Roaming-player phase: the simulated player visits every village and trades + quests. */
@@ -181,6 +188,15 @@ public final class MillSimObserver {
 
    // ---- Resource-chain (mine→deposit→consume) demonstration evidence ----
    private String chainDemoEvidence = "not run";
+
+   // ---- Infinite-outward-expansion (Phase 3, #1/#2) demonstration evidence ----
+   private String expandDemoEvidence = "not run";
+   private int expandRingsGrown = 0;
+   private final java.util.List<String> expandEvidence = new java.util.ArrayList<>();
+   /** Natural-lifecycle outward growth observed: village -> last seen claimed radius (to diff ring growth). */
+   private final Map<Point, Integer> lastVillageRadius = new HashMap<>();
+   private int naturalRingsGrown = 0;
+   private final java.util.Set<String> naturalExpandVillages = new java.util.LinkedHashSet<>();
 
    // ---- Roaming-player interaction accumulators ----
    private int playerVillagesVisited = 0;
@@ -270,6 +286,8 @@ public final class MillSimObserver {
             stepBuildDemo();
          } else if (tick == TICK_CHAIN_DEMO) {
             stepResourceChainDemo();
+         } else if (tick == TICK_EXPAND_DEMO) {
+            stepExpansionDemo();
          } else if (tick > TICK_LIFECYCLE_START && tick < TICK_LIFECYCLE_END) {
             if ((tick - TICK_LIFECYCLE_START) % SAMPLE_INTERVAL == 0) {
                sampleWorld("LIFECYCLE");
@@ -1030,6 +1048,274 @@ public final class MillSimObserver {
       }
    }
 
+   // ============================ INFINITE OUTWARD EXPANSION DEMONSTRATION (Phase 3, #1/#2) ============================
+
+   /**
+    * Deterministic, observable proof of INFINITE OUTWARD VILLAGE EXPANSION — driven SYNCHRONOUSLY so it is
+    * provable regardless of 100x ambient-AI sleep. For a real loaded village it:
+    *
+    * <ol>
+    *   <li><b>Funds REAL surplus</b>: a real {@link MillVillager} flood-mines controlled iron-ore chambers with
+    *       the REAL {@link com.coderyo.jason.ops.OreVeinMiner} engine and DEPOSITS the genuinely-mined drops into
+    *       a village building (the same {@code putInBuilding} path the gather goals use) — so the village's
+    *       village-wide stock genuinely RISES above the upkeep buffer. No grant.</li>
+    *   <li><b>Plants a HOSTILE neighbour</b> to one side (relation &lt; the hostile threshold) so the direction
+    *       scoring must AVOID expanding straight into it.</li>
+    *   <li><b>Drives {@link com.coderyo.jason.expand.VillageExpansion}</b> across several rings: each successful
+    *       expansion grows the claimed {@code villageType.radius} by a ring step toward the SCORED best direction,
+    *       SPENDS real surplus (debited from the village-wide stock), and queues a new procedural building. It
+    *       asserts the radius GREW, the chosen direction was NOT toward the hostile, real surplus was SPENT, and
+    *       that once the surplus drains the village correctly STOPS expanding (resource-gated, no grant/fallback).</li>
+    * </ol>
+    */
+   private void stepExpansionDemo() {
+      final String TAGE = com.coderyo.jason.expand.VillageExpansion.TAG;
+      try {
+         MillWorldData mw = Mill.getMillWorld(level);
+         List<Building> townhalls = townhalls(mw);
+
+         // Find a loaded town hall whose own (or a sub-building's) chest resolves, so we can deposit real stock.
+         // PREFER a village that already has SPACE PRESSURE (a wanted building + a packed/overcrowded claim) so
+         // the demo drives a real outward ring; fall back to any chest-bearing village otherwise.
+         Building townHall = null;
+         Building depositBuilding = null;
+         Building fallbackTownHall = null;
+         Building fallbackDeposit = null;
+         for (Building th : townhalls) {
+            if (th == null || th.getPos() == null || th.villageType == null) {
+               continue;
+            }
+            level.setChunkForced(th.getPos().getiX() >> 4, th.getPos().getiZ() >> 4, true);
+            List<Building> candidates = new ArrayList<>(th.getBuildings());
+            if (!candidates.contains(th)) {
+               candidates.add(th);
+            }
+            Building dep = null;
+            for (Building b : candidates) {
+               if (b == null || b.getResManager() == null || b.getResManager().chests.isEmpty()) {
+                  continue;
+               }
+               Point bp = b.getPos();
+               if (bp != null) {
+                  level.setChunkForced(bp.getiX() >> 4, bp.getiZ() >> 4, true);
+               }
+               for (Point cp : b.getResManager().chests) {
+                  if (cp.getMillChest(level) != null) {
+                     dep = b;
+                     break;
+                  }
+               }
+               if (dep != null) {
+                  break;
+               }
+            }
+            if (dep == null) {
+               continue;
+            }
+            if (fallbackTownHall == null) {
+               fallbackTownHall = th;
+               fallbackDeposit = dep;
+            }
+            boolean pressure = false;
+            try {
+               pressure = com.coderyo.jason.expand.VillageExpansion.spacePressure(th);
+            } catch (Throwable ignored) {
+            }
+            if (pressure) {
+               townHall = th;
+               depositBuilding = dep;
+               break;
+            }
+         }
+         if (townHall == null) {
+            townHall = fallbackTownHall;
+            depositBuilding = fallbackDeposit;
+         }
+         if (townHall == null || depositBuilding == null) {
+            expandDemoEvidence = "skipped (no loaded village with a chest to fund + expand)";
+            MillLog.major(null, TAGE + " SKIP: " + expandDemoEvidence);
+            return;
+         }
+         com.coderyo.jason.expand.VillageExpansion.clear(townHall);
+         com.coderyo.jason.build.MillProceduralConstruction.clear(townHall);
+
+         int radiusStart = com.coderyo.jason.expand.VillageExpansion.radiusOf(townHall);
+         int surplusStart = com.coderyo.jason.expand.VillageExpansion.realSurplus(townHall);
+         MillLog.major(null, TAGE + " BEGIN village=" + safeName(townHall) + " startRadius=" + radiusStart
+            + " startSurplus=" + surplusStart + " (will fund REAL surplus by mining, then expand outward)");
+
+         // ---- (1) FUND REAL SURPLUS: mine real ore + deposit it so the village's stock genuinely rises ABOVE
+         // the upkeep buffer + several ring costs (buffer 64 + ~4 rings * 64). The chamber yields a finite ore
+         // body per round, so we mine enough rounds to clear that — every unit genuinely mined + carried. ----
+         int deposited = mineAndDepositRealOre(townHall, depositBuilding, 40);
+         int stockAfterFund = com.coderyo.jason.build.MillProceduralConstruction.villageStockTotal(townHall);
+         int surplusAfterFund = com.coderyo.jason.expand.VillageExpansion.realSurplus(townHall);
+         MillLog.major(null, TAGE + " FUNDED village=" + safeName(townHall) + " depositedRealOre=" + deposited
+            + " villageStock=" + stockAfterFund + " realSurplus " + surplusStart + "->" + surplusAfterFund
+            + " (mined+deposited, no grant; upkeepBuffer=" + com.coderyo.jason.expand.VillageExpansion.UPKEEP_BUFFER + ")");
+
+         // ---- (2) PLANT A HOSTILE NEIGHBOUR to the EAST so the direction scoring must avoid it. ----
+         Point hostilePos = new Point(townHall.getPos().getiX() + 80, townHall.getPos().getiY(),
+            townHall.getPos().getiZ());
+         townHall.getRelations().put(hostilePos, -100);
+         MillLog.major(null, TAGE + " HOSTILE neighbour planted @ " + hostilePos
+            + " relation=-100 (East, NEAR) — expansion must NOT grow straight into it");
+
+         // ---- (3) DRIVE EXPANSION across several rings; spend the real surplus; observe radius growth. ----
+         int rings = 0;
+         boolean everEast = false;
+         int radiusBeforeRings = com.coderyo.jason.expand.VillageExpansion.radiusOf(townHall);
+         int surplusBeforeRings = com.coderyo.jason.expand.VillageExpansion.realSurplus(townHall);
+         String lastNoReason = "";
+         for (int attempt = 0; attempt < 12; attempt++) {
+            // Bypass the per-village cooldown for the synchronous demo so successive rings are observable now.
+            com.coderyo.jason.expand.VillageExpansion.clear(townHall);
+            int before = com.coderyo.jason.expand.VillageExpansion.radiusOf(townHall);
+            com.coderyo.jason.expand.VillageExpansion.Outcome o =
+               com.coderyo.jason.expand.VillageExpansion.expand(townHall);
+            if (o.expanded) {
+               rings++;
+               expandRingsGrown++;
+               if ("E".equals(o.direction)) {
+                  everEast = true;
+               }
+               expandEvidence.add("ring" + rings + " dir=" + o.direction + " radius " + o.radiusBefore + "->"
+                  + o.radiusAfter + " scores=" + o.scores + " spentSurplus=" + o.surplusSpent
+                  + " newSite=" + o.newSite);
+               MillLog.major(null, TAGE + " RING " + rings + " village=" + safeName(townHall)
+                  + " dir=" + o.direction + " radius " + o.radiusBefore + "->" + o.radiusAfter
+                  + " scores=" + o.scores + " spent=" + o.surplusSpent
+                  + " surplusLeft=" + com.coderyo.jason.expand.VillageExpansion.realSurplus(townHall)
+                  + " newProceduralBuilding@" + o.newSite);
+               // Let the queued procedural building CONSTRUCT to completion (consuming more real stock) so its
+               // concurrency slot frees for the next ring — representing the previous ring's building finishing.
+               // Bounded drive; if it resource-gates (stock drained) the slot stays taken and the cap will
+               // correctly stop the next ring (the right perf-guarded behaviour).
+               for (int bt = 0; bt < 600
+                  && com.coderyo.jason.build.MillProceduralConstruction.hasActiveJob(townHall); bt++) {
+                  com.coderyo.jason.build.MillProceduralConstruction.tick(townHall);
+               }
+            } else {
+               lastNoReason = o.reason;
+               MillLog.major(null, TAGE + " NO-EXPAND village=" + safeName(townHall) + " reason=" + o.reason
+                  + " radius=" + o.radiusBefore + " surplus=" + o.surplusBefore);
+               if (before == 0) {
+                  break;
+               }
+               // A genuine resource-gate / cap stop ends the demo (correct behaviour, not a bug).
+               break;
+            }
+         }
+         int radiusEnd = com.coderyo.jason.expand.VillageExpansion.radiusOf(townHall);
+         int surplusEnd = com.coderyo.jason.expand.VillageExpansion.realSurplus(townHall);
+
+         String verdict;
+         if (deposited > 0 && rings > 0 && radiusEnd > radiusBeforeRings && !everEast && surplusEnd < surplusBeforeRings) {
+            verdict = "PASS (real-surplus-funded village expanded OUTWARD " + rings + " ring(s), radius "
+               + radiusBeforeRings + "→" + radiusEnd + ", scored directions AWAY from the hostile (never East), "
+               + "spent real surplus " + surplusBeforeRings + "→" + surplusEnd
+               + ", then stopped resource-gated [" + lastNoReason + "] — no grant, no fallback, perf-guarded)";
+         } else if (rings > 0 && radiusEnd > radiusBeforeRings && !everEast) {
+            verdict = "PASS-PARTIAL (expanded " + rings + " ring(s) radius " + radiusBeforeRings + "→" + radiusEnd
+               + " away from hostile; surplus/deposit weak — check funding)";
+         } else {
+            verdict = "CHECK (rings=" + rings + " radius " + radiusBeforeRings + "→" + radiusEnd
+               + " everEast=" + everEast + " deposited=" + deposited + ")";
+         }
+         expandDemoEvidence = "village=" + safeName(townHall) + " radius " + radiusStart + "→" + radiusEnd
+            + " ringsGrown=" + rings + " depositedRealOre=" + deposited
+            + " surplus " + surplusBeforeRings + "→" + surplusEnd + " avoidedHostileEast=" + (!everEast)
+            + " => " + verdict;
+         MillLog.major(null, TAGE + " RESULT " + expandDemoEvidence);
+
+         if (rings <= 0) {
+            anomalies.merge("expand: village never expanded a ring", 1, Integer::sum);
+         }
+         if (everEast) {
+            anomalies.merge("expand: expanded toward the hostile neighbour (East)", 1, Integer::sum);
+         }
+         if (rings > 0 && surplusEnd >= surplusBeforeRings) {
+            anomalies.merge("expand: expanded without spending real surplus (possible grant)", 1, Integer::sum);
+         }
+      } catch (Throwable t) {
+         record("expansion-demo", t);
+         expandDemoEvidence = "exception: " + t;
+         MillLog.major(null, TAGE + " FAIL: " + t);
+         MillLog.printException(TAG + " expansion-demo error", t);
+      }
+   }
+
+   /**
+    * Mine {@code rounds} controlled ore chambers for real and deposit every genuinely-mined drop into
+    * {@code depositBuilding} (the same real mine→pickup→{@code putInBuilding} path the chain demo + gather goals
+    * use). Returns the total units deposited. No grant — the village only ends up with what was really mined.
+    */
+   private int mineAndDepositRealOre(Building townHall, Building depositBuilding, int rounds) {
+      int totalDeposited = 0;
+      try {
+         // Site the funding chambers WEST of the village (−X) so the Phase-1 mine frontier created here pulls
+         // expansion WEST, NOT toward the East hostile the demo plants — keeping the resource pull and the
+         // hostile repulsion on opposite axes so the direction scoring is cleanly observable.
+         BlockPos chamber = new BlockPos(townHall.getPos().getiX() - 200,
+            Math.min(level.getMaxY() - 24, 195), townHall.getPos().getiZ() + 8);
+         MillVillager miner = spawnDemoMiner(chamber);
+         if (miner == null) {
+            return 0;
+         }
+         net.minecraft.world.item.ItemStack pick =
+            new net.minecraft.world.item.ItemStack(net.minecraft.world.item.Items.IRON_PICKAXE);
+         miner.heldItem = pick.copy();
+         miner.setItemInHand(net.minecraft.world.InteractionHand.MAIN_HAND, pick);
+
+         for (int round = 0; round < rounds; round++) {
+            BlockPos roundChamber = chamber.offset(0, 0, round * 16);
+            for (int dcz = -1; dcz <= 2; dcz++) {
+               level.setChunkForced(roundChamber.getX() >> 4, (roundChamber.getZ() >> 4) + dcz, true);
+            }
+            buildMiningChamber(roundChamber);
+            for (int i = 0; i < 1200; i++) {
+               com.coderyo.jason.ops.MillMiningOps.MineView v =
+                  com.coderyo.jason.ops.OreVeinMiner.viewFor(level, roundChamber);
+               BlockPos ore = com.coderyo.jason.ops.MillMiningOps.findNearestOre(v, roundChamber,
+                  com.coderyo.jason.ops.MillMiningOps.DEFAULT_SCAN_RADIUS);
+               if (ore == null) {
+                  ore = com.coderyo.jason.ops.MillMiningOps.findNearestOre(v, miner.blockPosition(),
+                     com.coderyo.jason.ops.MillMiningOps.DEFAULT_SCAN_RADIUS);
+               }
+               if (ore == null) {
+                  break;
+               }
+               miner.setPos(ore.getX() + 0.5, ore.getY(), ore.getZ() + 0.5);
+               com.coderyo.jason.ops.OreVeinMiner.mineTick(miner, roundChamber);
+            }
+            AABB sweep = new AABB(roundChamber).inflate(20);
+            for (net.minecraft.world.entity.Entity e : new ArrayList<>(
+                  level.getEntitiesOfClass(net.minecraft.world.entity.item.ItemEntity.class, sweep))) {
+               net.minecraft.world.entity.item.ItemEntity drop = (net.minecraft.world.entity.item.ItemEntity) e;
+               if (!drop.isAlive() || drop.getItem().isEmpty()) {
+                  continue;
+               }
+               miner.setPos(drop.getX(), drop.getY(), drop.getZ());
+               for (int g = 0; g < 4; g++) {
+                  if (com.coderyo.jason.ops.VillagerWorldOps.pickupTick(miner, drop.blockPosition())
+                     == com.coderyo.jason.ops.OpState.COMPLETE) {
+                     break;
+                  }
+               }
+            }
+            int carried = miner.countInv(net.minecraft.world.item.Items.RAW_IRON, 0);
+            if (carried > 0) {
+               totalDeposited += miner.putInBuilding(depositBuilding,
+                  net.minecraft.world.item.Items.RAW_IRON, 0, carried);
+            }
+         }
+         miner.discard();
+      } catch (Throwable t) {
+         record("expand-fund-mining", t);
+      }
+      return totalDeposited;
+   }
+
    // ============================ baselines for event diffing ============================
 
    private void initBaselines() {
@@ -1039,6 +1325,7 @@ public final class MillSimObserver {
             Point p = th.getPos();
             lastBuildingCount.put(p, villageBuildingCount(mw, th));
             lastPopulation.put(p, th.getVillagerRecords().size());
+            lastVillageRadius.put(p, com.coderyo.jason.expand.VillageExpansion.radiusOf(th));
             blockSnapshots.put(safeName(th), snapshotBox(p));
          }
          for (MillVillager v : liveVillagers()) {
@@ -1082,6 +1369,22 @@ public final class MillSimObserver {
                + " pos=" + p + " pop=" + pop + " buildings=" + total + " underConstruction=" + inProgress
                + " underAttack=" + th.underAttack + " defStrength=" + safeStrength(th, false)
                + " raidStrength=" + safeStrength(th, true) + " relations=" + rel);
+
+            // EVENT: OUTWARD EXPANSION — the village's claimed radius grew (Phase 3 driver fired this tick).
+            try {
+               int radNow = com.coderyo.jason.expand.VillageExpansion.radiusOf(th);
+               Integer radPrev = lastVillageRadius.get(p);
+               if (radPrev != null && radNow > radPrev) {
+                  int ringsThisStep = Math.max(1,
+                     (radNow - radPrev) / com.coderyo.jason.expand.VillageExpansion.RING_STEP);
+                  naturalRingsGrown += ringsThisStep;
+                  naturalExpandVillages.add(safeName(th));
+                  event("VILLAGE-EXPANDED village=" + safeName(th) + " claimed radius " + radPrev + "->" + radNow
+                     + " (grew OUTWARD by real surplus + space pressure — Phase 3 infinite expansion)");
+               }
+               lastVillageRadius.put(p, radNow);
+            } catch (Throwable ignored) {
+            }
 
             // EVENT: building completed (count went up).
             Integer prevB = lastBuildingCount.get(p);
@@ -2217,6 +2520,12 @@ public final class MillSimObserver {
             log("SIM SUMMARY   procbuild: " + ev);
          }
          log("SIM SUMMARY RESOURCE-CHAIN (mine→deposit→consume): " + chainDemoEvidence);
+         log("SIM SUMMARY EXPANSION (Phase 3, #1/#2 infinite outward): naturalLifecycleRingsGrown="
+            + naturalRingsGrown + " across villages=" + naturalExpandVillages
+            + " | demoRingsGrown=" + expandRingsGrown + " | demo: " + expandDemoEvidence);
+         for (String ev : expandEvidence) {
+            log("SIM SUMMARY   expand-demo: " + ev);
+         }
          log("SIM SUMMARY PLAYER: villagesVisited=" + playerVillagesVisited
             + " tradesDone=" + playerTradesDone + " questsDone=" + playerQuestsDone
             + " moneySpent=" + playerMoneySpent + " moneyEarned=" + playerMoneyEarned

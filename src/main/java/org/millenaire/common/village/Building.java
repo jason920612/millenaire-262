@@ -5917,6 +5917,18 @@ public class Building {
       // findBuildingConstruction path below is only taken for the WORLDGEN SEED (the initial village laid down by
       // WorldGenVillage at generation time, ignoreCost==worldGeneration==true) and when procedural is disabled.
       if (com.coderyo.jason.build.MillBuildEngine.ENABLED && this.isTownhall && !ignoreCost) {
+         // Phase 3 (#1/#2) INFINITE OUTWARD EXPANSION: before the ambient procedural build, evaluate whether the
+         // village should grow its claimed radius outward — when it has REAL resource surplus + space pressure and
+         // the perf-guards pass, it expands a ring toward a scored direction (resources/terrain, away from
+         // hostiles), spends the real surplus, and queues a new procedural building in the new ring. Strict
+         // no-grant / no-fallback: if the conditions aren't met it simply doesn't expand this tick. The driver
+         // hands off to MillProceduralConstruction.tick itself on a successful expansion, so when it expanded we
+         // return that as the construction "changed" signal; otherwise we run the normal ambient build tick.
+         com.coderyo.jason.expand.VillageExpansion.Outcome expansion =
+            com.coderyo.jason.expand.VillageExpansion.tick(this);
+         if (expansion.expanded) {
+            return true;
+         }
          return com.coderyo.jason.build.MillProceduralConstruction.tick(this);
       }
 

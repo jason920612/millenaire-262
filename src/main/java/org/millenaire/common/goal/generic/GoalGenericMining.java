@@ -141,16 +141,78 @@ public class GoalGenericMining extends GoalGeneric {
       return true;
    }
 
+   /**
+    * Player-like mine cycle (data-driven twin of {@code GoalMinerMineResource}), driven one tick at a time
+    * (actionDuration is the 1.12 figure but the cycle re-enters every tick until COMPLETE). STATELESS — all phase
+    * is derived from the WORLD/point each tick (shared SINGLETON, no per-goal mutable progress).
+    *
+    * <p>Cycle: ensureTool (strict pickaxe/shovel; snow/ice are ULU-mined, exempt — the held-item path already equips
+    * the ULU) → {@link VillagerWorldOps#breakTick} (reach-gated, cracks, real tool-aware drops over time) → schedule
+    * the source to REGROW on the point (renewable mine, as 1.12) → {@link VillagerWorldOps#pickupTick} walking to each
+    * dropped ItemEntity → grant the CONFIGURED {@link #loots} as the kept 1.12 net yield (the real drops are the
+    * worksite by-product; the configured loot is the economy item, exactly as 1.12 granted it).
+    */
    @Override
    public boolean performAction(MillVillager villager) throws Exception {
+      Point dest = villager.getGoalDestPoint();
+      if (dest == null) {
+         return true;
+      }
+      net.minecraft.core.BlockPos pos = dest.getBlockPos();
+      BlockState blockState = WorldUtilities.getBlockState(villager.level(), dest);
+      Block block = blockState.getBlock();
+
+      // Air already (mid-cycle, after the break): go straight to pickup + grant.
+      if (blockState.isAir()) {
+         return runPickupAndFinish(villager, pos);
+      }
+
+      // Strict tool — snow/ice are knife(ULU)-mined in 1.12, exempt from the pickaxe/shovel gate (held-item equips it).
+      boolean uluMined = block == Blocks.SNOW || block == Blocks.SNOW_BLOCK || block == Blocks.ICE;
+      if (!uluMined) {
+         com.coderyo.jason.ops.VillagerWorldOps.ToolKind kind = com.coderyo.jason.ops.VillagerWorldOps.miningToolFor(block);
+         if (!com.coderyo.jason.ops.VillagerWorldOps.ensureTool(villager, kind)) {
+            // No correct tool: do NOT break (no drop). Stay in-goal so GoalGetTool can pre-empt and fetch one.
+            if (MillConfigValues.LogMiner >= 2 && villager.extraLog) {
+               MillLog.debug(this, "No " + kind + " to mine " + block + " at " + dest + "; waiting for tool.");
+            }
+            return false;
+         }
+      }
+
+      BlockState sourceState = blockState;
+      com.coderyo.jason.ops.OpState st = com.coderyo.jason.ops.VillagerWorldOps.breakTick(villager, pos);
+      switch (st) {
+         case APPROACHING:
+         case EXTENDING_REACH:
+         case IN_PROGRESS:
+            return false;
+         case BLOCKED:
+            if (MillConfigValues.LogMiner >= 1) {
+               MillLog.debug(this, "Blocked mining " + block + " at " + dest + "; abandoning.");
+            }
+            return true;
+         case COMPLETE:
+            com.coderyo.jason.ops.TaskPointStore.get().scheduleRegrow(
+               villager.level(), pos, sourceState, villager.level().getGameTime());
+            return runPickupAndFinish(villager, pos);
+         default:
+            return false;
+      }
+   }
+
+   /** Walk-to-each-drop pickup; on COMPLETE grant the configured 1.12 loot yield and finish the goal. */
+   private boolean runPickupAndFinish(MillVillager villager, net.minecraft.core.BlockPos pos) {
+      com.coderyo.jason.ops.OpState pst = com.coderyo.jason.ops.VillagerWorldOps.pickupTick(villager, pos);
+      if (pst != com.coderyo.jason.ops.OpState.COMPLETE) {
+         return false;
+      }
       for (InvItem key : this.loots.keySet()) {
          villager.addToInv(key, this.loots.get(key));
          if (MillConfigValues.LogMiner >= 3 && villager.extraLog) {
             MillLog.debug(this, "Gathered " + key + " at: " + villager.getGoalDestPoint());
          }
       }
-
-      WorldUtilities.playSoundBlockBreaking(villager.level(), villager.getGoalDestPoint(), this.sourceBlockState.getBlock(), 1.0F);
       return true;
    }
 

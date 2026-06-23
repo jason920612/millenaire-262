@@ -111,9 +111,16 @@ public class GoalGenericPlantSapling extends GoalGeneric {
             saplingBS = MillBlocks.SAPLING_SAKURA.defaultBlockState();
          }
 
+         // Reach-gate (ground-level plot; normally already in reach). Scaffold-extend if needed; keep approaching
+         // until in reach. STATELESS — phase is the WORLD block state above, no per-goal field.
+         net.minecraft.core.BlockPos pos = villager.getGoalDestPoint().getBlockPos();
+         if (!com.coderyo.jason.ops.VillagerWorldOps.withinReach(villager, pos)) {
+            com.coderyo.jason.ops.OpState reach = com.coderyo.jason.ops.VillagerWorldOps.ensureReach(villager, pos);
+            return reach == com.coderyo.jason.ops.OpState.BLOCKED; // BLOCKED → finish (re-pick); else keep approaching.
+         }
+         // Real player-like place: consume the sapling from stock, then place it (swing + place sound).
          villager.takeFromInv(saplingBS, 1);
-         villager.setBlockstate(villager.getGoalDestPoint(), saplingBS);
-         villager.swing(InteractionHand.MAIN_HAND);
+         com.coderyo.jason.ops.VillagerWorldOps.place(villager, pos, saplingBS);
          if (MillConfigValues.LogLumberman >= 3 && villager.extraLog) {
             MillLog.debug(this, "Planted at: " + villager.getGoalDestPoint());
          }

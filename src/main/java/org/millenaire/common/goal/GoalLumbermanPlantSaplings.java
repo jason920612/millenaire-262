@@ -109,6 +109,15 @@ public class GoalLumbermanPlantSaplings extends Goal {
       return true;
    }
 
+   /**
+    * Player-like sapling plant, reach-gated and real (mirrors the migrated plant goals — crop/cacao/sugarcane).
+    * STATELESS — phase is the WORLD block state at the dest each tick (shared SINGLETON, no per-goal field).
+    *
+    * <p>1.12 mechanic + economy KEPT: the variant comes from the grove's planting-location type and one matching
+    * sapling is consumed from stock. The ONLY change vs 1.12 is the genuine player-like gate: the villager must be
+    * within player REACH (walk closer / scaffold-extend if not) before the place, then it SWINGS and places via the
+    * real {@code place} primitive (swing + place sound) instead of an instant silent setBlock.
+    */
    @Override
    public boolean performAction(MillVillager villager) {
       Block block = WorldUtilities.getBlock(villager.level(), villager.getGoalDestPoint());
@@ -116,30 +125,30 @@ public class GoalLumbermanPlantSaplings extends Goal {
          || block == Blocks.SNOW
          || BlockItemUtilities.isBlockDecorativePlant(block) && !(block instanceof SaplingBlock)) {
          String saplingType = villager.getGoalBuildingDest().getResManager().getPlantingLocationType(villager.getGoalDestPoint());
-         int meta = 0;
+         // 26.2: the 1.12 OAK_SAPLING meta-variants are gone — each wood type is a distinct sapling block. Map the
+         // grove's planting-location type to the matching block (same mapping as GoalGenericPlantSapling).
+         net.minecraft.world.level.block.state.BlockState saplingBS = Blocks.OAK_SAPLING.defaultBlockState();
          if ("pinespawn".equals(saplingType)) {
-            meta = 1;
+            saplingBS = Blocks.SPRUCE_SAPLING.defaultBlockState();
+         } else if ("birchspawn".equals(saplingType)) {
+            saplingBS = Blocks.BIRCH_SAPLING.defaultBlockState();
+         } else if ("junglespawn".equals(saplingType)) {
+            saplingBS = Blocks.JUNGLE_SAPLING.defaultBlockState();
+         } else if ("acaciaspawn".equals(saplingType)) {
+            saplingBS = Blocks.ACACIA_SAPLING.defaultBlockState();
+         } else if ("darkoakspawn".equals(saplingType)) {
+            saplingBS = Blocks.DARK_OAK_SAPLING.defaultBlockState();
          }
 
-         if ("birchspawn".equals(saplingType)) {
-            meta = 2;
+         // Reach-gate: walk within player reach (scaffold-extend if needed) before placing.
+         net.minecraft.core.BlockPos pos = villager.getGoalDestPoint().getBlockPos();
+         if (!com.coderyo.jason.ops.VillagerWorldOps.withinReach(villager, pos)) {
+            com.coderyo.jason.ops.OpState reach = com.coderyo.jason.ops.VillagerWorldOps.ensureReach(villager, pos);
+            return reach == com.coderyo.jason.ops.OpState.BLOCKED; // BLOCKED → finish (re-pick); else keep approaching.
          }
-
-         if ("junglespawn".equals(saplingType)) {
-            meta = 3;
-         }
-
-         if ("acaciaspawn".equals(saplingType)) {
-            meta = 4;
-         }
-
-         if ("darkoakspawn".equals(saplingType)) {
-            meta = 5;
-         }
-
-         villager.takeFromInv(Blocks.OAK_SAPLING, meta, 1);
-         villager.setBlockAndMetadata(villager.getGoalDestPoint(), Blocks.OAK_SAPLING, meta);
-         villager.swing(InteractionHand.MAIN_HAND);
+         // Real player-like place: consume the matching sapling from stock, then place it (swing + place sound).
+         villager.takeFromInv(saplingBS, 1);
+         com.coderyo.jason.ops.VillagerWorldOps.place(villager, pos, saplingBS);
          if (MillConfigValues.LogLumberman >= 3 && villager.extraLog) {
             MillLog.debug(this, "Planted at: " + villager.getGoalDestPoint());
          }

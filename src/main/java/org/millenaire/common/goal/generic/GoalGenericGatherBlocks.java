@@ -155,24 +155,47 @@ public class GoalGenericGatherBlocks extends GoalGeneric {
       return this.getDestination(villager) != null;
    }
 
+   /**
+    * Player-like gather, driven one tick at a time. STATELESS — this Goal is a SINGLETON shared across villagers, so
+    * the phase is derived from the WORLD each tick (the gather block's actual state), never a per-goal field.
+    *
+    * <p>1.12 mechanic + yield KEPT EXACTLY (mirrors the migrated silk/snail/brick gather goals): the configured
+    * {@link #gatherBlockState} source is NOT break-and-drop — 1.12 TRANSFORMED it in place to
+    * {@link #resultingBlockState} (or left it) and granted the configured {@link #harvestItem} bonus(es). The
+    * transform spawns no real {@link net.minecraft.world.entity.item.ItemEntity}, so there is nothing to pick up —
+    * the configured bonus item is the authoritative Mill yield, kept as the 1.12-fixed yield. The ONLY change vs
+    * 1.12 is the genuine player-like gate: the villager must be within player REACH (walk closer / scaffold-extend
+    * if not) and SWINGS before the transform.
+    */
    @Override
    public boolean performAction(MillVillager villager) {
-      if (villager.getGoalDestPoint().getBlockActualState(villager.level()) == this.gatherBlockState) {
-         for (AnnotedParameter.BonusItem bonusItem : this.harvestItem) {
-            if (MillRandom.randomInt(100) <= bonusItem.chance) {
-               if (this.collectInBuilding) {
-                  villager.getGoalBuildingDest().storeGoods(bonusItem.item, 1);
-               } else {
-                  villager.addToInv(bonusItem.item, 1);
+      Point dest = villager.getGoalDestPoint();
+      if (dest != null && dest.getBlockActualState(villager.level()) == this.gatherBlockState) {
+         // Reach-gate: walk within player reach (scaffold-extend if needed) before interacting. If still approaching,
+         // keep going next tick; if BLOCKED, fall through to re-pick a destination.
+         if (!com.coderyo.jason.ops.VillagerWorldOps.withinReach(villager, dest.getBlockPos())) {
+            com.coderyo.jason.ops.OpState reach = com.coderyo.jason.ops.VillagerWorldOps.ensureReach(villager, dest.getBlockPos());
+            if (reach != com.coderyo.jason.ops.OpState.BLOCKED) {
+               return false; // keep approaching/extending reach.
+            }
+            // BLOCKED: cannot reach this source; fall through to re-pick a new destination below.
+         } else {
+            // In reach: real player-like interact — swing, then the 1.12 transform + the 1.12-fixed bonus yield.
+            villager.swing(InteractionHand.MAIN_HAND);
+            for (AnnotedParameter.BonusItem bonusItem : this.harvestItem) {
+               if (MillRandom.randomInt(100) <= bonusItem.chance) {
+                  if (this.collectInBuilding) {
+                     villager.getGoalBuildingDest().storeGoods(bonusItem.item, 1);
+                  } else {
+                     villager.addToInv(bonusItem.item, 1);
+                  }
                }
             }
-         }
 
-         if (this.resultingBlockState != null) {
-            villager.setBlockstate(villager.getGoalDestPoint(), this.resultingBlockState);
+            if (this.resultingBlockState != null) {
+               villager.setBlockstate(dest, this.resultingBlockState);
+            }
          }
-
-         villager.swing(InteractionHand.MAIN_HAND);
       }
 
       if (this.isDestPossibleSpecific(villager, villager.getGoalBuildingDest())) {

@@ -2086,13 +2086,13 @@ public final class MillClientSelfTest {
 
    private void stepReturnToMenu() {
       try {
-         // Close any open Mill screen first.
+         // Close any open Mill screen, but do NOT disconnect here. Disconnecting stops the integrated server,
+         // which would prevent the co-hosted SERVER self-test from EVER reaching its growth-end H-cycles
+         // (GROWTH_CYCLES_DONE) — the bug that left the harness sitting at the main menu for the full
+         // MAX_TICK_GUARD (~6 min) waiting on a server it had just killed. Keep the world LOADED;
+         // maybeStopWaitingForServer waits for the server, then returnToMenuAndStop disconnects + stops ONCE.
          mc.setScreenAndShow(null);
-         // Disconnect from the integrated server back to the title screen (tidy shutdown of the world).
-         if (mc.level != null) {
-            mc.disconnect(new TitleScreen(), false);
-         }
-         log("returned to main menu (disconnected from world).");
+         log("client steps done; keeping the world loaded until the server self-test reaches its growth-end H-cycles.");
       } catch (Throwable t) {
          recordException("returnToMenu", t);
          log("returnToMenu note: " + t);

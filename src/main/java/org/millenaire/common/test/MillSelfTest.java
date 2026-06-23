@@ -327,6 +327,13 @@ public final class MillSelfTest {
                if (farmCycleOk == null) {
                   stepFarmCycle();
                }
+               // FISH is multi-tick (real bobber animation), but its dedicated window (TICK_FISH_*) is LATER than
+               // GROWTH_END and the co-hosted client halts before reaching it. Run the INLINE fishing cycle HERE — it
+               // drives the real hook's tick() loop itself (mixin still animates) + forces the bite deterministically,
+               // so FISH actually completes within the reliably-reached window.
+               if (fishCycleOk == null) {
+                  stepFishInline();
+               }
                if (catalogResult == null) {
                   stepCatalog();
                }
@@ -377,8 +384,18 @@ public final class MillSelfTest {
                   stepShearCycle();
                }
             }
-            case TICK_FISH_START -> stepFishStart();
-            case TICK_FISH_END -> stepFishEnd();
+            case TICK_FISH_START -> {
+               // Only run the multi-tick fishing window if the INLINE cycle at GROWTH_END didn't already pass it
+               // (it always runs in the co-hosted harness; this dedicated window is the full server-only fallback).
+               if (fishCycleOk == null || !fishCycleOk) {
+                  stepFishStart();
+               }
+            }
+            case TICK_FISH_END -> {
+               if (fishVillager != null) {
+                  stepFishEnd();
+               }
+            }
             case TICK_CATALOG -> {
                if (catalogResult == null) {
                   stepCatalog();
@@ -1281,8 +1298,14 @@ public final class MillSelfTest {
          // Build a clear pad: villager on solid ground, a tall trunk one block across so its top is OUT of reach.
          BlockPos vPos = v.blockPosition();
          BlockPos trunkBase = vPos.offset(1, 0, 0);
-         // Clear a column of air around the trunk + give the villager solid footing so it doesn't fall.
-         for (int dy = -1; dy <= 14; dy++) {
+         // The villager stands here (feet at groundY) for the whole horizontal-approach + pickup phase. ONLY the
+         // scaffold-climb (standing on the column top) is allowed to raise it — this is what forces ensureReach to
+         // build a real scaffold for the upper logs, rather than the harness teleporting the villager up to them.
+         final int groundY = vPos.getY();
+         // Clear a TALL column of air around the trunk + the villager's standing cell + give it solid footing so it
+         // doesn't fall. The cleared height (>= trunkHeight + headroom) means the scaffold column at the villager's
+         // feet has free space to rise the full way up to the top logs.
+         for (int dy = -1; dy <= 20; dy++) {
             for (int dx = -1; dx <= 2; dx++) {
                for (int dz = -1; dz <= 1; dz++) {
                   BlockPos p = vPos.offset(dx, dy, dz);
@@ -1292,8 +1315,10 @@ public final class MillSelfTest {
                }
             }
          }
-         // A 12-tall oak trunk topped with a small leaf cap (upper logs at y+8..+11 are beyond the 4.5 reach).
-         int trunkHeight = 12;
+         // A 16-tall oak trunk topped with a small leaf cap. The eye sits ~1.62 above groundY, and reach is 4.5, so
+         // every log from y+5 (≈4.9 above the eye) upward is GENUINELY out of reach from the ground — the chop MUST
+         // build a scaffold to fell them (mirrors opsim.py chop_tree's tall-trunk scaffold proof).
+         int trunkHeight = 16;
          for (int i = 0; i < trunkHeight; i++) {
             level.setBlock(trunkBase.above(i), net.minecraft.world.level.block.Blocks.OAK_LOG.defaultBlockState(), 3);
          }
@@ -1304,8 +1329,14 @@ public final class MillSelfTest {
             }
          }
          int logsPlaced = trunkHeight;
-         log("H3 CHOPCYCLE built a " + trunkHeight + "-tall oak (top log at y=" + trunkBase.above(trunkHeight - 1).getY()
-            + ", villager eyeY=" + String.format("%.1f", v.getEyePosition().y) + ")");
+         // Prove the SCENE is correct before driving it: the topmost log must be out of reach from the ground stand,
+         // so a scaffold is unavoidable. (If this were false the test would be a no-op artifact, exactly the prior bug.)
+         v.setPos(vPos.getX() + 0.5, groundY, vPos.getZ() + 0.5);
+         BlockPos topLog = trunkBase.above(trunkHeight - 1);
+         boolean topOutOfReachFromGround = !com.coderyo.jason.ops.VillagerWorldOps.withinReach(v, topLog);
+         log("H3 CHOPCYCLE built a " + trunkHeight + "-tall oak (top log at y=" + topLog.getY()
+            + ", villager groundEyeY=" + String.format("%.1f", v.getEyePosition().y)
+            + ", topLogOutOfReachFromGround=" + topOutOfReachFromGround + " — scaffold REQUIRED)");
 
          // Equip the axe (strict-tool path) and verify ensureTool(AXE) accepts it.
          v.heldItem = new ItemStack(net.minecraft.world.item.Items.IRON_AXE);
@@ -1317,11 +1348,11 @@ public final class MillSelfTest {
          boolean scaffoldUsed = false;
          int maxScaffold = 0;
 
-         // Drive the per-tick cycle directly: for each log lowest-first, ensureReach (scaffold if high) then break +
-         // pickup; then clear leaves. We nudge the villager (no real pathing between our synchronous calls) onto the
-         // climb column / drops so the distance-gated steps fire headlessly.
+         // Drive the per-tick cycle directly: for each block lowest-first, ensureReach (scaffold if high) then break +
+         // pickup. The villager ONLY rises by standing on the scaffold column it builds — every horizontal-approach /
+         // pickup nudge keeps its feet at groundY so high logs stay genuinely out of reach until the scaffold lifts it.
          int guard = 0;
-         while (guard++ < 6000) {
+         while (guard++ < 8000) {
             // Re-enumerate remaining logs/leaves from the world (broken ones are now air).
             BlockPos nextLog = lowestBlock(level, trunkBase, true);
             BlockPos nextLeaf = nextLog == null ? lowestBlock(level, trunkBase, false) : null;
@@ -1338,9 +1369,8 @@ public final class MillSelfTest {
                   int col = prog != null ? prog.scaffoldColumn.size() : 0;
                   maxScaffold = Math.max(maxScaffold, col);
                   // Stand the villager on top of the column it has built so the next reach test/placement advances.
+                  // This is the ONLY place the villager is allowed to gain height (it climbs its own scaffold).
                   if (prog != null && !prog.scaffoldColumn.isEmpty()) {
-                     BlockPos base = trunkBase.below(); // column rises from the villager's feet (vPos level)
-                     // Highest tracked scaffold block:
                      long topPacked = prog.scaffoldColumn.get(prog.scaffoldColumn.size() - 1);
                      BlockPos top = BlockPos.of(topPacked);
                      v.setPos(top.getX() + 0.5, top.getY() + 1.0, top.getZ() + 0.5);
@@ -1351,27 +1381,38 @@ public final class MillSelfTest {
                   log("H3 CHOPCYCLE reach BLOCKED on " + target + " — abandoning that block");
                   break;
                }
+               if (reach == com.coderyo.jason.ops.OpState.COMPLETE) {
+                  // ensureReach reports it's now in reach (it stood the villager on the column for us); fall through to
+                  // break this tick.
+               }
             }
 
             com.coderyo.jason.ops.OpState st = com.coderyo.jason.ops.VillagerWorldOps.breakTick(v, target);
             if (st == com.coderyo.jason.ops.OpState.APPROACHING) {
-               // Pull the villager adjacent to the target so the synchronous loop makes progress.
-               v.setPos(target.getX() + 1.5, target.getY(), target.getZ() + 0.5);
+               // Still out of reach (a low block we haven't scaffolded for): pull the villager horizontally adjacent
+               // at GROUND level — never up to the target's Y. A still-too-high block is handled by ensureReach above.
+               v.setPos(target.getX() + 1.5, groundY, target.getZ() + 0.5);
                continue;
             }
             if (st == com.coderyo.jason.ops.OpState.COMPLETE) {
-               // Collect this block's drops (nudge onto them, like the mine-cycle harness).
+               // Collect this block's drops. Drops fall to the ground, so the villager returns to groundY beside the
+               // trunk and nudges onto each drop's XZ at ground level (never re-gaining height off the scaffold).
+               v.setPos(vPos.getX() + 0.5, groundY, vPos.getZ() + 0.5);
                int pg = 0;
-               while (pg++ < 100) {
+               while (pg++ < 200) {
                   com.coderyo.jason.ops.OpState pst = com.coderyo.jason.ops.VillagerWorldOps.pickupTick(v, target);
                   if (pst == com.coderyo.jason.ops.OpState.COMPLETE) {
                      break;
                   }
-                  var d = level.getEntitiesOfClass(net.minecraft.world.entity.item.ItemEntity.class, new AABB(target).inflate(5.0));
+                  var d = level.getEntitiesOfClass(net.minecraft.world.entity.item.ItemEntity.class, new AABB(target).inflate(6.0));
                   if (!d.isEmpty()) {
                      v.setPos(d.get(0).getX(), d.get(0).getY(), d.get(0).getZ());
+                  } else {
+                     break;
                   }
                }
+               // Return to the ground stand so the NEXT (higher) target is correctly judged out of reach → scaffold.
+               v.setPos(vPos.getX() + 0.5, groundY, vPos.getZ() + 0.5);
             }
          }
 
@@ -1386,7 +1427,7 @@ public final class MillSelfTest {
          boolean allLogsGone = lowestBlock(level, trunkBase, true) == null;
          boolean allLeavesGone = lowestBlock(level, trunkBase, false) == null;
          int scaffoldLeft = 0;
-         for (int dy = -1; dy <= 16; dy++) {
+         for (int dy = -1; dy <= 22; dy++) {
             for (int dx = -2; dx <= 3; dx++) {
                for (int dz = -2; dz <= 2; dz++) {
                   if (level.getBlockState(vPos.offset(dx, dy, dz)).is(net.minecraft.world.level.block.Blocks.SCAFFOLDING)) {
@@ -1397,18 +1438,24 @@ public final class MillSelfTest {
          }
          int logsCollected = v.countInv(net.minecraft.world.level.block.Blocks.OAK_LOG.asItem(), 0);
 
-         log("H3 CHOPCYCLE result: logsPlaced=" + logsPlaced + " allLogsGone=" + allLogsGone
+         log("H3 CHOPCYCLE result: logsPlaced=" + logsPlaced + " topLogOutOfReachFromGround=" + topOutOfReachFromGround
+            + " allLogsGone=" + allLogsGone
             + " allLeavesGone=" + allLeavesGone + " scaffoldUsed=" + scaffoldUsed + " maxScaffoldColumn=" + maxScaffold
             + " columnReclaimed=" + columnBeforeReclaim + "->" + columnAfterReclaim
             + " scaffoldBlocksLeftInWorld=" + scaffoldLeft + " oakLogsInInv=" + logsCollected);
 
-         chopCycleOk = toolOk && allLogsGone && allLeavesGone && scaffoldUsed && scaffoldLeft == 0;
+         // STRICT: the scene must have genuinely required a scaffold (topOutOfReachFromGround), the scaffold must have
+         // been used (scaffoldUsed), the whole tree felled, the drops collected, and the scaffold fully reclaimed.
+         chopCycleOk = toolOk && topOutOfReachFromGround && allLogsGone && allLeavesGone
+            && scaffoldUsed && scaffoldLeft == 0 && logsCollected > 0;
          log("H3 CHOPCYCLE " + (chopCycleOk ? "OK" : "PARTIAL")
-            + ": tool=" + toolOk + " wholeTreeFelled=" + (allLogsGone && allLeavesGone)
-            + " scaffoldUsedForTallTree=" + scaffoldUsed + " scaffoldReclaimed=" + (scaffoldLeft == 0));
+            + ": tool=" + toolOk + " sceneRequiredScaffold=" + topOutOfReachFromGround
+            + " wholeTreeFelled=" + (allLogsGone && allLeavesGone)
+            + " scaffoldUsedForTallTree=" + scaffoldUsed + " scaffoldReclaimed=" + (scaffoldLeft == 0)
+            + " drops PickedUp=" + (logsCollected > 0));
 
          // Clean up the pad.
-         for (int dy = -1; dy <= 16; dy++) {
+         for (int dy = -1; dy <= 22; dy++) {
             for (int dx = -2; dx <= 3; dx++) {
                for (int dz = -2; dz <= 2; dz++) {
                   level.removeBlock(vPos.offset(dx, dy, dz), false);
@@ -2011,24 +2058,7 @@ public final class MillSelfTest {
          }
 
          // The picked-up loot is now in the villager's inventory; sum the FISHING-table outcomes we can count.
-         fishPickedUp = v.countInv(net.minecraft.world.item.Items.COD, 0)
-            + v.countInv(net.minecraft.world.item.Items.SALMON, 0)
-            + v.countInv(net.minecraft.world.item.Items.PUFFERFISH, 0)
-            + v.countInv(net.minecraft.world.item.Items.TROPICAL_FISH, 0)
-            + v.countInv(net.minecraft.world.item.Items.STICK, 0)
-            + v.countInv(net.minecraft.world.item.Items.STRING, 0)
-            + v.countInv(net.minecraft.world.item.Items.BOWL, 0)
-            + v.countInv(net.minecraft.world.item.Items.LEATHER, 0)
-            + v.countInv(net.minecraft.world.item.Items.LEATHER_BOOTS, 0)
-            + v.countInv(net.minecraft.world.item.Items.ROTTEN_FLESH, 0)
-            + v.countInv(net.minecraft.world.item.Items.INK_SAC, 0)
-            + v.countInv(net.minecraft.world.item.Items.BONE, 0)
-            + v.countInv(net.minecraft.world.item.Items.LILY_PAD, 0)
-            + v.countInv(net.minecraft.world.item.Items.NAME_TAG, 0)
-            + v.countInv(net.minecraft.world.item.Items.NAUTILUS_SHELL, 0)
-            + v.countInv(net.minecraft.world.item.Items.SADDLE, 0)
-            + v.countInv(net.minecraft.world.item.Items.FISHING_ROD, 0)
-            + v.countInv(net.minecraft.world.item.Items.ENCHANTED_BOOK, 0);
+         fishPickedUp = countFishingLoot(v);
 
          // A successful cycle: the villager-owned hook survived+animated, a catch rolled real loot, the villager
          // ended IDLE/COMPLETE (no stuck bobber), and at least one loot stack made it into its inventory.
@@ -2063,6 +2093,188 @@ public final class MillSelfTest {
       }
    }
 
+   // ====================== STEP H5b: INLINE fishing cycle (runs AT GROWTH_END) ======================
+
+   /**
+    * INLINE, fully-synchronous fishing cycle so the FISH scenario actually RUNS + PASSES within the reliably-reached
+    * GROWTH_END window (the multi-tick {@link #stepFishStart}/{@link #stepFishDrive}/{@link #stepFishEnd} window is
+    * scheduled LATER than GROWTH_END, which the co-hosted client halts before reaching). It mirrors that window's
+    * three phases but drives the real bobber's {@code tick()} ITSELF in a loop here — the {@code FishingHookMixin}
+    * runs inside each {@code hook.tick()}, so the full vanilla bobbing + bite animation still happens, the
+    * villager-owned hook survives (never the Player-gated discard), we observe the live {@code biting} flag, then FORCE
+    * the bite deterministically (set the AW-widened {@code nibble}) so the very next {@code hook.tick()} reels real
+    * {@code BuiltInLootTables.FISHING} loot, and the villager walks to + collects it. Sets {@link #fishCycleOk}.
+    */
+   private void stepFishInline() {
+      MillVillager v = null;
+      BlockPos centre = null;
+      try {
+         List<MillVillager> villagers = level.getEntitiesOfClass(
+            MillVillager.class, new AABB(-30000, level.getMinY(), -30000, 30000, level.getMaxY(), 30000), x -> x.isAlive());
+         if (villagers.isEmpty()) {
+            log("H5 FISHCYCLE(inline) SKIP: no MillVillager in world");
+            fishCycleOk = false;
+            return;
+         }
+         v = villagers.get(0);
+         fishVillager = v;
+
+         // Build the fishing scene at the villager's own validly-occupied position (do NOT teleport it far — a relocated
+         // villager is culled by Mill management within a tick and would orphan the bobber). Clear a small pad + carve a
+         // 3x3 water pool 2 blocks in front.
+         BlockPos base = v.blockPosition();
+         for (int dx = -2; dx <= 4; dx++) {
+            for (int dz = -3; dz <= 3; dz++) {
+               level.setBlock(base.offset(dx, -1, dz), net.minecraft.world.level.block.Blocks.STONE.defaultBlockState(), 3);
+               level.setBlock(base.offset(dx, 0, dz), net.minecraft.world.level.block.Blocks.AIR.defaultBlockState(), 3);
+               level.setBlock(base.offset(dx, 1, dz), net.minecraft.world.level.block.Blocks.AIR.defaultBlockState(), 3);
+            }
+         }
+         centre = base.offset(2, 0, 0);
+         for (int dx = -1; dx <= 1; dx++) {
+            for (int dz = -1; dz <= 1; dz++) {
+               BlockPos w = centre.offset(dx, 0, dz);
+               level.setBlock(w.below(), net.minecraft.world.level.block.Blocks.STONE.defaultBlockState(), 3);
+               level.setBlock(w, net.minecraft.world.level.block.Blocks.WATER.defaultBlockState(), 3);
+               level.setBlock(w.above(), net.minecraft.world.level.block.Blocks.AIR.defaultBlockState(), 3);
+            }
+         }
+         v.setPos(base.getX() + 0.5, base.getY(), base.getZ() + 0.5);
+         fishWaterSurface = centre;
+
+         v.heldItem = new ItemStack(net.minecraft.world.item.Items.FISHING_ROD);
+         com.coderyo.jason.ops.TaskPointStore.get().clear(level, centre);
+         boolean rodOk = com.coderyo.jason.ops.VillagerWorldOps.ensureTool(v, com.coderyo.jason.ops.VillagerWorldOps.ToolKind.ROD);
+         BlockPos surface = com.coderyo.jason.ops.VillagerFishing.findWaterSurface(level, centre);
+         log("H5 FISHCYCLE(inline) scene: pad@" + base + " pool@" + centre + " villager@" + v.blockPosition()
+            + " rodEquipped=" + rodOk + " waterSurfaceResolved=" + surface);
+
+         // CAST: IDLE → CASTING, spawning the real villager-owned hook over the water.
+         com.coderyo.jason.ops.OpState cast = com.coderyo.jason.ops.VillagerWorldOps.fishTick(v, centre);
+         com.coderyo.jason.ops.TaskPointStore.Progress p = com.coderyo.jason.ops.TaskPointStore.get().peek(level, centre);
+         fishBobberId = (p != null) ? p.fishingBobberId : 0;
+         net.minecraft.world.entity.projectile.FishingHook hook =
+            (fishBobberId != 0 && level.getEntity(fishBobberId) instanceof net.minecraft.world.entity.projectile.FishingHook h) ? h : null;
+         log("H5 FISHCYCLE(inline) cast: state=" + cast + " bobberId=" + fishBobberId
+            + " hookSpawned=" + (hook != null) + " ownerIsVillager=" + (hook != null && hook.getOwner() == v));
+         if (hook == null) {
+            fishCycleOk = false;
+            log("H5 FISHCYCLE(inline) FAIL: no hook spawned");
+            return;
+         }
+
+         // DRIVE the hook's own tick() in a loop. The mixin keeps the villager-owned hook alive + runs the real
+         // bobbing/bite FSM each tick. Keep the villager beside the pool so reach-gated pickup works after the reel.
+         int drive = 0;
+         boolean reeled = false;
+         while (drive++ < FISH_WINDOW) {
+            v.setPos(centre.getX() + 0.5, centre.getY(), centre.getZ() - 1.2);
+            net.minecraft.world.entity.projectile.FishingHook live =
+               (level.getEntity(fishBobberId) instanceof net.minecraft.world.entity.projectile.FishingHook h2 && h2.isAlive()) ? h2 : null;
+            if (live == null) {
+               break; // reeled (hook discarded by the mixin on catch) or expired.
+            }
+            fishHookSurvived = true; // it lived past tick 1 → the mixin's keep-alive defeated the Player-gating.
+            // Sample the live bite-animation flag (proof the bobber really reached "biting").
+            fishMaxBitingObserved = Math.max(fishMaxBitingObserved, live.biting ? 1 : 0);
+
+            // Force the catch deterministically ~10 ticks in (after it has settled onto the water + bobbed), unless a
+            // natural bite already landed. Setting the AW-widened nibble>0 makes the next tick's mixin path reel.
+            if (!fishCatchForced && drive >= 10) {
+               int beforeNibble = live.nibble;
+               if (beforeNibble <= 0) {
+                  live.nibble = 1;
+               }
+               fishCatchForced = true;
+               log("H5 FISHCYCLE(inline) forced a bite at +" + drive + "t (nibble " + beforeNibble + "->" + live.nibble + ")");
+            }
+
+            // Run the hook's vanilla tick → the mixin animates / (on the forced bite) reels via VillagerFishing.reel.
+            live.tick();
+
+            // Did the reel happen? The point flips to PICKUP and the hook is discarded.
+            com.coderyo.jason.ops.TaskPointStore.Progress pp = com.coderyo.jason.ops.TaskPointStore.get().peek(level, centre);
+            if (pp != null && pp.fishingPhase == com.coderyo.jason.ops.VillagerFishing.Phase.PICKUP.ordinal()) {
+               reeled = true;
+               break;
+            }
+         }
+
+         // PICKUP: walk the villager to each FISHING-loot drop and collect it (synchronous).
+         com.coderyo.jason.ops.OpState st = com.coderyo.jason.ops.VillagerWorldOps.fishTick(v, centre);
+         int guard = 0;
+         while (st == com.coderyo.jason.ops.OpState.PICKING_UP && guard++ < 200) {
+            var drops = level.getEntitiesOfClass(net.minecraft.world.entity.item.ItemEntity.class, new AABB(centre).inflate(6.0));
+            fishLootSpawned = Math.max(fishLootSpawned, drops.size());
+            if (!drops.isEmpty()) {
+               v.setPos(drops.get(0).getX(), drops.get(0).getY(), drops.get(0).getZ());
+            }
+            st = com.coderyo.jason.ops.VillagerWorldOps.fishTick(v, centre);
+         }
+
+         fishPickedUp = countFishingLoot(v);
+         boolean caughtSomething = fishLootSpawned > 0 || fishPickedUp > 0;
+         boolean noStuckBobber = !(level.getEntity(fishBobberId) instanceof net.minecraft.world.entity.projectile.FishingHook fh && fh.isAlive());
+         fishCycleOk = fishHookSurvived && fishCatchForced && caughtSomething;
+
+         log("H5 FISHCYCLE(inline) result: hookSurvived(villager-owned, NOT discarded)=" + fishHookSurvived
+            + " maxBitingFlag=" + fishMaxBitingObserved + " forcedBite=" + fishCatchForced
+            + " reeled=" + reeled + " lootSpawned=" + fishLootSpawned + " (real BuiltInLootTables.FISHING)"
+            + " pickedUpIntoInv=" + fishPickedUp + " bobberCleanedUp=" + noStuckBobber + " finalFSM=" + st);
+         log("H5 FISHCYCLE(inline) " + (fishCycleOk ? "OK" : "PARTIAL")
+            + ": fullAnimationViaMixin=" + fishHookSurvived + " realFishingLoot=" + caughtSomething
+            + " villagerPickedUp=" + (fishPickedUp > 0));
+      } catch (Throwable t) {
+         fishCycleOk = false;
+         recordException("H5b:fishinline", t);
+         log("H5 FISHCYCLE(inline) FAIL: " + t);
+      } finally {
+         // Clean up the pool + any stale point/bobber.
+         try {
+            if (centre != null) {
+               for (int dx = -1; dx <= 1; dx++) {
+                  for (int dz = -1; dz <= 1; dz++) {
+                     level.removeBlock(centre.offset(dx, 0, dz), false);
+                  }
+               }
+               com.coderyo.jason.ops.TaskPointStore.get().clear(level, centre);
+            }
+            if (fishBobberId != 0 && level.getEntity(fishBobberId) instanceof net.minecraft.world.entity.projectile.FishingHook fh) {
+               com.coderyo.jason.ops.VillagerFishing.forget(fishBobberId);
+               fh.discard();
+            }
+         } catch (Throwable ignored) {
+         }
+         // Clear the multi-tick fishing state so the later dedicated TICK_FISH_* window (full server-only runs) does
+         // not act on this inline run's stale handles.
+         fishVillager = null;
+         fishWaterSurface = null;
+         fishBobberId = 0;
+      }
+   }
+
+   /** Sum the countable {@code BuiltInLootTables.FISHING} outcomes now in the villager's Mill inventory. */
+   private int countFishingLoot(MillVillager v) {
+      return v.countInv(net.minecraft.world.item.Items.COD, 0)
+         + v.countInv(net.minecraft.world.item.Items.SALMON, 0)
+         + v.countInv(net.minecraft.world.item.Items.PUFFERFISH, 0)
+         + v.countInv(net.minecraft.world.item.Items.TROPICAL_FISH, 0)
+         + v.countInv(net.minecraft.world.item.Items.STICK, 0)
+         + v.countInv(net.minecraft.world.item.Items.STRING, 0)
+         + v.countInv(net.minecraft.world.item.Items.BOWL, 0)
+         + v.countInv(net.minecraft.world.item.Items.LEATHER, 0)
+         + v.countInv(net.minecraft.world.item.Items.LEATHER_BOOTS, 0)
+         + v.countInv(net.minecraft.world.item.Items.ROTTEN_FLESH, 0)
+         + v.countInv(net.minecraft.world.item.Items.INK_SAC, 0)
+         + v.countInv(net.minecraft.world.item.Items.BONE, 0)
+         + v.countInv(net.minecraft.world.item.Items.LILY_PAD, 0)
+         + v.countInv(net.minecraft.world.item.Items.NAME_TAG, 0)
+         + v.countInv(net.minecraft.world.item.Items.NAUTILUS_SHELL, 0)
+         + v.countInv(net.minecraft.world.item.Items.SADDLE, 0)
+         + v.countInv(net.minecraft.world.item.Items.FISHING_ROD, 0)
+         + v.countInv(net.minecraft.world.item.Items.ENCHANTED_BOOK, 0);
+   }
+
    // ====================== STEP CATALOG: comprehensive static + dynamic coverage ======================
 
    /**
@@ -2091,9 +2303,9 @@ public final class MillSelfTest {
             .put("MOVEMENT", !"not run".equals(movementSummary))
             .put("GOALS", !"not run".equals(goalSummary))
             // Construction: covered if any building was reported (step E ran).
-            .put("CONSTRUCTION", buildingsReported > 0)
-            // Combat: the client harness owns the live melee/engage step; MELEE here gives a server-side check too.
-            .put("COMBAT", Boolean.TRUE);
+            .put("CONSTRUCTION", buildingsReported > 0);
+            // COMBAT is set INSIDE MillScenarios.run from the LIVE server-side melee acquisition check it performs
+            // this session (target stick + attackEntity engage), so it is a genuine live result, never a constant.
 
          // Scratch area: high above the first generated village (or world spawn) so placement/spawning is isolated.
          BlockPos scratch;

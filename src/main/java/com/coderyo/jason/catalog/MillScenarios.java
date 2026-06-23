@@ -76,27 +76,34 @@ public final class MillScenarios {
    public static int run(ServerLevel level, BlockPos scratch, MillCatalog.Sink sink, MillCatalog.Result r, Coverage cov) {
       int n = 0;
 
-      // --- behaviours already exercised by the H-cycles / client combat step: re-state from coverage ---
+      // --- behaviours with NO dedicated H-cycle: LIVE assertions, run FIRST so their real results feed the
+      //     coverage map (notably COMBAT, which is the live server-side MELEE acquisition check below — NOT a
+      //     hardcoded pass). Every one of these executes this session against real spawned entities/blocks. ---
+      boolean meleeOk = scenarioMelee(level, scratch, sink, r) == 1 && r.lastMeleeOk;
+      n += 1; // scenarioMelee emitted one MELEE line.
+      n += scenarioDoor(level, scratch, sink, r);
+      n += scenarioSwim(level, scratch, sink, r);
+      n += scenarioReputation(level, sink, r);
+      n += scenarioSleep(level, scratch, sink, r);
+      n += scenarioRaidRole(level, scratch, sink, r);
+
+      // COMBAT is re-stated from the LIVE server-side melee acquisition check we just ran (target acquisition +
+      // attackEntity engage), not a stale constant — so a real combat regression surfaces as SCENARIO COMBAT FAIL.
+      cov.put("COMBAT", meleeOk);
+
+      // --- behaviours exercised by the H-cycles (run AT/BEFORE GROWTH_END this session): re-state from coverage ---
       n += restate(sink, cov, "MINE", "O1 break+pickup+regrow (H2 MINECYCLE)");
-      n += restate(sink, cov, "CHOP", "O2 whole-tree+scaffold+pickup+reclaim (H3 CHOPCYCLE)");
+      n += restate(sink, cov, "CHOP", "O2 tall-tree whole-fell+scaffold+pickup+reclaim (H3 CHOPCYCLE)");
       n += restate(sink, cov, "CANE", "O6 sugarcane keep-bottom top-down (H7 CANECYCLE)");
       n += restate(sink, cov, "FARM", "O3 mature-only harvest+replant (H4 FARMCYCLE)");
-      n += restate(sink, cov, "FISH", "O4 real bobber animation+FISHING loot (H5 FISHCYCLE)");
+      n += restate(sink, cov, "FISH", "O4 real bobber animation+FISHING loot, inline at GROWTH_END (H5 FISHCYCLE)");
       n += restate(sink, cov, "SHEAR", "O5 real Sheep.shear ready-only+milk (H6 SHEARCYCLE)");
       n += restate(sink, cov, "TRADE", "server buy/sell money-delta (step G)");
       n += restate(sink, cov, "INTERACT", "villager processInteract (step H)");
       n += restate(sink, cov, "MOVEMENT", "villager nav path-distance over growth window (metric 1)");
       n += restate(sink, cov, "GOALS", "villagers have goals assigned + navigating (metric 3)");
       n += restate(sink, cov, "CONSTRUCTION", "buildings built / completeness (step E)");
-      n += restate(sink, cov, "COMBAT", "client melee target+engage (MILLCLIENTTEST combat step)");
-
-      // --- behaviours with NO dedicated check before: LIVE assertions here ---
-      n += scenarioDoor(level, scratch, sink, r);
-      n += scenarioSwim(level, scratch, sink, r);
-      n += scenarioMelee(level, scratch, sink, r);
-      n += scenarioReputation(level, sink, r);
-      n += scenarioSleep(level, scratch, sink, r);
-      n += scenarioRaidRole(level, scratch, sink, r);
+      n += restate(sink, cov, "COMBAT", "LIVE server melee target-acquisition + attackEntity engage (this session)");
       return n;
    }
 
@@ -262,6 +269,7 @@ public final class MillScenarios {
          }
       }
       sink.emit(TAG + " MELEE " + verdict + ": " + detail);
+      r.lastMeleeOk = "OK".equals(verdict);
       if (!"OK".equals(verdict)) {
          r.flag("[SCENARIO-FAIL:MELEE]");
       }

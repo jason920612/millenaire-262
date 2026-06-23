@@ -82,6 +82,8 @@ public final class MillCatalog {
       public int scenarios;
       /** Distinct anomaly flag -> count (e.g. {@code [AIR-RESOLVE]} -> 3). */
       public final Map<String, Integer> anomalies = new LinkedHashMap<>();
+      /** Result of the LIVE server-side melee acquisition scenario — fed into the COMBAT coverage re-statement. */
+      public boolean lastMeleeOk;
 
       void flag(String tag) {
          anomalies.merge(tag, 1, Integer::sum);

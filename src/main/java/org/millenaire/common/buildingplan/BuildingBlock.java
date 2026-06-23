@@ -687,6 +687,53 @@ public class BuildingBlock {
       return this.blockState;
    }
 
+   /**
+    * Whether this block can be laid by the player-like single-cube placement path
+    * ({@code VillagerWorldOps.place}) used by the migrated construction goal, instead of the full
+    * {@link #build(Level, Building, boolean, boolean)} dispatch.
+    *
+    * <p>STRICTLY a plain {@code special==0} single-cube block with a real item: every block whose 1.12 build had
+    * multi-block / block-entity / world-mutation side effects (doors, beds, double plants, flower pots, banners,
+    * water, nether portals, AIR clears, decorative-plant guards) is deliberately EXCLUDED so it keeps going through
+    * {@link #build} unchanged — only the simple wall/floor/roof cubes (the vast bulk of a building, and the ones a
+    * player would place one-for-one) take the player-like reach+scaffold+consume+place path.
+    */
+   public boolean isSimpleNormalBlock() {
+      if (this.special != 0 || this.block == Blocks.AIR) {
+         return false;
+      }
+      if (this.block.asItem() == net.minecraft.world.item.Items.AIR) {
+         return false; // no obtainable item ⇒ no material to consume; leave to build().
+      }
+      return !(this.block instanceof DoorBlock)
+         && !(this.block instanceof BedBlock)
+         && !(this.block instanceof DoublePlantBlock)
+         && !(this.block instanceof FlowerPotBlock)
+         && !(this.block instanceof MockBlockBannerHanging)
+         && !(this.block instanceof MockBlockBannerStanding)
+         && this.block != Blocks.WATER
+         && this.block != Blocks.NETHER_PORTAL;
+   }
+
+   /**
+    * The exact, rotation-correct {@link BlockState} this normal block would be laid as — mirroring the state
+    * selection in {@link #buildNormalBlock} so a player-like placement is byte-for-byte identical to {@code build}:
+    * a deliberately non-default state (a panel/sign/banner whose FACING was rotated for the building orientation)
+    * is placed as-is; otherwise the legacy {@code (block, meta)} mapping is applied (crop/wart age, farmland
+    * moisture, log axis). Only meaningful for {@link #isSimpleNormalBlock()} blocks.
+    */
+   public BlockState getPlacementState() {
+      if (this.meta == 0 && !this.blockState.equals(this.block.defaultBlockState())) {
+         return this.blockState;
+      }
+      return WorldUtilities.legacyMetaToBlockState(this.block, this.meta);
+   }
+
+   /** The 1.12 construction material for this block: its own item (consumed one-per-block by the player-like place). */
+   public Item getMaterialItem() {
+      return this.block.asItem();
+   }
+
    public byte getMeta() {
       return this.meta;
    }

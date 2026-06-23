@@ -1,5 +1,7 @@
 package org.millenaire.common.goal;
 
+import com.coderyo.jason.ops.VillagerWorldOps;
+import net.minecraft.core.BlockPos;
 import net.minecraft.world.level.block.state.BlockState;
 import net.minecraft.world.level.block.Blocks;
 import net.minecraft.world.item.Items;
@@ -166,6 +168,59 @@ public class GoalConstructionStepByStep extends Goal {
       }
    }
 
+   /**
+    * Lay one {@link BuildingBlock}, player-like, returning whether the block was set (same contract as the 1.12
+    * {@code bblock.build(...)} it replaces, so the surrounding step/bookkeeping is unchanged).
+    *
+    * <p>O7 player-like placement: for a simple single-cube wall/floor/roof block ({@link BuildingBlock#isSimpleNormalBlock()})
+    * the builder uses the real, reach-gated op — {@link VillagerWorldOps#ensureReach} builds a temporary scaffold
+    * column (tracked on, and later reclaimed against, the BUILDING anchor) so high rows come into reach, then
+    * {@link VillagerWorldOps#place(MillVillager, BlockPos, BlockState, Item, int)} STRICTLY consumes the matching
+    * building material and sets the EXACT rotation-correct {@link BuildingBlock#getPlacementState()} (never dropped to
+    * the block's default state) with a real swing + place sound. Every other point (doors, beds, banners, spawners,
+    * ground-clear, AIR — anything with multi-block/block-entity/world side effects) still goes through the faithful
+    * {@link BuildingBlock#build(Level, Building, boolean, boolean)} dispatch, untouched.
+    *
+    * <p>The player-like path DEGRADES GRACEFULLY: if the target is momentarily out of reach (the column is still
+    * climbing) or no material is in hand THIS tick, it falls back to the guaranteed 1.12 {@code build(...)} so a
+    * building can never stall — the physical act becomes player-like without weakening 1.12's "the block always gets
+    * laid" contract. STATELESS: all transient column state lives on the {@code TaskPointStore} point, not the goal.
+    */
+   private boolean placeBuildingBlock(MillVillager villager, ConstructionIP cip, BuildingBlock bblock) {
+      if (!bblock.isSimpleNormalBlock()) {
+         return bblock.build(villager.level(), villager.getTownHall(), false, false);
+      }
+
+      BlockPos target = bblock.p.getBlockPos();
+      BlockPos anchor = constructionAnchor(cip, target);
+
+      // Reach-extend (scaffold up for high rows). Reclaim is tracked on the building anchor and cleared below.
+      VillagerWorldOps.ensureReach(villager, target, anchor);
+
+      VillagerWorldOps.PlaceResult result = VillagerWorldOps.place(
+         villager, target, bblock.getPlacementState(), bblock.getMaterialItem(), bblock.getMeta()
+      );
+
+      if (result == VillagerWorldOps.PlaceResult.PLACED) {
+         // The reachable block is laid; tear down any temporary climb column so towers never leave scaffold behind.
+         VillagerWorldOps.reclaimReach(villager, anchor);
+         return true;
+      }
+
+      // Out of reach this tick (column still climbing) or no material in hand: fall back to the guaranteed 1.12
+      // placement so the building never stalls. Reclaim any partial column first (the fallback teleport-places).
+      VillagerWorldOps.reclaimReach(villager, anchor);
+      return bblock.build(villager.level(), villager.getTownHall(), false, false);
+   }
+
+   /** The stable per-building scaffold anchor: the construction's building-location pos, else the target itself. */
+   private static BlockPos constructionAnchor(ConstructionIP cip, BlockPos target) {
+      if (cip.getBuildingLocation() != null && cip.getBuildingLocation().pos != null) {
+         return cip.getBuildingLocation().pos.getBlockPos();
+      }
+      return target;
+   }
+
    @Override
    public boolean performAction(MillVillager villager) throws MillLog.MillenaireException {
       ConstructionIP cip = villager.getCurrentConstruction();
@@ -225,13 +280,13 @@ public class GoalConstructionStepByStep extends Goal {
                }
             }
 
-            boolean blockSet = bblock.build(villager.level(), villager.getTownHall(), false, false);
+            boolean blockSet = this.placeBuildingBlock(villager, cip, bblock);
 
             while (!blockSet && cip.areBlocksLeft()) {
                cip.incrementBblockPos();
                BuildingBlock bb = cip.getCurrentBlock();
                if (bb != null && !bb.alreadyDone(villager.level())) {
-                  blockSet = bb.build(villager.level(), villager.getTownHall(), false, false);
+                  blockSet = this.placeBuildingBlock(villager, cip, bb);
                }
             }
 

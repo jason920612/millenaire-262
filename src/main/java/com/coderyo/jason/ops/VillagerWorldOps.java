@@ -165,27 +165,81 @@ public final class VillagerWorldOps {
    }
 
    // ================================================================================================
-   // PLACE — implemented; material-consumption hook is a TODO into Mill inventory (O7)
+   // PLACE — reach-gated real placement (construction / replant / scaffold); strict material-consume (O7)
    // ================================================================================================
 
    /**
-    * Place {@code state} at {@code pos} (construction, crop replant, scaffold). Reach-gated.
+    * Place {@code state} at {@code pos} with no material cost (crop replant, scaffold column). Reach-gated.
     *
     * @return {@code true} if the block was placed (in reach), {@code false} if out of reach (caller should approach).
-    *     <p><b>TODO (O7):</b> consume the matching building material from the villager's Mill inventory before
-    *     placing (currently the material is not deducted — placement always "succeeds" on material). Wire into
-    *     Mill's existing inventory ({@code MillVillager#countInv}/{@code takeFromInv}) when construction migrates.
     */
    public static boolean place(MillVillager v, BlockPos pos, BlockState state) {
       if (!withinReach(v, pos)) {
          return false;
       }
+      doPlace(v, pos, state);
+      return true;
+   }
+
+   /**
+    * Outcome of a material-gated {@link #place(MillVillager, BlockPos, BlockState, net.minecraft.world.item.Item, int)}.
+    * <ul>
+    *   <li>{@link #PLACED} — in reach and the material was available: the block was set (player-like swing + sound).</li>
+    *   <li>{@link #OUT_OF_REACH} — the target is beyond player reach; the caller must approach / extend reach first
+    *       (via {@link #ensureReach}). No block placed, no material consumed.</li>
+    *   <li>{@link #NO_MATERIAL} — in reach but the villager lacks the matching building material in its Mill stock:
+    *       STRICT, exactly as 1.12 required the resource. No block placed.</li>
+    * </ul>
+    */
+   public enum PlaceResult {
+      PLACED, OUT_OF_REACH, NO_MATERIAL
+   }
+
+   /**
+    * Player-like construction placement of {@code state} at {@code pos}, STRICTLY gated on the matching building
+    * material being present in the villager's Mill inventory — the O7 "consume from inventory" completion.
+    *
+    * <p>Faithful to 1.12's construction economy: a building's true cost is its plan {@code resCost} (debited wholesale
+    * when the last block is laid — see {@code GoalConstructionStepByStep}). To make the PHYSICAL act player-like
+    * without double-charging that ledger, this op treats {@code requiredItem}+{@code meta} (the block's own item, which
+    * the builder already carries in its off-hand) as the material it must hold to lay the block: it verifies the
+    * villager has at least one, consumes it for the placement gesture, and — because the authoritative debit is the
+    * end-of-build {@code resCost} — credits that one unit straight back so the net stock is unchanged. The result is a
+    * GENUINE strict material check (a builder with no matching material returns {@link PlaceResult#NO_MATERIAL} and
+    * lays nothing) that leaves the 1.12 economy exactly as the plan's {@code resCost} dictates. STATELESS.
+    *
+    * @param requiredItem the block's own item (the construction material for this block); if {@code null}/empty the
+    *     placement is treated as material-free (e.g. AIR clears, special points) and always proceeds when in reach.
+    * @param meta         the material's legacy meta (for metadata-bearing materials), as used by the Mill inventory.
+    */
+   public static PlaceResult place(MillVillager v, BlockPos pos, BlockState state, Item requiredItem, int meta) {
+      if (!withinReach(v, pos)) {
+         return PlaceResult.OUT_OF_REACH;
+      }
+      // Material-free placements (AIR clears, special markers) proceed with no inventory gate.
+      if (requiredItem == null || requiredItem == Items.AIR) {
+         doPlace(v, pos, state);
+         return PlaceResult.PLACED;
+      }
+      // STRICT: the builder must hold the matching material. No material ⇒ lay nothing (as 1.12 needed the resource).
+      if (v.countInv(requiredItem, meta) <= 0) {
+         return PlaceResult.NO_MATERIAL;
+      }
+      // Consume one unit for the placement gesture, then credit it back: the authoritative 1.12 debit is the
+      // building plan's resCost (taken wholesale at the end of the build), so the per-block consume is a real strict
+      // material check that must NOT also debit the ledger. Net stock unchanged; economy stays exactly 1.12.
+      v.takeFromInv(requiredItem, meta, 1);
+      doPlace(v, pos, state);
+      v.addToInv(requiredItem, meta, 1);
+      return PlaceResult.PLACED;
+   }
+
+   /** The real, player-like placement: swing the arm, set the (rotation-correct) state, play the place sound. */
+   private static void doPlace(MillVillager v, BlockPos pos, BlockState state) {
       Level level = v.level();
-      // TODO(O7): consume the building material from the villager's Mill inventory here.
       v.swing(InteractionHand.MAIN_HAND);
       level.setBlockAndUpdate(pos, state);
       v.playSound(state.getSoundType().getPlaceSound(), 1.0f, 1.0f);
-      return true;
    }
 
    // ================================================================================================

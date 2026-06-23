@@ -539,14 +539,24 @@ public final class VillageWar {
       }
    }
 
-   /** Set a village's claimed radius + re-bound its village map at the new claim (authoritative path). */
+   /**
+    * Set a village's PER-VILLAGE claimed radius ({@link com.coderyo.jason.expand.VillageTerritory}) + re-bound its
+    * village map at the new claim. Writes the village's OWN territory entry — NOT the shared per-culture
+    * {@code villageType.radius} — so a winner growing or a loser retreating only changes ITS OWN radius and never
+    * clobbers a same-culture neighbour's (the war territory-tracking bug this fix targets). The map re-bound
+    * applies the new per-village radius transiently into the upstream map-bounding then restores the shared field.
+    */
    private static void setRadius(Building townHall, int radius) {
       try {
-         if (townHall.villageType != null) {
-            townHall.villageType.radius = radius;
-         }
-         townHall.winfo.world = null;
-         townHall.updateWorldInfo();
+         com.coderyo.jason.expand.VillageTerritory.get().set(townHall, radius);
+         com.coderyo.jason.expand.VillageTerritory.get().withRadiusApplied(townHall, () -> {
+            try {
+               townHall.winfo.world = null;
+               townHall.updateWorldInfo();
+            } catch (Throwable t) {
+               MillLog.printException(TAG + " radius/claim rebuild failed", t);
+            }
+         });
       } catch (Throwable t) {
          MillLog.printException(TAG + " radius/claim rebuild failed", t);
       }

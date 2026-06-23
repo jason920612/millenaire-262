@@ -431,9 +431,9 @@ public final class VillageExpansion {
       String dir = pickDirection(townHall, scores);
       int[] vec = vecOf(dir);
 
-      // ---- grow the claimed radius outward (unbounded but capped) ----
+      // ---- grow the claimed radius outward (unbounded but capped) — PER-VILLAGE, not the shared villageType ----
       int radiusAfter = Math.min(MAX_RADIUS, radiusBefore + RING_STEP);
-      townHall.villageType.radius = radiusAfter;
+      VillageTerritory.get().set(townHall, radiusAfter);
       // Force the village map to re-bound at the larger claim so the new ring becomes buildable terrain.
       rebuildClaim(townHall);
 
@@ -467,8 +467,16 @@ public final class VillageExpansion {
     */
    private static void rebuildClaim(Building townHall) {
       try {
-         townHall.winfo.world = null;
-         townHall.updateWorldInfo();
+         // Apply THIS village's per-village radius transiently into the (shared) villageType.radius the upstream
+         // map-bounding reads, run the authoritative rebuild, then restore the shared field. Per-village, no leak.
+         VillageTerritory.get().withRadiusApplied(townHall, () -> {
+            try {
+               townHall.winfo.world = null;
+               townHall.updateWorldInfo();
+            } catch (Throwable t) {
+               MillLog.printException(TAG + " claim rebuild failed", t);
+            }
+         });
       } catch (Throwable t) {
          MillLog.printException(TAG + " claim rebuild failed", t);
       }
@@ -554,10 +562,14 @@ public final class VillageExpansion {
       return n;
    }
 
-   /** The village's current claimed radius. */
+   /**
+    * The village's current claimed radius — the PER-VILLAGE emergent territory ({@link VillageTerritory}), lazily
+    * seeded from the village's original worldgen {@code villageType.radius} on first access. Reading this no longer
+    * touches the SHARED per-culture {@code VillageType} object, so each village's claim is independent.
+    */
    public static int radiusOf(Building townHall) {
       try {
-         return townHall.villageType != null ? townHall.villageType.radius : 0;
+         return VillageTerritory.get().get(townHall);
       } catch (Throwable t) {
          return 0;
       }

@@ -1405,10 +1405,14 @@ public final class MillSimObserver {
             return;
          }
 
-         // Make their claimed radii OVERLAP: set each radius to comfortably cover the gap between them.
+         // Make their claimed radii OVERLAP: set each PER-VILLAGE radius to comfortably cover the gap between them.
+         // NOTE: these two villages share ONE VillageType object (same culture), so the radius MUST be set
+         // per-village via VillageTerritory — setting villageType.radius would set BOTH to the same value (the bug).
          int gap = (int) Math.ceil(a.getPos().distanceTo(b.getPos()));
-         a.villageType.radius = Math.max(a.villageType.radius, gap);
-         b.villageType.radius = Math.max(b.villageType.radius, gap);
+         com.coderyo.jason.expand.VillageTerritory.get().set(a,
+            Math.max(com.coderyo.jason.expand.VillageExpansion.radiusOf(a), gap));
+         com.coderyo.jason.expand.VillageTerritory.get().set(b,
+            Math.max(com.coderyo.jason.expand.VillageExpansion.radiusOf(b), gap));
          // Make them mutually FRIENDLY (positive both ways) so the merge gate (friendly + consent) is open.
          a.adjustRelation(b.getPos(), 60, true);
 
@@ -1423,7 +1427,8 @@ public final class MillSimObserver {
          boolean smallListedBefore = mw.villagesList.pos.contains(smallPos);
 
          MillLog.major(null, TAGM + " BEGIN two " + culture.key + " villages a='" + safeName(a) + "'(pop" + popABefore
-            + ",r" + a.villageType.radius + ") b='" + safeName(b) + "'(pop" + popBBefore + ",r" + b.villageType.radius
+            + ",r" + com.coderyo.jason.expand.VillageExpansion.radiusOf(a) + ") b='" + safeName(b) + "'(pop"
+            + popBBefore + ",r" + com.coderyo.jason.expand.VillageExpansion.radiusOf(b)
             + ") gap=" + gap + " overlap=" + overlap + " compatible=" + compatible + " friendly+consent → expect '"
             + safeName(expectedBig) + "' ABSORBS '" + safeName(expectedSmall) + "'");
 
@@ -1474,8 +1479,10 @@ public final class MillSimObserver {
          Building d = generateVillageNear(culture, vtype, baseX + 120, baseZ + 6000);
          if (c != null && d != null) {
             int hg = (int) Math.ceil(c.getPos().distanceTo(d.getPos()));
-            c.villageType.radius = Math.max(c.villageType.radius, hg);
-            d.villageType.radius = Math.max(d.villageType.radius, hg);
+            com.coderyo.jason.expand.VillageTerritory.get().set(c,
+               Math.max(com.coderyo.jason.expand.VillageExpansion.radiusOf(c), hg));
+            com.coderyo.jason.expand.VillageTerritory.get().set(d,
+               Math.max(com.coderyo.jason.expand.VillageExpansion.radiusOf(d), hg));
             c.adjustRelation(d.getPos(), -100, true); // mutually hostile
             com.coderyo.jason.merge.VillageMergeFound.MergeOutcome hm =
                com.coderyo.jason.merge.VillageMergeFound.tryMerge(c, d);
@@ -1701,8 +1708,13 @@ public final class MillSimObserver {
          // the two claims overlap by ~2*margin while leaving headroom under MAX_RADIUS.
          int gap = (int) Math.ceil(a.getPos().distanceTo(b.getPos()));
          int overlapRadius = Math.min(com.coderyo.jason.expand.VillageExpansion.MAX_RADIUS - 32, gap / 2 + 60);
-         a.villageType.radius = Math.max(a.villageType.radius, overlapRadius);
-         b.villageType.radius = Math.max(b.villageType.radius, overlapRadius);
+         // PER-VILLAGE radii (VillageTerritory): a and b share ONE VillageType (same culture), so we MUST set each
+         // village's own territory entry — not villageType.radius — otherwise both would read the same shared value
+         // and the loser's retreat would clobber the winner's grow (the exact bug this fix targets).
+         com.coderyo.jason.expand.VillageTerritory.get().set(a,
+            Math.max(com.coderyo.jason.expand.VillageExpansion.radiusOf(a), overlapRadius));
+         com.coderyo.jason.expand.VillageTerritory.get().set(b,
+            Math.max(com.coderyo.jason.expand.VillageExpansion.radiusOf(b), overlapRadius));
 
          // Evenly-matched fighting strength + give each a real resource stock to contest/loot (the resolve
          // transfers it for real). Seed the stock directly (no slow mine — the real mine→deposit chain is proven
@@ -1717,9 +1729,9 @@ public final class MillSimObserver {
          double ov = com.coderyo.jason.war.VillageWar.overlapAmount(a, b);
          int comp = com.coderyo.jason.war.VillageWar.resourceCompetition(a, b);
          MillLog.major(null, TAGW + " DEMO CONTESTED begin: a='" + safeName(a) + "'(str=" + sa + ",r="
-            + a.villageType.radius + ",fighters=" + aFighters + ") b='" + safeName(b) + "'(str=" + sb + ",r="
-            + b.villageType.radius + ",fighters=" + bFighters + ") overlap=" + (int) ov + " competition=" + comp
-            + " — accruing tension to the threshold");
+            + com.coderyo.jason.expand.VillageExpansion.radiusOf(a) + ",fighters=" + aFighters + ") b='" + safeName(b)
+            + "'(str=" + sb + ",r=" + com.coderyo.jason.expand.VillageExpansion.radiusOf(b) + ",fighters=" + bFighters
+            + ") overlap=" + (int) ov + " competition=" + comp + " — accruing tension to the threshold");
 
          // Accrue tension across evaluations until it crosses the threshold (the ambient accrueTension path).
          double tension = 0;
@@ -1735,8 +1747,8 @@ public final class MillSimObserver {
             + (int) com.coderyo.jason.war.VillageWar.TENSION_THRESHOLD + " after " + evals + " evals → "
             + (reachedWar ? "WAR" : "no war"));
 
-         int aRadiusBefore = a.villageType.radius;
-         int bRadiusBefore = b.villageType.radius;
+         int aRadiusBefore = com.coderyo.jason.expand.VillageExpansion.radiusOf(a);
+         int bRadiusBefore = com.coderyo.jason.expand.VillageExpansion.radiusOf(b);
          int aStockBefore = com.coderyo.jason.build.MillProceduralConstruction.villageStockTotal(a);
          int bStockBefore = com.coderyo.jason.build.MillProceduralConstruction.villageStockTotal(b);
          boolean bListedBefore = mw.villagesList.pos.contains(b.getPos());
@@ -1750,7 +1762,17 @@ public final class MillSimObserver {
          Building loser = out.loser;
          int winnerStockAfter = winner != null
             ? com.coderyo.jason.build.MillProceduralConstruction.villageStockTotal(winner) : -1;
-         boolean territoryGrew = winner != null && winner.villageType.radius > out.winnerRadiusBefore;
+         // Read the PER-VILLAGE radii AFTER the resolve (VillageTerritory), not the shared villageType.radius.
+         int winnerRadiusAfter = winner != null ? com.coderyo.jason.expand.VillageExpansion.radiusOf(winner) : -1;
+         int loserRadiusAfter = loser != null ? com.coderyo.jason.expand.VillageExpansion.radiusOf(loser) : -1;
+         boolean territoryGrew = winner != null && winnerRadiusAfter > out.winnerRadiusBefore;
+         // PER-VILLAGE INDEPENDENCE PROOF: winner and loser are the SAME culture (share one VillageType), yet the
+         // winner's radius GREW while the loser's SEPARATE radius shrank (retreat) or was cleared (absorb) — neither
+         // touched the other. With the old shared villageType.radius this was impossible (one write clobbered both).
+         boolean loserShrankOrAbsorbed =
+            out.result == com.coderyo.jason.war.VillageWar.Result.WIN_ABSORB
+               || (loser != null && loserRadiusAfter < out.loserRadiusBefore);
+         boolean independent = territoryGrew && loserShrankOrAbsorbed;
          boolean resourcesMoved = out.resourcesTransferred > 0;
          boolean loserHandled = out.result == com.coderyo.jason.war.VillageWar.Result.WIN_RETREAT
             || out.result == com.coderyo.jason.war.VillageWar.Result.WIN_ABSORB
@@ -1759,18 +1781,23 @@ public final class MillSimObserver {
             ? !mw.villagesList.pos.contains(loser.getPos()) : true;
 
          String verdictC;
-         if (reachedWar && winner != null && loserHandled && territoryGrew && absorbedDeregistered) {
+         if (reachedWar && winner != null && loserHandled && territoryGrew && absorbedDeregistered && independent) {
             verdictC = "PASS (tension[overlap+competition+relation]→war; '" + safeName(winner)
-               + "' WON, took territory radius " + out.winnerRadiusBefore + "→" + winner.villageType.radius
+               + "' WON, took PER-VILLAGE territory radius " + out.winnerRadiusBefore + "→" + winnerRadiusAfter
                + " + " + out.resourcesTransferred + " real resources; loser '" + safeName(loser) + "' "
-               + out.result + "; registry consistent; no grant" + (resourcesMoved ? "" : " [loser had no stock to loot]") + ")";
+               + out.result + " (its SEPARATE radius " + out.loserRadiusBefore + "→"
+               + (out.result == com.coderyo.jason.war.VillageWar.Result.WIN_ABSORB ? "absorbed" : loserRadiusAfter)
+               + " did NOT change the winner's — per-village INDEPENDENT); registry consistent; no grant"
+               + (resourcesMoved ? "" : " [loser had no stock to loot]") + ")";
          } else {
             verdictC = "CHECK (reachedWar=" + reachedWar + " result=" + out.result + " territoryGrew=" + territoryGrew
+               + " loserShrankOrAbsorbed=" + loserShrankOrAbsorbed + " independent=" + independent
                + " resourcesMoved=" + resourcesMoved + " absorbedDeregistered=" + absorbedDeregistered + ")";
          }
          warDemoContestedEvidence = "result=" + out.result + " winner='" + (winner != null ? safeName(winner) : "-")
             + "' loser='" + (loser != null ? safeName(loser) : "-") + "' winnerRadius " + out.winnerRadiusBefore + "→"
-            + (winner != null ? winner.villageType.radius : -1) + " resourcesTaken=" + out.resourcesTransferred
+            + winnerRadiusAfter + " loserRadius " + out.loserRadiusBefore + "→" + loserRadiusAfter
+            + " per-village-independent=" + independent + " resourcesTaken=" + out.resourcesTransferred
             + " (aStock " + aStockBefore + " bStock " + bStockBefore + " bListed " + bListedBefore + ") => " + verdictC;
          MillLog.major(null, TAGW + " DEMO CONTESTED RESULT " + warDemoContestedEvidence);
          if (!reachedWar) {
@@ -1778,6 +1805,9 @@ public final class MillSimObserver {
          }
          if (winner == null || !loserHandled) {
             anomalies.merge("war: contested war did not resolve to an outcome", 1, Integer::sum);
+         }
+         if (!independent) {
+            anomalies.merge("war: winner/loser territory not per-village independent (shared-radius bug)", 1, Integer::sum);
          }
          if (!territoryGrew) {
             anomalies.merge("war: winner did not gain territory", 1, Integer::sum);
@@ -1818,11 +1848,12 @@ public final class MillSimObserver {
          } else {
             com.coderyo.jason.war.VillageWar.clear(c);
             com.coderyo.jason.war.VillageWar.clear(d);
-            // Restore an overlap-capable radius on both (the contested resolve shrank the loser's): set the shared
-            // type radius below the cap so the strong side could still grow on this second war too.
+            // Restore an overlap-capable radius on both (the contested resolve shrank the loser's): set each
+            // PER-VILLAGE radius (VillageTerritory) below the cap so the strong side can still grow on this second
+            // war too. Per-village so c and d (same culture) keep independent claims.
             int hOverlap = com.coderyo.jason.expand.VillageExpansion.MAX_RADIUS - 32;
-            c.villageType.radius = hOverlap;
-            d.villageType.radius = hOverlap;
+            com.coderyo.jason.expand.VillageTerritory.get().set(c, hOverlap);
+            com.coderyo.jason.expand.VillageTerritory.get().set(d, hOverlap);
             // Make c OVERWHELMINGLY stronger than d by DISARMING d — clear its villager records so its defending
             // strength drops to ~0 — leaving c's garrison vastly stronger (ratio ≫ 3). A small fixed garrison on c
             // guarantees c has positive strength. This is the "weak, nearly-defenceless neighbour" the
@@ -1846,20 +1877,29 @@ public final class MillSimObserver {
                + " expected → sue for peace)");
             // Seed tension to threshold (an entrenched hostile overlap) and resolve.
             com.coderyo.jason.war.VillageWar.seedTension(c, d, com.coderyo.jason.war.VillageWar.TENSION_THRESHOLD);
-            int dRadiusBefore = d.villageType.radius;
+            int dRadiusBefore = com.coderyo.jason.expand.VillageExpansion.radiusOf(d);
+            int cRadiusBefore = com.coderyo.jason.expand.VillageExpansion.radiusOf(c);
             boolean dActiveBefore = d.isActive;
             com.coderyo.jason.war.VillageWar.declareWar(c, d);
             com.coderyo.jason.war.VillageWar.WarOutcome ow = com.coderyo.jason.war.VillageWar.resolveWar(c, d);
+            int dRadiusAfter = com.coderyo.jason.expand.VillageExpansion.radiusOf(d);
+            int cRadiusAfter = com.coderyo.jason.expand.VillageExpansion.radiusOf(c);
             boolean suedForPeace = ow.result == com.coderyo.jason.war.VillageWar.Result.PEACE_RETREAT;
             boolean weakerSurvived = d.isActive && mw.villagesList.pos.contains(d.getPos());
-            boolean retreated = d.villageType.radius < dRadiusBefore;
-            String verdictO = (suedForPeace && weakerSurvived)
+            boolean retreated = dRadiusAfter < dRadiusBefore;
+            // PER-VILLAGE INDEPENDENCE: the weaker (d) retreats — its radius shrinks — while the strong (c) keeps
+            // its OWN radius unchanged (peace-retreat does not grow the winner). Same culture, independent claims.
+            boolean strongUnaffected = cRadiusAfter == cRadiusBefore;
+            String verdictO = (suedForPeace && weakerSurvived && retreated && strongUnaffected)
                ? "PASS (ratio≥3 → weaker '" + safeName(d) + "' SUED FOR PEACE: retreated radius " + dRadiusBefore
-                  + "→" + d.villageType.radius + ", ceded " + ow.resourcesTransferred + " resources, NOT annihilated"
+                  + "→" + dRadiusAfter + " while strong '" + safeName(c) + "' radius stayed " + cRadiusBefore
+                  + " [per-village INDEPENDENT], ceded " + ow.resourcesTransferred + " resources, NOT annihilated"
                   + " [active=" + d.isActive + "])"
-               : "CHECK (result=" + ow.result + " weakerSurvived=" + weakerSurvived + " retreated=" + retreated + ")";
+               : "CHECK (result=" + ow.result + " weakerSurvived=" + weakerSurvived + " retreated=" + retreated
+                  + " strongUnaffected=" + strongUnaffected + ")";
             warDemoOverwhelmingEvidence = "result=" + ow.result + " ratio=" + String.format("%.1f", ratio)
-               + " weakerRadius " + dRadiusBefore + "→" + d.villageType.radius + " weakerActive " + dActiveBefore
+               + " weakerRadius " + dRadiusBefore + "→" + dRadiusAfter + " strongRadius " + cRadiusBefore + "→"
+               + cRadiusAfter + " weakerActive " + dActiveBefore
                + "→" + d.isActive + " ceded=" + ow.resourcesTransferred + " => " + verdictO;
             MillLog.major(null, TAGW + " DEMO OVERWHELMING RESULT " + warDemoOverwhelmingEvidence);
             if (!suedForPeace) {

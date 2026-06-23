@@ -395,13 +395,14 @@ public final class VillageMergeFound {
          movedBuildings++;
       }
 
-      // ---- (c) grow the larger's claimed radius to TERRITORY-cover both (mirrors mergesim.py radius growth) ----
+      // ---- (c) grow the larger's PER-VILLAGE claimed radius to TERRITORY-cover both (mirrors mergesim.py) ----
+      // Writes only the survivor's own territory entry (VillageTerritory), never the shared villageType.radius, so
+      // absorbing does not change any other same-culture village's claim. The absorbed village's own entry is
+      // cleared in step (d) — its area is now part of the survivor's grown radius.
       int radiusBefore = VillageExpansion.radiusOf(big);
       int span = (int) Math.ceil(distance(big, small)) + VillageExpansion.radiusOf(small);
       int radiusAfter = Math.min(VillageExpansion.MAX_RADIUS, Math.max(radiusBefore, span));
-      if (big.villageType != null) {
-         big.villageType.radius = radiusAfter;
-      }
+      com.coderyo.jason.expand.VillageTerritory.get().set(big, radiusAfter);
       rebuildClaim(big);
 
       // ---- (d) DEMOTE the smaller town hall out of the village registry CLEANLY ----
@@ -415,6 +416,9 @@ public final class VillageMergeFound {
       VillageExpansion.clear(small);
       MillProceduralConstruction.clear(small);
       com.coderyo.jason.war.VillageWar.clear(small);
+      // Drop the absorbed village's own per-village territory entry — its claimed area is now part of the
+      // survivor's grown radius, so it must not linger as an independent (and now stale) claim.
+      com.coderyo.jason.expand.VillageTerritory.get().clear(small);
 
       // ---- (e) persist the merged state ----
       big.saveTownHall("Phase-4 merge: absorbed " + safeName(small));
@@ -609,11 +613,21 @@ public final class VillageMergeFound {
       return spent;
    }
 
-   /** Re-bound the village map at the (changed) claim radius (same authoritative path VillageExpansion uses). */
+   /**
+    * Re-bound the village map at the (changed) PER-VILLAGE claim radius — applies this village's own territory
+    * ({@link com.coderyo.jason.expand.VillageTerritory}) transiently into the upstream map-bounding then restores
+    * the shared {@code villageType.radius}, exactly as {@code VillageExpansion} does. Per-village, no field leak.
+    */
    private static void rebuildClaim(Building townHall) {
       try {
-         townHall.winfo.world = null;
-         townHall.updateWorldInfo();
+         com.coderyo.jason.expand.VillageTerritory.get().withRadiusApplied(townHall, () -> {
+            try {
+               townHall.winfo.world = null;
+               townHall.updateWorldInfo();
+            } catch (Throwable t) {
+               MillLog.printException(TAG_MERGE + " claim rebuild failed", t);
+            }
+         });
       } catch (Throwable t) {
          MillLog.printException(TAG_MERGE + " claim rebuild failed", t);
       }

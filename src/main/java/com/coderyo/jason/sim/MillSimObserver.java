@@ -282,7 +282,11 @@ public final class MillSimObserver {
          if (vtype == null) {
             continue;
          }
-         int x = VILLAGE_ORIGIN + placed * VILLAGE_SPACING;
+         // Use the ATTEMPT index (idx), not placed: keying off placed meant a failed first attempt left
+         // placed=0 so every culture re-tried the SAME point (400/400) and cascaded to all-FAIL. Distinct
+         // far-apart points per culture give each its own buildable lane (and don't stack). Natural villages
+         // in the force-loaded area remain the robust fallback if a point's terrain can't host the centre.
+         int x = VILLAGE_ORIGIN + idx * VILLAGE_SPACING;
          int z = VILLAGE_ORIGIN;
          try {
             int ccx = x >> 4;

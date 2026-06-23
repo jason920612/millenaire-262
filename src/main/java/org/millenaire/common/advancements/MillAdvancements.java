@@ -61,6 +61,13 @@ public class MillAdvancements {
    public static final List<GenericAdvancement> MILL_ADVANCEMENTS = new ArrayList<>();
 
    public static void addToStats(Player player, String key) {
+      if (player == null) {
+         // Advancement granted in a no-player context (e.g. world-gen / a system grant with no specific
+         // player to attribute). There is no creative/survival player to record the Mill stat against, so
+         // skip it — NOT an error to crash on (this was the byzantines village-gen NPE: player.isCreative()
+         // on a null player). The ServerPlayer-specific datapack award in grant() is already null-guarded.
+         return;
+      }
       if (!player.isCreative() && !MillConfigValues.DEV) {
          MillConfigValues.advancementsSurvival.add(key);
       } else {

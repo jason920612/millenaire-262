@@ -106,6 +106,9 @@ public final class MillSelfTest {
    private static final int TICK_MINE_CYCLE = TICK_GROWTH_END + 90;
    private static final int TICK_CHOP_CYCLE = TICK_GROWTH_END + 95;
    private static final int TICK_FARM_CYCLE = TICK_GROWTH_END + 98;
+   // O5 entity gather: spawn ready + already-sheared sheep + a cow, REALLY shear (Sheep.shear) the ready ones, pick up
+   // the dropped wool, skip the sheared one, and milk the cow. Synchronous like the chop/farm cycles.
+   private static final int TICK_SHEAR_CYCLE = TICK_GROWTH_END + 99;
    // O4 fishing: a real bobber must animate across many ticks. Set up + cast at FISH_START, drive/observe the
    // animation each tick through FISH_END (the mixin ticks the hook for us between harness ticks), verify at FISH_END.
    private static final int TICK_FISH_START = TICK_GROWTH_END + 100;
@@ -138,6 +141,21 @@ public final class MillSelfTest {
 
    private static boolean started = false;
 
+   /**
+    * Set true once the SERVER self-test has finished its summary (all H-cycle steps incl. H6 SHEARCYCLE have run).
+    * A co-hosted client self-test (which CREATES the world and otherwise stops the whole process on its OWN schedule,
+    * racing this one) polls this so it waits for the server steps to complete before halting — otherwise the
+    * post-growth cycles never get to run. Volatile: read from the client (render) thread, written on the server thread.
+    */
+   public static volatile boolean COMPLETED = false;
+
+   /**
+    * Set true once the synchronous post-growth H-cycles that run AT growth-end (notably H6 SHEARCYCLE) have executed.
+    * This is the milestone the co-hosted client self-test actually needs to have observed; it flips well before the
+    * full {@link #COMPLETED} summary (which, under the throttled co-hosted integrated server, may not be reached).
+    */
+   public static volatile boolean GROWTH_CYCLES_DONE = false;
+
    private final MinecraftServer server;
    private ServerLevel level;
    private ServerPlayer fakePlayer;
@@ -165,6 +183,7 @@ public final class MillSelfTest {
    private Boolean mineCycleOk = null;
    private Boolean chopCycleOk = null;
    private Boolean farmCycleOk = null;
+   private Boolean shearCycleOk = null;
    private Boolean fishCycleOk = null;
 
    // --- O4 fishing-cycle live state (spans TICK_FISH_START..TICK_FISH_END) ---
@@ -262,6 +281,13 @@ public final class MillSelfTest {
                computeMovementSummary();      // metric 1: MOVEMENT line
                computeBlockActivitySummary(); // metric 2: BLOCKACTIVITY lines
                computeGoalSummary();          // metric 3: GOALS line
+               // H6 SHEARCYCLE (O5) is fully self-contained + synchronous, so we run it HERE at the reliable
+               // growth-end tick rather than a later spaced tick: under the co-hosted client self-test the integrated
+               // server is heavily throttled after growth and may not reach the later TICK_SHEAR_CYCLE before the
+               // process is told to stop. (The dedicated TICK_SHEAR_CYCLE case below still runs it for a full
+               // server-only run; the guard makes the second call a no-op-ish re-run on fresh sheep.)
+               stepShearCycle();
+               GROWTH_CYCLES_DONE = true; // milestone: the client self-test may now stop (H6 SHEARCYCLE has run).
             }
             case TICK_BUILDING_REPORT -> stepBuildingCompleteness();
             case TICK_ITEMS_BLOCKS -> stepItemsAndBlocks();
@@ -270,6 +296,11 @@ public final class MillSelfTest {
             case TICK_MINE_CYCLE -> stepMineCycle();
             case TICK_CHOP_CYCLE -> stepChopCycle();
             case TICK_FARM_CYCLE -> stepFarmCycle();
+            case TICK_SHEAR_CYCLE -> {
+               if (shearCycleOk == null) { // not already run at GROWTH_END (e.g. a full non-early-end run).
+                  stepShearCycle();
+               }
+            }
             case TICK_FISH_START -> stepFishStart();
             case TICK_FISH_END -> stepFishEnd();
             case TICK_SUMMARY -> {
@@ -1469,6 +1500,180 @@ public final class MillSelfTest {
       }
    }
 
+   // ============================ STEP H6: player-like entity gather cycle (O5) ============================
+
+   /**
+    * Live evidence for the O5 player-like ENTITY-GATHER refactor: spawn three sheep (two woolly/ready, one already
+    * sheared) and a cow next to a real villager, equip shears, and drive the migrated
+    * {@link org.millenaire.common.goal.GoalShearSheep}'s {@link com.coderyo.jason.ops.VillagerWorldOps#shearTick}
+    * primitive — REALLY shearing the ready sheep (each becomes {@code isSheared()}; 1-3 wool of its colour drop via
+    * the vanilla {@code BuiltInLootTables.SHEAR_SHEEP} path), walking to + collecting that wool, and SKIPPING the
+    * already-sheared one. Then milk the cow via {@link com.coderyo.jason.ops.VillagerWorldOps#milkTick} (no milk goal
+    * exists in 1.12, but the helper is exercised for parity). Each phase greppable as {@code [MILLTEST] SHEARCYCLE}.
+    */
+   private void stepShearCycle() {
+      java.util.List<net.minecraft.world.entity.Entity> spawned = new java.util.ArrayList<>();
+      try {
+         List<MillVillager> villagers = level.getEntitiesOfClass(
+            MillVillager.class, new AABB(-30000, level.getMinY(), -30000, 30000, level.getMaxY(), 30000), v -> v.isAlive());
+         if (villagers.isEmpty()) {
+            log("H6 SHEARCYCLE SKIP: no MillVillager in world");
+            return;
+         }
+         MillVillager v = villagers.get(0);
+
+         // Clear a small flat pad around the villager so spawned animals + wool drops sit on solid ground.
+         BlockPos base = v.blockPosition();
+         for (int dx = -3; dx <= 3; dx++) {
+            for (int dz = -3; dz <= 3; dz++) {
+               level.setBlock(base.offset(dx, -1, dz), net.minecraft.world.level.block.Blocks.GRASS_BLOCK.defaultBlockState(), 3);
+               level.setBlock(base.offset(dx, 0, dz), net.minecraft.world.level.block.Blocks.AIR.defaultBlockState(), 3);
+               level.setBlock(base.offset(dx, 1, dz), net.minecraft.world.level.block.Blocks.AIR.defaultBlockState(), 3);
+            }
+         }
+         v.setPos(base.getX() + 0.5, base.getY(), base.getZ() + 0.5);
+
+         // Two READY (woolly) sheep with known colours + one ALREADY-SHEARED sheep that must be SKIPPED.
+         net.minecraft.world.entity.animal.sheep.Sheep readyWhite = spawnSheep(base.offset(1, 0, 0), net.minecraft.world.item.DyeColor.WHITE, false, spawned);
+         net.minecraft.world.entity.animal.sheep.Sheep readyBlack = spawnSheep(base.offset(2, 0, 0), net.minecraft.world.item.DyeColor.BLACK, false, spawned);
+         net.minecraft.world.entity.animal.sheep.Sheep alreadyShorn = spawnSheep(base.offset(0, 0, 2), net.minecraft.world.item.DyeColor.BROWN, true, spawned);
+         net.minecraft.world.entity.animal.cow.Cow cow = spawnCow(base.offset(-1, 0, 1), spawned);
+
+         int spawnedSheep = (readyWhite != null ? 1 : 0) + (readyBlack != null ? 1 : 0) + (alreadyShorn != null ? 1 : 0);
+         log("H6 SHEARCYCLE scene: villager@" + base + " readySheep=" + ((readyWhite != null ? 1 : 0) + (readyBlack != null ? 1 : 0))
+            + " alreadySheared=" + (alreadyShorn != null && alreadyShorn.isSheared()) + " cow=" + (cow != null)
+            + " (total sheep spawned " + spawnedSheep + ")");
+
+         // Equip shears (the goal's tool) and verify the strict tool gate accepts it.
+         v.heldItem = new ItemStack(net.minecraft.world.item.Items.SHEARS);
+         boolean toolOk = com.coderyo.jason.ops.VillagerWorldOps.ensureTool(v, com.coderyo.jason.ops.VillagerWorldOps.ToolKind.SHEARS);
+         log("H6 SHEARCYCLE ensureTool(SHEARS) on held shears = " + toolOk);
+
+         int realShears = 0;
+         int skippedSheared = 0;
+         int woolBefore = countWool(v);
+
+         // Drive each sheep through shearTick → (pickup). Nudge the villager onto each animal so the synchronous loop
+         // gets within reach (no real pathing between our calls), exactly like the chop/farm harness cycles.
+         for (net.minecraft.world.entity.animal.sheep.Sheep s : new net.minecraft.world.entity.animal.sheep.Sheep[]{readyWhite, readyBlack, alreadyShorn}) {
+            if (s == null) {
+               continue;
+            }
+            boolean wasReady = s.readyForShearing();
+            v.setPos(s.getX(), s.getY(), s.getZ()); // step adjacent so distanceToSqr <= reach.
+            com.coderyo.jason.ops.OpState st = com.coderyo.jason.ops.VillagerWorldOps.shearTick(v, s);
+            if (!wasReady) {
+               // Already-sheared sheep: shearTick must report COMPLETE (skip) and leave it sheared, no new wool.
+               if (st == com.coderyo.jason.ops.OpState.COMPLETE) {
+                  skippedSheared++;
+               }
+               log("H6 SHEARCYCLE skip already-sheared sheep colour=" + s.getColor() + " state=" + st
+                  + " stillSheared=" + s.isSheared());
+               continue;
+            }
+            // Ready sheep: shearTick really shore it (PICKING_UP) → it is now sheared + wool dropped.
+            boolean nowSheared = s.isSheared();
+            if (st == com.coderyo.jason.ops.OpState.PICKING_UP && nowSheared) {
+               realShears++;
+            }
+            log("H6 SHEARCYCLE REAL shear colour=" + s.getColor() + " state=" + st + " sheepNowSheared=" + nowSheared);
+
+            // Collect the dropped wool: nudge onto each wool ItemEntity until pickup completes.
+            BlockPos woolSpot = s.blockPosition();
+            int pg = 0;
+            while (pg++ < 100) {
+               com.coderyo.jason.ops.OpState pst = com.coderyo.jason.ops.VillagerWorldOps.pickupTick(v, woolSpot);
+               if (pst == com.coderyo.jason.ops.OpState.COMPLETE) {
+                  break;
+               }
+               var d = level.getEntitiesOfClass(net.minecraft.world.entity.item.ItemEntity.class, new AABB(woolSpot).inflate(6.0));
+               if (!d.isEmpty()) {
+                  v.setPos(d.get(0).getX(), d.get(0).getY(), d.get(0).getZ());
+               } else {
+                  break;
+               }
+            }
+         }
+
+         int woolAfter = countWool(v);
+         int woolPickedUp = woolAfter - woolBefore;
+
+         // Milk the cow (parity helper — no 1.12 milk goal). Give the villager an empty bucket in stock first.
+         int milkBefore = v.countInv(net.minecraft.world.item.Items.MILK_BUCKET, 0);
+         if (cow != null) {
+            v.addToInv(net.minecraft.world.item.Items.BUCKET, 1);
+            v.setPos(cow.getX(), cow.getY(), cow.getZ());
+            com.coderyo.jason.ops.OpState mst = com.coderyo.jason.ops.VillagerWorldOps.milkTick(v, cow);
+            log("H6 SHEARCYCLE milk cow state=" + mst + " bucketsLeft=" + v.countInv(net.minecraft.world.item.Items.BUCKET, 0));
+         }
+         int milkAfter = v.countInv(net.minecraft.world.item.Items.MILK_BUCKET, 0);
+
+         boolean readyBothSheared = (readyWhite == null || readyWhite.isSheared()) && (readyBlack == null || readyBlack.isSheared());
+         shearCycleOk = toolOk && realShears >= 2 && skippedSheared == 1 && woolPickedUp >= 2 && readyBothSheared;
+
+         log("H6 SHEARCYCLE result: realShears=" + realShears + " (expected 2) skippedAlreadySheared=" + skippedSheared
+            + " (expected 1) woolPickedUp=" + woolPickedUp + " readySheepNowSheared=" + readyBothSheared
+            + " milkBuckets=" + milkBefore + "->" + milkAfter);
+         log("H6 SHEARCYCLE " + (shearCycleOk ? "OK" : "PARTIAL")
+            + ": tool=" + toolOk + " realShearReadyOnly=" + (realShears >= 2 && skippedSheared == 1)
+            + " woolPickedUp=" + (woolPickedUp >= 2) + " sheepActuallySheared=" + readyBothSheared
+            + " cowMilked=" + (milkAfter > milkBefore));
+      } catch (Throwable t) {
+         shearCycleOk = false;
+         recordException("H6:shearcycle", t);
+         log("H6 SHEARCYCLE FAIL: " + t);
+      } finally {
+         // Remove the spawned animals + any stray wool drops so they don't pollute later steps / the world.
+         for (net.minecraft.world.entity.Entity e : spawned) {
+            if (e != null) {
+               e.discard();
+            }
+         }
+      }
+   }
+
+   /** Spawn a {@link net.minecraft.world.entity.animal.sheep.Sheep} of {@code colour} at {@code pos}; pre-shear it if asked. */
+   private net.minecraft.world.entity.animal.sheep.Sheep spawnSheep(
+      BlockPos pos, net.minecraft.world.item.DyeColor colour, boolean sheared,
+      java.util.List<net.minecraft.world.entity.Entity> spawned) {
+      net.minecraft.world.entity.animal.sheep.Sheep s =
+         net.minecraft.world.entity.EntityTypes.SHEEP.create(level, net.minecraft.world.entity.EntitySpawnReason.COMMAND);
+      if (s == null) {
+         return null;
+      }
+      s.setPos(pos.getX() + 0.5, pos.getY(), pos.getZ() + 0.5);
+      s.setColor(colour);
+      s.setSheared(sheared);
+      s.setAge(0); // adult (readyForShearing requires !isBaby()).
+      level.addFreshEntity(s);
+      spawned.add(s);
+      return s;
+   }
+
+   /** Spawn an adult {@link net.minecraft.world.entity.animal.cow.Cow} at {@code pos}. */
+   private net.minecraft.world.entity.animal.cow.Cow spawnCow(
+      BlockPos pos, java.util.List<net.minecraft.world.entity.Entity> spawned) {
+      net.minecraft.world.entity.animal.cow.Cow c =
+         net.minecraft.world.entity.EntityTypes.COW.create(level, net.minecraft.world.entity.EntitySpawnReason.COMMAND);
+      if (c == null) {
+         return null;
+      }
+      c.setPos(pos.getX() + 0.5, pos.getY(), pos.getZ() + 0.5);
+      c.setAge(0);
+      level.addFreshEntity(c);
+      spawned.add(c);
+      return c;
+   }
+
+   /** Total wool of any colour in the villager's Mill inventory (the gather YIELD). */
+   private int countWool(MillVillager v) {
+      int total = 0;
+      for (net.minecraft.world.item.DyeColor c : net.minecraft.world.item.DyeColor.values()) {
+         total += v.countInv(net.minecraft.world.level.block.Blocks.WOOL.pick(c).asItem(), 0);
+      }
+      return total;
+   }
+
    // ============================ STEP H5: player-like fishing cycle (O4) ============================
 
    /**
@@ -1717,11 +1922,13 @@ public final class MillSelfTest {
       log("chop cycle (O2 whole-tree+leaves+scaffold+pickup+reclaim): " + (chopCycleOk == null ? "not run" : (chopCycleOk ? "OK" : "PARTIAL/FAIL")));
       log("farm cycle (O3 only-mature harvest+pickup+auto-replant, immature skipped): " + (farmCycleOk == null ? "not run" : (farmCycleOk ? "OK" : "PARTIAL/FAIL")));
       log("fish cycle (O4 AW+mixin real bobber animation+FISHING loot+pickup): " + (fishCycleOk == null ? "not run" : (fishCycleOk ? "OK" : "PARTIAL/FAIL")));
+      log("shear cycle (O5 real Sheep.shear ready-only+wool pickup+skip-sheared+milk): " + (shearCycleOk == null ? "not run" : (shearCycleOk ? "OK" : "PARTIAL/FAIL")));
       log("distinct exception types seen: " + distinctExceptions.size());
       for (Map.Entry<String, Integer> e : distinctExceptions.entrySet()) {
          log("  exception x" + e.getValue() + ": " + e.getKey());
       }
       log("===== END SUMMARY =====");
+      COMPLETED = true; // signal the co-hosted client self-test that ALL server H-cycles (incl. H6 SHEARCYCLE) ran.
    }
 
    private void stopServer() {

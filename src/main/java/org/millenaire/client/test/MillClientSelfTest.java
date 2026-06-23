@@ -135,8 +135,13 @@ public final class MillClientSelfTest {
    private static final int TICK_STOP = 1540;
    /** Window (in ticks) over which villager activity is sampled while the player stands in the village. */
    private static final int ACTIVITY_WINDOW_TICKS = 600;
-   /** Absolute safety net: never let the client hang waiting for the harness. */
-   private static final int MAX_TICK_GUARD = 2400;
+   /**
+    * Absolute safety net: never let the client hang waiting for the harness. Generous because, when the SERVER
+    * self-test is co-hosted, the client now WAITS (see {@link #maybeStopWaitingForServer}) for the server to finish
+    * its post-growth H-cycles (the integrated server ticks slower than the client), and only this guard bounds that
+    * wait. The wait itself ends as soon as {@code MillSelfTest.COMPLETED} flips, so this rarely actually fires.
+    */
+   private static final int MAX_TICK_GUARD = 8000;
    /** Give the world this many ticks to settle (villagers stream in) before we consider ourselves "in world". */
    private static final int WORLD_SETTLE_TICKS = 40;
    /** How many ticks to wait for our auto-created world to finish loading before giving up. */
@@ -297,8 +302,14 @@ public final class MillClientSelfTest {
             case TICK_DYN_COMBAT_CHECK -> stepCombatCheck();
             case TICK_SUMMARY -> stepSummary();
             case TICK_RETURN_MENU -> stepReturnToMenu();
-            case TICK_STOP -> returnToMenuAndStop();
+            case TICK_STOP -> maybeStopWaitingForServer();
             default -> {
+               // After our own steps are done, keep polling so we don't halt the process until the co-hosted SERVER
+               // self-test has reached at least its growth-end milestone (where the synchronous H-cycles incl. H6
+               // SHEARCYCLE run). Bounded by MAX_TICK_GUARD above so a stalled server can never hang us forever.
+               if (tick > TICK_STOP) {
+                  maybeStopWaitingForServer();
+               }
             }
          }
       } catch (Throwable t) {
@@ -2086,6 +2097,31 @@ public final class MillClientSelfTest {
          recordException("returnToMenu", t);
          log("returnToMenu note: " + t);
       }
+   }
+
+   /**
+    * Stop the client/process — but if the co-hosted SERVER self-test is enabled and has NOT yet finished, defer (just
+    * return) so its post-growth H-cycle steps (incl. H6 SHEARCYCLE) get to run first. We otherwise raced it and
+    * halted the whole process before those steps fired. The client's {@code MAX_TICK_GUARD} still bounds the wait, so
+    * a stuck server can never hang us forever.
+    */
+   private void maybeStopWaitingForServer() {
+      if (halted) {
+         return;
+      }
+      boolean serverTestEnabled = org.millenaire.common.test.MillSelfTest.isEnabled();
+      // Wait only until the server reaches its growth-end milestone (where the synchronous H6 SHEARCYCLE etc. run) —
+      // NOT its full summary, which the throttled co-hosted integrated server may never reach. COMPLETED also
+      // satisfies us (a full server-only-paced run).
+      boolean serverReady = org.millenaire.common.test.MillSelfTest.GROWTH_CYCLES_DONE
+         || org.millenaire.common.test.MillSelfTest.COMPLETED;
+      if (serverTestEnabled && !serverReady) {
+         if (tick % 100 == 0) {
+            log("waiting for the server self-test to reach its growth-end H-cycles before stopping (tick=" + tick + ")…");
+         }
+         return; // keep the world alive so the server steps can run; MAX_TICK_GUARD is the ultimate fallback.
+      }
+      returnToMenuAndStop();
    }
 
    private void returnToMenuAndStop() {

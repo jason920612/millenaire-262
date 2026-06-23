@@ -6,7 +6,8 @@ import net.minecraft.world.entity.animal.sheep.Sheep;
 import net.minecraft.world.item.DyeColor;
 import net.minecraft.world.level.block.Blocks;
 import net.minecraft.world.item.Items;
-import net.minecraft.world.InteractionHand;
+import com.coderyo.jason.ops.OpState;
+import com.coderyo.jason.ops.VillagerWorldOps;
 import org.millenaire.common.config.DocumentedElement;
 import org.millenaire.common.config.MillConfigValues;
 import org.millenaire.common.entity.MillVillager;
@@ -78,19 +79,46 @@ public class GoalShearSheep extends Goal {
 
    @Override
    public boolean performAction(MillVillager villager) throws Exception {
+      // O5 player-like refactor: shear sheep with the REAL vanilla Sheep.shear (the sheep actually becomes sheared
+      // and drops 1-3 wool of its own colour via BuiltInLootTables.SHEAR_SHEEP), then the villager walks to and
+      // collects the dropped wool — instead of 1.12's fake `addToInv(WOOL.pick(color), 3) + setSheared(true)`.
+      // STRICT tool: with no shears available, VillagerWorldOps.shearTick returns BLOCKED and we DEFER (let the
+      // tool-fetch path run) rather than faking the wool.
       for (Entity ent : WorldUtilities.getEntitiesWithinAABB(villager.level(), Sheep.class, villager.getPos(), 4, 4)) {
-         if (!ent.isRemoved()) {
-            Sheep animal = (Sheep)ent;
-            if (!animal.isBaby() && !animal.isSheared()) {
-               villager.addToInv(Blocks.WOOL.pick(((Sheep)ent).getColor()), 3);
-               ((Sheep)ent).setSheared(true);
-               if (MillConfigValues.LogCattleFarmer >= 1 && villager.extraLog) {
-                  MillLog.major(this, "Shearing: " + ent);
-               }
+         if (ent.isRemoved()) {
+            continue;
+         }
+         Sheep animal = (Sheep)ent;
+         // shearTick itself skips non-ready (already-sheared / baby) sheep; the readyForShearing guard here keeps the
+         // 1.12 selection intent explicit and avoids needless work.
+         if (!animal.readyForShearing()) {
+            continue;
+         }
 
-               villager.swing(InteractionHand.MAIN_HAND);
+         OpState st = VillagerWorldOps.shearTick(villager, animal);
+         if (st == OpState.BLOCKED) {
+            // No shears: defer this tick (do NOT fake wool). The goal's getHeldItemsDestination/GoalGetTool supplies
+            // the shears; we retry next tick once they are in hand.
+            return false;
+         }
+         if (st == OpState.PICKING_UP) {
+            // Real shear happened: walk to + collect the dropped wool (colour/count come from the sheep + loot table,
+            // faithfully replacing 1.12's Blocks.WOOL.pick(getColor()) yield). Drive pickup to completion at the
+            // sheep's spot, the worksite the wool dropped at.
+            if (MillConfigValues.LogCattleFarmer >= 1 && villager.extraLog) {
+               MillLog.major(this, "Shearing (real): " + ent + " colour=" + animal.getColor());
+            }
+            net.minecraft.core.BlockPos woolSpot = animal.blockPosition();
+            int guard = 0;
+            while (VillagerWorldOps.pickupTick(villager, woolSpot) == OpState.PICKING_UP && guard++ < 64) {
+               // pickupTick re-issues navigation toward the nearest wool drop each call; bounded so one tick of the
+               // goal can't loop forever if a drop is unreachable (it is retried next performAction tick).
+               if (guard > 0 && !villager.getNavigation().isInProgress()) {
+                  break;
+               }
             }
          }
+         // st == APPROACHING (out of reach) or COMPLETE (skipped) → move on to the next sheep; the goal re-runs.
       }
 
       return true;

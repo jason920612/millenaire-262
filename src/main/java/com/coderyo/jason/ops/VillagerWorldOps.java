@@ -1,11 +1,17 @@
 package com.coderyo.jason.ops;
 
 import net.minecraft.core.BlockPos;
+import net.minecraft.server.level.ServerLevel;
+import net.minecraft.sounds.SoundEvents;
+import net.minecraft.sounds.SoundSource;
 import net.minecraft.world.InteractionHand;
 import net.minecraft.world.entity.Entity;
+import net.minecraft.world.entity.animal.cow.AbstractCow;
+import net.minecraft.world.entity.animal.sheep.Sheep;
 import net.minecraft.world.entity.item.ItemEntity;
 import net.minecraft.world.item.Item;
 import net.minecraft.world.item.ItemStack;
+import net.minecraft.world.item.Items;
 import net.minecraft.world.item.AxeItem;
 import net.minecraft.world.item.FishingRodItem;
 import net.minecraft.world.item.HoeItem;
@@ -15,6 +21,7 @@ import net.minecraft.world.level.Level;
 import net.minecraft.world.level.block.Block;
 import net.minecraft.world.level.block.Blocks;
 import net.minecraft.world.level.block.state.BlockState;
+import net.minecraft.world.level.gameevent.GameEvent;
 import net.minecraft.world.phys.AABB;
 import net.minecraft.world.phys.Vec3;
 import org.millenaire.common.entity.MillVillager;
@@ -267,6 +274,122 @@ public final class VillagerWorldOps {
     */
    public static OpState fishTick(MillVillager v, BlockPos water) {
       return VillagerFishing.fishTick(v, water);
+   }
+
+   // ================================================================================================
+   // ENTITY GATHER — real vanilla shear (Sheep.shear) + milk (bucket → milk_bucket) (O5)
+   // ================================================================================================
+
+   /** Reach distance (centre-to-centre) at which the villager can interact with a live animal, ≈ player reach. */
+   private static final double ENTITY_REACH = 4.5;
+   private static final double ENTITY_REACH_SQR = ENTITY_REACH * ENTITY_REACH;
+   /** Navigation speed while walking up to an animal to interact with it. */
+   private static final double GATHER_WALK_SPEED = 0.5;
+
+   /**
+    * Advance shearing {@code sheep} by one tick, player-like and faithful to 1.12's cattle-farmer shear.
+    *
+    * <ul>
+    *   <li>Sheep gone / not {@code readyForShearing()} (already sheared, or a baby) → {@link OpState#COMPLETE}: skip it,
+    *       exactly as 1.12 skipped {@code isSheared()}/{@code isBaby()} sheep (no fake wool for those).</li>
+    *   <li>Out of reach → walk toward the sheep, look at it, {@link OpState#APPROACHING} (no shear this tick).</li>
+    *   <li>No shears in hand AND none in stock → {@link OpState#BLOCKED}: STRICT — the goal must defer to its
+    *       tool-fetch path; we never fake the wool without the tool (mirrors {@link #ensureTool} strictness).</li>
+    *   <li>Otherwise: swing, call the REAL {@code Sheep.shear(ServerLevel, SoundSource, shears)} — the sheep becomes
+    *       sheared (woolless model via {@code setSheared(true)}) and 1–3 wool of the sheep's own colour drop as real
+    *       {@link ItemEntity}s via {@code dropFromShearingLootTable} → {@code BuiltInLootTables.SHEAR_SHEEP}; fire the
+    *       {@code SHEAR} game event and apply shears durability. Returns {@link OpState#PICKING_UP} so the goal then
+    *       runs {@link #pickupTick} to walk to and collect the dropped wool (the YIELD — colour & count come from the
+    *       sheep/loot table, as 1.12's {@code Blocks.WOOL.pick(getColor())} did).</li>
+    * </ul>
+    *
+    * <p>State that spans the reach→shear→pickup sequence lives on the POINT keyed by the sheep's current block
+    * position (the worksite the wool drops at), consistent with the other ops storing progress on the
+    * {@link TaskPointStore} rather than the villager.
+    */
+   public static OpState shearTick(MillVillager v, Sheep sheep) {
+      // Skip a removed / non-ready (already-sheared or baby) sheep — never fake wool, just as 1.12 skipped them.
+      if (sheep == null || sheep.isRemoved() || !sheep.readyForShearing()) {
+         return OpState.COMPLETE;
+      }
+
+      // Reach-gate against the live animal (entity distance, not a block AABB).
+      if (v.distanceToSqr(sheep) > ENTITY_REACH_SQR) {
+         v.getNavigation().moveTo(sheep.getX(), sheep.getY(), sheep.getZ(), GATHER_WALK_SPEED);
+         v.getLookControl().setLookAt(sheep);
+         return OpState.APPROACHING;
+      }
+
+      // STRICT tool: must hold shears (or be able to equip them from stock). No shears ⇒ defer to GoalGetTool.
+      if (!ensureTool(v, ToolKind.SHEARS)) {
+         return OpState.BLOCKED;
+      }
+      ItemStack shears = shearsInHand(v);
+      if (shears == null) {
+         return OpState.BLOCKED;
+      }
+
+      // Real shearing requires a ServerLevel (loot table + drop spawning). Off-server this op cannot run.
+      if (!(v.level() instanceof ServerLevel serverLevel)) {
+         return OpState.BLOCKED;
+      }
+
+      // --- Real vanilla shear ---
+      v.swing(InteractionHand.MAIN_HAND);
+      sheep.shear(serverLevel, SoundSource.NEUTRAL, shears); // sets sheared + drops 1-3 wool (sheep colour) as items.
+      sheep.gameEvent(GameEvent.SHEAR, v);
+      // Shears durability (LivingEntity-public). Charge the main hand, like the vanilla player shear path.
+      shears.hurtAndBreak(1, v, InteractionHand.MAIN_HAND);
+
+      // Wool is now on the ground as ItemEntities — the goal walks to + collects it via pickupTick(sheep block pos).
+      return OpState.PICKING_UP;
+   }
+
+   /** The shears the villager will shear with: the main-hand stack if it is shears, else the Mill {@code heldItem}. */
+   private static ItemStack shearsInHand(MillVillager v) {
+      ItemStack main = v.getMainHandItem();
+      if (isToolOfKind(main, ToolKind.SHEARS)) {
+         return main;
+      }
+      if (v.heldItem != null && isToolOfKind(v.heldItem, ToolKind.SHEARS)) {
+         return v.heldItem;
+      }
+      return null;
+   }
+
+   /**
+    * Advance milking {@code cow} by one tick. There is NO milk goal in 1.12 Millénaire (the only cow goal is
+    * {@code GoalBreedAnimals}), so no goal calls this in the port — it is provided for parity with the validated sim
+    * ({@code milk_tick}) and any future milk behaviour, and re-implements the Player-only
+    * {@code AbstractCow.mobInteract} bucket→milk_bucket path for a Mob villager.
+    *
+    * <ul>
+    *   <li>Cow gone / baby → {@link OpState#COMPLETE} (can't milk a calf, matching {@code !isBaby()} in vanilla).</li>
+    *   <li>Out of reach → walk toward it, {@link OpState#APPROACHING}.</li>
+    *   <li>No empty {@code minecraft:bucket} in stock → {@link OpState#BLOCKED} (STRICT — produce nothing without the
+    *       bucket, mirroring the sim's "no bucket → defer").</li>
+    *   <li>Otherwise: swing, play {@code COW_MILK}, consume one bucket from stock, add a {@code milk_bucket} to the
+    *       villager's Mill inventory → {@link OpState#COMPLETE}.</li>
+    * </ul>
+    */
+   public static OpState milkTick(MillVillager v, AbstractCow cow) {
+      if (cow == null || cow.isRemoved() || cow.isBaby()) {
+         return OpState.COMPLETE;
+      }
+      if (v.distanceToSqr(cow) > ENTITY_REACH_SQR) {
+         v.getNavigation().moveTo(cow.getX(), cow.getY(), cow.getZ(), GATHER_WALK_SPEED);
+         v.getLookControl().setLookAt(cow);
+         return OpState.APPROACHING;
+      }
+      // STRICT: need an empty bucket in stock. No bucket ⇒ produce nothing (defer), as the sim's milk_tick does.
+      if (v.countInv(Items.BUCKET, 0) <= 0) {
+         return OpState.BLOCKED;
+      }
+      v.swing(InteractionHand.MAIN_HAND);
+      v.playSound(SoundEvents.COW_MILK, 1.0F, 1.0F);
+      v.takeFromInv(Items.BUCKET, 0, 1);         // consume the empty bucket from stock…
+      v.addToInv(Items.MILK_BUCKET, 1);          // …producing a filled milk bucket (vanilla createFilledResult).
+      return OpState.COMPLETE;
    }
 
    // ================================================================================================

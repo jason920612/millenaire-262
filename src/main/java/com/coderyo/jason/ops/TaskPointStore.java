@@ -190,9 +190,29 @@ public final class TaskPointStore {
       /** Reserved generic timer (O4 fishing bite countdown, O1 ore-regrow delay, …), in ticks. */
       public int timer;
 
+      /**
+       * Point-owned reach-extension scaffold column (O2): the temporary climb blocks this op placed to reach an
+       * out-of-reach target, lowest-first (the order they should be reclaimed: top-down). Empty when no reach
+       * extension is active. Because the list lives on the POINT, the reclaim survives the building villager
+       * wandering off — any villager/finalisation that clears the point removes the temporary blocks. Stored as
+       * packed {@link BlockPos} longs (matching the store's key space).
+       *
+       * @see com.coderyo.jason.ops.VillagerWorldOps#ensureReach
+       */
+      public final java.util.List<Long> scaffoldColumn = new java.util.ArrayList<>();
+
       private long lastTouchedMs = System.currentTimeMillis();
 
       Progress() {
+      }
+
+      /** Records a temporary scaffold/stack block this op placed (for later reclaim). De-duplicates. */
+      public void trackScaffold(BlockPos pos) {
+         long packed = pos.asLong();
+         if (!this.scaffoldColumn.contains(packed)) {
+            this.scaffoldColumn.add(packed);
+         }
+         touch();
       }
 
       /** Adds {@code delta} to the break progress, refreshes the touch timestamp, and returns the new total. */

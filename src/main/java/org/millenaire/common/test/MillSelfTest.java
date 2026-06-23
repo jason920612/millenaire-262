@@ -77,6 +77,7 @@ public final class MillSelfTest {
    private static final int TICK_TRADE = TICK_GROWTH_END + 60;
    private static final int TICK_INTERACT = TICK_GROWTH_END + 80;
    private static final int TICK_MINE_CYCLE = TICK_GROWTH_END + 90;
+   private static final int TICK_CHOP_CYCLE = TICK_GROWTH_END + 95;
    private static final int TICK_SUMMARY = TICK_GROWTH_END + 100;
    private static final int MAX_TICK_GUARD = 6000 + TICK_GROWTH_END; // absolute safety net
 
@@ -129,6 +130,7 @@ public final class MillSelfTest {
    private Boolean interactOk = null;
    private String interactDetail = "not run";
    private Boolean mineCycleOk = null;
+   private Boolean chopCycleOk = null;
    private final Map<String, Integer> distinctExceptions = new HashMap<>();
 
    // --- Movement tracking (per villager, keyed by stable getVillagerId) ---
@@ -221,6 +223,7 @@ public final class MillSelfTest {
             case TICK_TRADE -> stepTradeLogic();
             case TICK_INTERACT -> stepVillagerInteraction();
             case TICK_MINE_CYCLE -> stepMineCycle();
+            case TICK_CHOP_CYCLE -> stepChopCycle();
             case TICK_SUMMARY -> {
                stepSummary();
                stopServer();
@@ -1086,6 +1089,192 @@ public final class MillSelfTest {
       }
    }
 
+   // ============================ STEP H3: player-like chop cycle (O2) ============================
+
+   /**
+    * Live evidence for the O2 player-like chop refactor: build a TALL tree (so upper logs are out of reach) next to
+    * a real villager, equip an axe, and drive the {@link com.coderyo.jason.ops.VillagerWorldOps} reach-extension +
+    * break + pickup primitives the migrated {@link org.millenaire.common.goal.GoalLumbermanChopTrees} now calls —
+    * the WHOLE trunk felled, the leaves cleared, drops collected, and the temporary scaffold reclaimed. Logs each
+    * phase greppable as {@code [MILLTEST] CHOPCYCLE ...}.
+    */
+   private void stepChopCycle() {
+      try {
+         List<MillVillager> villagers = level.getEntitiesOfClass(
+            MillVillager.class, new AABB(-30000, level.getMinY(), -30000, 30000, level.getMaxY(), 30000), v -> v.isAlive());
+         if (villagers.isEmpty()) {
+            log("H3 CHOPCYCLE SKIP: no MillVillager in world");
+            return;
+         }
+         MillVillager v = villagers.get(0);
+
+         // Build a clear pad: villager on solid ground, a tall trunk one block across so its top is OUT of reach.
+         BlockPos vPos = v.blockPosition();
+         BlockPos trunkBase = vPos.offset(1, 0, 0);
+         // Clear a column of air around the trunk + give the villager solid footing so it doesn't fall.
+         for (int dy = -1; dy <= 14; dy++) {
+            for (int dx = -1; dx <= 2; dx++) {
+               for (int dz = -1; dz <= 1; dz++) {
+                  BlockPos p = vPos.offset(dx, dy, dz);
+                  level.setBlock(p, dy == -1
+                     ? net.minecraft.world.level.block.Blocks.DIRT.defaultBlockState()
+                     : net.minecraft.world.level.block.Blocks.AIR.defaultBlockState(), 3);
+               }
+            }
+         }
+         // A 12-tall oak trunk topped with a small leaf cap (upper logs at y+8..+11 are beyond the 4.5 reach).
+         int trunkHeight = 12;
+         for (int i = 0; i < trunkHeight; i++) {
+            level.setBlock(trunkBase.above(i), net.minecraft.world.level.block.Blocks.OAK_LOG.defaultBlockState(), 3);
+         }
+         for (int dx = -1; dx <= 1; dx++) {
+            for (int dz = -1; dz <= 1; dz++) {
+               level.setBlock(trunkBase.above(trunkHeight).offset(dx, 0, dz),
+                  net.minecraft.world.level.block.Blocks.OAK_LEAVES.defaultBlockState(), 3);
+            }
+         }
+         int logsPlaced = trunkHeight;
+         log("H3 CHOPCYCLE built a " + trunkHeight + "-tall oak (top log at y=" + trunkBase.above(trunkHeight - 1).getY()
+            + ", villager eyeY=" + String.format("%.1f", v.getEyePosition().y) + ")");
+
+         // Equip the axe (strict-tool path) and verify ensureTool(AXE) accepts it.
+         v.heldItem = new ItemStack(net.minecraft.world.item.Items.IRON_AXE);
+         boolean toolOk = com.coderyo.jason.ops.VillagerWorldOps.ensureTool(v, com.coderyo.jason.ops.VillagerWorldOps.ToolKind.AXE);
+         log("H3 CHOPCYCLE ensureTool(AXE) on held iron_axe = " + toolOk);
+
+         // Anchor reach-extension / reclaim on the trunk base (the goal's dest point), as the goal does.
+         BlockPos anchor = trunkBase;
+         boolean scaffoldUsed = false;
+         int maxScaffold = 0;
+
+         // Drive the per-tick cycle directly: for each log lowest-first, ensureReach (scaffold if high) then break +
+         // pickup; then clear leaves. We nudge the villager (no real pathing between our synchronous calls) onto the
+         // climb column / drops so the distance-gated steps fire headlessly.
+         int guard = 0;
+         while (guard++ < 6000) {
+            // Re-enumerate remaining logs/leaves from the world (broken ones are now air).
+            BlockPos nextLog = lowestBlock(level, trunkBase, true);
+            BlockPos nextLeaf = nextLog == null ? lowestBlock(level, trunkBase, false) : null;
+            BlockPos target = nextLog != null ? nextLog : nextLeaf;
+            if (target == null) {
+               break; // whole tree (logs + leaves) gone.
+            }
+
+            if (!com.coderyo.jason.ops.VillagerWorldOps.withinReach(v, target)) {
+               com.coderyo.jason.ops.OpState reach = com.coderyo.jason.ops.VillagerWorldOps.ensureReach(v, target, anchor);
+               if (reach == com.coderyo.jason.ops.OpState.EXTENDING_REACH) {
+                  scaffoldUsed = true;
+                  var prog = com.coderyo.jason.ops.TaskPointStore.get().peek(level, anchor);
+                  int col = prog != null ? prog.scaffoldColumn.size() : 0;
+                  maxScaffold = Math.max(maxScaffold, col);
+                  // Stand the villager on top of the column it has built so the next reach test/placement advances.
+                  if (prog != null && !prog.scaffoldColumn.isEmpty()) {
+                     BlockPos base = trunkBase.below(); // column rises from the villager's feet (vPos level)
+                     // Highest tracked scaffold block:
+                     long topPacked = prog.scaffoldColumn.get(prog.scaffoldColumn.size() - 1);
+                     BlockPos top = BlockPos.of(topPacked);
+                     v.setPos(top.getX() + 0.5, top.getY() + 1.0, top.getZ() + 0.5);
+                  }
+                  continue;
+               }
+               if (reach == com.coderyo.jason.ops.OpState.BLOCKED) {
+                  log("H3 CHOPCYCLE reach BLOCKED on " + target + " — abandoning that block");
+                  break;
+               }
+            }
+
+            com.coderyo.jason.ops.OpState st = com.coderyo.jason.ops.VillagerWorldOps.breakTick(v, target);
+            if (st == com.coderyo.jason.ops.OpState.APPROACHING) {
+               // Pull the villager adjacent to the target so the synchronous loop makes progress.
+               v.setPos(target.getX() + 1.5, target.getY(), target.getZ() + 0.5);
+               continue;
+            }
+            if (st == com.coderyo.jason.ops.OpState.COMPLETE) {
+               // Collect this block's drops (nudge onto them, like the mine-cycle harness).
+               int pg = 0;
+               while (pg++ < 100) {
+                  com.coderyo.jason.ops.OpState pst = com.coderyo.jason.ops.VillagerWorldOps.pickupTick(v, target);
+                  if (pst == com.coderyo.jason.ops.OpState.COMPLETE) {
+                     break;
+                  }
+                  var d = level.getEntitiesOfClass(net.minecraft.world.entity.item.ItemEntity.class, new AABB(target).inflate(5.0));
+                  if (!d.isEmpty()) {
+                     v.setPos(d.get(0).getX(), d.get(0).getY(), d.get(0).getZ());
+                  }
+               }
+            }
+         }
+
+         // Reclaim the climb column.
+         var progBefore = com.coderyo.jason.ops.TaskPointStore.get().peek(level, anchor);
+         int columnBeforeReclaim = progBefore != null ? progBefore.scaffoldColumn.size() : 0;
+         com.coderyo.jason.ops.VillagerWorldOps.reclaimReach(v, anchor);
+         var progAfter = com.coderyo.jason.ops.TaskPointStore.get().peek(level, anchor);
+         int columnAfterReclaim = progAfter != null ? progAfter.scaffoldColumn.size() : 0;
+
+         // Verify the whole tree is gone and no scaffolding remains.
+         boolean allLogsGone = lowestBlock(level, trunkBase, true) == null;
+         boolean allLeavesGone = lowestBlock(level, trunkBase, false) == null;
+         int scaffoldLeft = 0;
+         for (int dy = -1; dy <= 16; dy++) {
+            for (int dx = -2; dx <= 3; dx++) {
+               for (int dz = -2; dz <= 2; dz++) {
+                  if (level.getBlockState(vPos.offset(dx, dy, dz)).is(net.minecraft.world.level.block.Blocks.SCAFFOLDING)) {
+                     scaffoldLeft++;
+                  }
+               }
+            }
+         }
+         int logsCollected = v.countInv(net.minecraft.world.level.block.Blocks.OAK_LOG.asItem(), 0);
+
+         log("H3 CHOPCYCLE result: logsPlaced=" + logsPlaced + " allLogsGone=" + allLogsGone
+            + " allLeavesGone=" + allLeavesGone + " scaffoldUsed=" + scaffoldUsed + " maxScaffoldColumn=" + maxScaffold
+            + " columnReclaimed=" + columnBeforeReclaim + "->" + columnAfterReclaim
+            + " scaffoldBlocksLeftInWorld=" + scaffoldLeft + " oakLogsInInv=" + logsCollected);
+
+         chopCycleOk = toolOk && allLogsGone && allLeavesGone && scaffoldUsed && scaffoldLeft == 0;
+         log("H3 CHOPCYCLE " + (chopCycleOk ? "OK" : "PARTIAL")
+            + ": tool=" + toolOk + " wholeTreeFelled=" + (allLogsGone && allLeavesGone)
+            + " scaffoldUsedForTallTree=" + scaffoldUsed + " scaffoldReclaimed=" + (scaffoldLeft == 0));
+
+         // Clean up the pad.
+         for (int dy = -1; dy <= 16; dy++) {
+            for (int dx = -2; dx <= 3; dx++) {
+               for (int dz = -2; dz <= 2; dz++) {
+                  level.removeBlock(vPos.offset(dx, dy, dz), false);
+               }
+            }
+         }
+      } catch (Throwable t) {
+         chopCycleOk = false;
+         recordException("H3:chopcycle", t);
+         log("H3 CHOPCYCLE FAIL: " + t);
+      }
+   }
+
+   /**
+    * Lowest remaining log (or leaf) of the test trunk, scanning the 1.12-style box around {@code base}. Returns
+    * null when none remain. Mirrors the goal's lowest-first felling order.
+    */
+   private BlockPos lowestBlock(ServerLevel level, BlockPos base, boolean wantLog) {
+      BlockPos best = null;
+      for (int dy = -2; dy <= 16; dy++) {
+         for (int dx = -2; dx <= 2; dx++) {
+            for (int dz = -2; dz <= 2; dz++) {
+               BlockPos p = base.offset(dx, dy, dz);
+               Block b = level.getBlockState(p).getBlock();
+               boolean match = wantLog
+                  ? b == net.minecraft.world.level.block.Blocks.OAK_LOG
+                  : b == net.minecraft.world.level.block.Blocks.OAK_LEAVES;
+               if (match && (best == null || p.getY() < best.getY())) {
+                  best = p;
+               }
+            }
+         }
+      }
+      return best;
+   }
+
    // ============================ STEP I: summary + stop ============================
 
    private void stepSummary() {
@@ -1124,6 +1313,7 @@ public final class MillSelfTest {
       log("trade: " + (tradeOk == null ? "not run" : (tradeOk ? "OK" : "FAIL")) + " (" + tradeDetail + ")");
       log("interaction: " + (interactOk == null ? "not run" : (interactOk ? "OK" : "FAIL")) + " (" + interactDetail + ")");
       log("mine cycle (O1 break+pickup+regrow): " + (mineCycleOk == null ? "not run" : (mineCycleOk ? "OK" : "PARTIAL/FAIL")));
+      log("chop cycle (O2 whole-tree+leaves+scaffold+pickup+reclaim): " + (chopCycleOk == null ? "not run" : (chopCycleOk ? "OK" : "PARTIAL/FAIL")));
       log("distinct exception types seen: " + distinctExceptions.size());
       for (Map.Entry<String, Integer> e : distinctExceptions.entrySet()) {
          log("  exception x" + e.getValue() + ": " + e.getKey());

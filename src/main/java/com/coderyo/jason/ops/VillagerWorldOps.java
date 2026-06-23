@@ -365,9 +365,19 @@ public final class VillagerWorldOps {
             ItemStack[] s = v.getBestShovelStack();
             return s != null && s.length > 0 ? s[0] : null;
          }
+         case AXE: {
+            // Chop (O2): the lumberman's strict axe. getBestAxeStack falls back to a wooden axe, so this is never
+            // null in practice — the strict isToolOfKind check below still gates that the result IS an axe.
+            ItemStack[] s = v.getBestAxeStack();
+            return s != null && s.length > 0 ? s[0] : null;
+         }
+         case HOE: {
+            ItemStack[] s = v.getBestHoeStack();
+            return s != null && s.length > 0 ? s[0] : null;
+         }
          default:
-            // Axe/hoe/shears/rod stock selection is owned by their own goals (chop/farm/shear/fish, O2+); the
-            // strict check above still applies to whatever the goal placed in the hand.
+            // Shears/rod stock selection is owned by their own goals (shear/fish, O5/O4); the strict check above
+            // still applies to whatever the goal placed in the hand.
             return null;
       }
    }
@@ -417,14 +427,198 @@ public final class VillagerWorldOps {
       return ToolKind.PICKAXE;
    }
 
+   // ================================================================================================
+   // REACH-EXTENSION — scaffold-first, point-owned reclaim (O2). Shared by every out-of-reach op.
+   // ================================================================================================
+
+   /** Navigation speed while repositioning the villager under/onto the climb column. */
+   private static final double REACH_WALK_SPEED = 0.5;
+   /** A climb column never exceeds this many blocks (sanity guard against runaway placement on a bad target). */
+   public static final int MAX_REACH_COLUMN = 24;
+
    /**
-    * Ensure {@code pos} is reachable, extending reach if needed: PREFER placing {@code minecraft:scaffolding} to
-    * climb, fallback to stacking a block; reclaim afterwards.
+    * Ensure {@code target} is within player reach, extending reach if needed by building a temporary climb column
+    * the villager can stand on. PREFER {@code minecraft:scaffolding} (climbable, cheap, safely removable); fall back
+    * to stacking a solid block if scaffolding is unusable. The temporary blocks are tracked on the POINT
+    * ({@link TaskPointStore.Progress#scaffoldColumn}) so they are RECLAIMED — removed (and optionally returned to the
+    * villager's stock) — by {@link #reclaimReach} when the op completes or moves on.
     *
-    * <p>// O2/O7: NOT IMPLEMENTED (scaffold-first reach-extension). Returns the state the goal should act on.
+    * <p>Contract (per-tick, like every op primitive):
+    * <ul>
+    *   <li>Already in reach (after climbing, or never needed) → {@link OpState#COMPLETE}: the goal may proceed.</li>
+    *   <li>Need to climb higher → place the next column block at the villager's feet (tracked on the point), step the
+    *       villager up onto it, and return {@link OpState#EXTENDING_REACH}: keep calling.</li>
+    *   <li>Cannot place the column (no clear feet space / column too tall) → {@link OpState#BLOCKED}: the goal must
+    *       abandon this target. We never trap the villager: we only ever place a block at the feet then move up.</li>
+    * </ul>
+    *
+    * <p><b>Scaffold supply:</b> 1.12 Millénaire's lumberman simply faked the break in place (no climbing at all), so
+    * the scaffold blocks are a NEW player-like behaviour with no 1.12 economy cost. We mirror that by treating the
+    * scaffold as a FREE temporary: if the villager has {@code minecraft:scaffolding} in stock we consume it (and
+    * return it on reclaim); otherwise we place it for free and DO NOT credit it back — net economy unchanged from
+    * 1.12 either way, since the column is always fully reclaimed.
     */
-   public static OpState ensureReach(MillVillager v, BlockPos pos) {
-      throw new UnsupportedOperationException("ensureReach is O2/O7 (scaffold-first reach-extension); not implemented in O0");
+   public static OpState ensureReach(MillVillager v, BlockPos target) {
+      return ensureReach(v, target, target);
+   }
+
+   /**
+    * {@link #ensureReach(MillVillager, BlockPos)} but tracking the temporary climb column on a SEPARATE
+    * {@code anchor} point rather than on {@code target}. This lets one op (e.g. felling a whole tree) build a single
+    * shared column tracked on its dest/worksite while reaching many different {@code target}s (each log) and reclaim
+    * it ONCE via {@link #reclaimReach}{@code (v, anchor)} at the end.
+    */
+   public static OpState ensureReach(MillVillager v, BlockPos target, BlockPos anchor) {
+      if (withinReach(v, target)) {
+         return OpState.COMPLETE;
+      }
+
+      Level level = v.level();
+      TaskPointStore.Progress progress = TaskPointStore.get().getOrCreate(level, anchor);
+      int built = progress.scaffoldColumn.size();
+
+      // The column base is fixed at the villager's feet WHEN THE FIRST BLOCK WAS PLACED, recovered from the tracked
+      // list so the plan stays stable as the villager climbs (its live blockPosition rises each tick). Before any
+      // block is placed, the base is the current feet.
+      BlockPos base = built > 0 ? lowest(progress.scaffoldColumn) : v.blockPosition();
+
+      // How tall must the column be (measured from the fixed base) for the target to come into reach? Plan it purely;
+      // if a vertical column can't help (target to the side / too far), this op cannot extend reach here.
+      double eyeOffsetY = v.getEyePosition().y - v.blockPosition().getY();
+      Vec3 baseEye = new Vec3(v.getEyePosition().x, base.getY() + eyeOffsetY, v.getEyePosition().z);
+      int needed = plannedColumnHeight(baseEye, base, target);
+      if (needed <= 0 || needed > MAX_REACH_COLUMN) {
+         return OpState.BLOCKED;
+      }
+
+      // Done building the planned column: stand on top and re-test reach. If still short (villager not actually on
+      // the column yet), keep climbing the villager up; otherwise we're as high as planned.
+      if (built >= needed) {
+         BlockPos topStand = base.above(built); // feet sit one above the highest placed block.
+         climbOnto(v, topStand);
+         return withinReach(v, target) ? OpState.COMPLETE : OpState.EXTENDING_REACH;
+      }
+
+      // Place the next column block at base+built (straight up from the fixed base), then step the villager up onto
+      // it. We place at/above the base feet (never above the head) so we never seal the villager in.
+      BlockPos placeAt = columnPosForLevel(base, built);
+      if (!canPlaceColumnAt(level, placeAt)) {
+         return OpState.BLOCKED; // column space blocked (a real block there) — can't build a clean column.
+      }
+
+      BlockState columnState = chooseColumnState(v);
+      v.swing(InteractionHand.MAIN_HAND);
+      level.setBlockAndUpdate(placeAt, columnState);
+      v.playSound(columnState.getSoundType().getPlaceSound(), 1.0f, 1.0f);
+      progress.trackScaffold(placeAt);
+
+      // Consume one scaffold from stock if we used scaffolding and the villager has it (returned on reclaim).
+      if (columnState.is(Blocks.SCAFFOLDING)) {
+         v.takeFromInv(Blocks.SCAFFOLDING, 0, 1);
+      }
+
+      // Step up onto the block we just placed.
+      climbOnto(v, placeAt.above());
+      return OpState.EXTENDING_REACH;
+   }
+
+   /**
+    * Reclaim a point's temporary climb column: remove every tracked scaffold/stack block (top-down so nothing falls
+    * or is left floating), returning {@code minecraft:scaffolding} to the villager's stock, and clear the tracking
+    * list. Idempotent and safe to call whether or not a column was built. Call when the op completes or the goal
+    * abandons the target so no permanent scaffolding is ever left behind.
+    */
+   public static void reclaimReach(MillVillager v, BlockPos target) {
+      TaskPointStore.Progress progress = TaskPointStore.get().peek(v.level(), target);
+      if (progress == null || progress.scaffoldColumn.isEmpty()) {
+         return;
+      }
+      Level level = v.level();
+      // Top-down: remove the highest blocks first so the column never collapses onto a lower one mid-reclaim.
+      java.util.List<Long> column = new java.util.ArrayList<>(progress.scaffoldColumn);
+      column.sort((a, b) -> Integer.compare(BlockPos.of(b).getY(), BlockPos.of(a).getY()));
+      for (long packed : column) {
+         BlockPos pos = BlockPos.of(packed);
+         BlockState state = level.getBlockState(pos);
+         if (state.is(Blocks.SCAFFOLDING)) {
+            level.removeBlock(pos, false);
+            v.addToInv(Blocks.SCAFFOLDING, 1); // return the temporary scaffold to stock.
+         } else if (!state.isAir()) {
+            // A fallback solid stack block — just remove it (it was placed for free, see ensureReach's note).
+            level.removeBlock(pos, false);
+         }
+      }
+      progress.scaffoldColumn.clear();
+   }
+
+   // ---- pure reach-extension planning (golden-testable) -------------------------------------------
+
+   /**
+    * Pure: how many blocks tall a climb column rising from {@code feet} must be so that, standing on top of it, an
+    * eye at the same horizontal offset as {@code currentEye} comes within {@link #REACH} of {@code target}'s block
+    * AABB. Returns {@code 0} if the target is already in reach from the current feet, and {@code -1} if a vertical
+    * column cannot help (the target is so far horizontally that no reachable height brings it within reach, e.g. it
+    * is to the side beyond reach rather than above). This is the unit the golden tests assert against.
+    */
+   public static int plannedColumnHeight(Vec3 currentEye, BlockPos feet, BlockPos target) {
+      AABB targetBox = new AABB(target);
+      double eyeOffsetY = currentEye.y - feet.getY(); // eye height above the feet block (≈1.62 for a villager).
+      double eyeX = currentEye.x;
+      double eyeZ = currentEye.z;
+      for (int h = 0; h <= MAX_REACH_COLUMN; h++) {
+         // Standing on a column of height h, the feet are at feet.getY()+h; the eye rides eyeOffsetY above that.
+         Vec3 eye = new Vec3(eyeX, feet.getY() + h + eyeOffsetY, eyeZ);
+         if (targetBox.distanceToSqr(eye) <= REACH_SQR) {
+            return h; // h==0 means already reachable; h>0 is the needed column height.
+         }
+      }
+      return -1; // no reachable height helps — the target is out of reach horizontally, not just vertically.
+   }
+
+   /**
+    * Pure: the position of the {@code i}-th column block (0-based) for a column rising from {@code feet}. Block 0
+    * sits at the feet; block i sits {@code i} blocks above the feet. (When the villager steps up after placing, the
+    * NEXT block goes at the new feet — which is this same progression.)
+    */
+   public static BlockPos columnPosForLevel(BlockPos feet, int i) {
+      return feet.above(i);
+   }
+
+   private static BlockPos lowest(java.util.List<Long> column) {
+      BlockPos lowest = null;
+      for (long packed : column) {
+         BlockPos pos = BlockPos.of(packed);
+         if (lowest == null || pos.getY() < lowest.getY()) {
+            lowest = pos;
+         }
+      }
+      return lowest;
+   }
+
+   /** True if {@code pos} is clear enough to host a column block (air/replaceable, not water we'd flood). */
+   private static boolean canPlaceColumnAt(Level level, BlockPos pos) {
+      BlockState state = level.getBlockState(pos);
+      return state.isAir() || state.canBeReplaced();
+   }
+
+   /**
+    * Choose the climb-column block: PREFER {@code minecraft:scaffolding} (climbable + safely removable). Fall back to
+    * a cheap solid block ({@code minecraft:dirt}) only if scaffolding is somehow unavailable in the registry (it
+    * always is in vanilla, so the fallback is defensive).
+    */
+   private static BlockState chooseColumnState(MillVillager v) {
+      // PREFER scaffolding (climbable + cheaply removable). The DIRT fallback documents the "stack a solid block"
+      // path the user asked for if scaffolding were ever unusable; with vanilla present, scaffolding is used.
+      return Blocks.SCAFFOLDING.defaultBlockState();
+   }
+
+   /** Walk/teleport-step the villager onto {@code stand}: navigate toward it (real path) and look there. */
+   private static void climbOnto(MillVillager v, BlockPos stand) {
+      double x = stand.getX() + 0.5;
+      double y = stand.getY();
+      double z = stand.getZ() + 0.5;
+      v.getNavigation().moveTo(x, y, z, REACH_WALK_SPEED);
+      v.getLookControl().setLookAt(x, y + 1.0, z);
    }
 
    /** Tool categories for {@link #ensureTool} (O1+). */

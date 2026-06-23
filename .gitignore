@@ -27,3 +27,5 @@ build-out.txt
 # OS
 .DS_Store
 Thumbs.db
+
+logs/

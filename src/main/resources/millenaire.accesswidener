@@ -1,0 +1,31 @@
+accessWidener v2 official
+
+# ================================================================================================
+# Millénaire 26.2 — player-like fishing (O4).
+#
+# A MillVillager is a Mob, never a Player. Vanilla FishingHook is Player-bound: its tick() discards
+# the hook when getPlayerOwner()==null (FishingHook.java:157-159), and the bite FSM + its state live
+# in private methods + private fields. To let a VILLAGER-owned bobber run the FULL vanilla bobbing +
+# bite animation, our FishingHookMixin needs read/write access to those private members. We widen
+# ONLY what the mixin/op + the self-test touch; the Player-gating itself is relaxed in the mixin,
+# guarded to Mill-villager-owned hooks (never real-player fishing).
+# ================================================================================================
+
+# --- FishingHook private state the mixin drives (the bite FSM + bobbing physics) ---
+# nibble: >0 once a fish is on the line — the mixin's catch trigger (and the self-test forces it for determinism).
+accessible	field	net/minecraft/world/entity/projectile/FishingHook	nibble	I
+# timeUntilHooked / biting: read to mirror vanilla's open-water + bite-dunk physics.
+accessible	field	net/minecraft/world/entity/projectile/FishingHook	timeUntilHooked	I
+accessible	field	net/minecraft/world/entity/projectile/FishingHook	biting	Z
+# openWater / outOfWaterTime: the surface-state flags the bobbing tick maintains.
+accessible	field	net/minecraft/world/entity/projectile/FishingHook	openWater	Z
+accessible	field	net/minecraft/world/entity/projectile/FishingHook	outOfWaterTime	I
+# life: grounded-timeout counter (so a stuck villager hook eventually expires, like a player's).
+accessible	field	net/minecraft/world/entity/projectile/FishingHook	life	I
+
+# --- FishingHook private method the mixin reuses (so we don't re-derive the bite math) ---
+# catchingFish(BlockPos): runs the real lure/hook/nibble timers + splash particles + bite sound each in-water tick.
+accessible	method	net/minecraft/world/entity/projectile/FishingHook	catchingFish	(Lnet/minecraft/core/BlockPos;)V
+
+# The no-owner ctor + setOwner are already public/AW-accessible in 26.2 (FishingHook.java:78,521); re-declaring
+# would be redundant. The loot API (BuiltInLootTables.FISHING + LootParams/LootTable) the op uses is already public.

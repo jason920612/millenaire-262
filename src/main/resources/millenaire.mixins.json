@@ -4,11 +4,15 @@
 	"package": "org.millenaire.mixin",
 	"compatibilityLevel": "JAVA_21",
 	"mixins": [
+		"FishingHookMixin",
 		"FurnaceResultSlotMixin",
 		"LivingEntityDamageMixin",
 		"LivingEntityDropsMixin"
 	],
-	"client": [],
+	"client": [
+		"client.FishingHookClientMixin",
+		"client.FishingHookRendererMixin"
+	],
 	"injectors": {
 		"defaultRequire": 1
 	}

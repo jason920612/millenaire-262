@@ -103,6 +103,18 @@ public final class TaskPointStore {
       return records.size();
    }
 
+   /**
+    * Visit every live record with its worksite {@link BlockPos}. Used by the fishing op (O4) to locate the point
+    * whose bobber id matches a hook from inside the FishingHook mixin (which has no point context). The key's
+    * dimension is not exposed here — fishing bobber ids are world-unique within a server tick, so matching on the
+    * id alone is sufficient for the single overworld case; callers that care about dimension should re-check.
+    */
+   public void forEach(java.util.function.BiConsumer<BlockPos, Progress> visitor) {
+      for (Map.Entry<Key, Progress> e : records.entrySet()) {
+         visitor.accept(BlockPos.of(e.getKey().packedPos()), e.getValue());
+      }
+   }
+
    /** Test/diagnostic: drop everything (e.g. between unit tests, or on server stop). */
    public void clearAll() {
       records.clear();
@@ -185,10 +197,20 @@ public final class TaskPointStore {
    public static final class Progress {
       /** Accumulated break fraction in {@code [0, 1)}; the block breaks once this reaches {@code 1.0}. */
       public float breakProgress;
-      /** Reserved for the fishing FSM (O4): which phase the bobber is in. {@code -1} = not casting. */
+      /**
+       * The fishing FSM phase (O4): which phase the point's bobber is in. {@code -1} = idle (not casting).
+       * Ordinal of {@link com.coderyo.jason.ops.VillagerFishing.Phase}; stored as an int so this record stays a
+       * plain mutable struct. Lives on the POINT so a relieving villager picks up an in-flight cast (hand-off).
+       */
       public int fishingPhase = -1;
-      /** Reserved generic timer (O4 fishing bite countdown, O1 ore-regrow delay, …), in ticks. */
+      /** Generic timer (O4 fishing safety/cast-cooldown countdown, O1 ore-regrow delay, …), in ticks. */
       public int timer;
+      /**
+       * Entity id of the live {@link net.minecraft.world.entity.projectile.FishingHook} this point's cast spawned,
+       * or {@code 0} if none. Point-owned (not villager-owned) so the bobber is recoverable across hand-off; the
+       * entity itself carries the villager owner, so a relieving villager just re-adopts the same hook.
+       */
+      public int fishingBobberId;
 
       /**
        * Point-owned reach-extension scaffold column (O2): the temporary climb blocks this op placed to reach an
@@ -236,6 +258,7 @@ public final class TaskPointStore {
          this.breakProgress = 0.0f;
          this.fishingPhase = -1;
          this.timer = 0;
+         this.fishingBobberId = 0;
          touch();
       }
 

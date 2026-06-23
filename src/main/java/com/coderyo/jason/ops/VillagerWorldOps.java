@@ -260,11 +260,13 @@ public final class VillagerWorldOps {
     * Advance fishing by one tick: cast a real {@code FishingHook}, run the vanilla bite FSM/animation, and on a
     * catch roll {@code BuiltInLootTables.FISHING} → spawn ItemEntities for the pickup step.
     *
-    * <p>// O4: NOT IMPLEMENTED. Needs an access-widener + a FishingHook mixin to relax the {@code instanceof Player}
-    * gating so a Mob-owned hook ticks. Reads/writes the point's {@code fishingPhase}/{@code timer}.
+    * <p>O4: implemented. Delegates to {@link VillagerFishing}, which (with the {@code millenaire.accesswidener} +
+    * {@code FishingHookMixin} relaxing the Player-gating) casts a real villager-owned hook, runs the full vanilla
+    * bobbing + bite animation, rolls {@code BuiltInLootTables.FISHING} on the catch, and walks the villager to the
+    * drops. State lives on the point's {@code fishingPhase}/{@code fishingBobberId}/{@code timer}.
     */
    public static OpState fishTick(MillVillager v, BlockPos water) {
-      throw new UnsupportedOperationException("fishTick is O4 (AW + FishingHook mixin); not implemented in O0");
+      return VillagerFishing.fishTick(v, water);
    }
 
    // ================================================================================================
@@ -358,6 +360,12 @@ public final class VillagerWorldOps {
     */
    public static boolean ensureTool(MillVillager v, ToolKind kind) {
       if (isToolOfKind(v.getMainHandItem(), kind)) {
+         return true;
+      }
+      // Mill villagers DON'T wire their working item into vanilla equipment: getMainHandItem() is empty, and the
+      // goal carries its tool in the Mill `heldItem` field (set from getHeldItemsTravelling/Destination). For goals
+      // that pre-set the hand (fishing's rod, etc.) accept that directly — this is the villager's effective main hand.
+      if (v.heldItem != null && isToolOfKind(v.heldItem, kind)) {
          return true;
       }
       ItemStack fromStock = bestToolFromStock(v, kind);

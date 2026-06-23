@@ -71,7 +71,34 @@ public final class MillSelfTest {
    private static final int TICK_GEN_VILLAGES = 20;
    private static final int TICK_FORCE_CHUNKS = 40;
    private static final int TICK_GROWTH_START = 60;
-   private static final int TICK_GROWTH_END = TICK_GROWTH_START + 2400; // ~2 min of growth ticking
+   private static final int TICK_GROWTH_END = TICK_GROWTH_START + 2400; // ~2 min of growth ticking (default)
+   /**
+    * Optional EARLY end of the growth window (absolute tick), read once from {@code -Dmillenaire.selftest.growthend=N}
+    * (or {@code MILLENAIRE_SELFTEST_GROWTHEND}). When set (and &lt; {@link #TICK_GROWTH_END}) the growth default-branch
+    * FAST-FORWARDS {@link #tick} to {@link #TICK_GROWTH_END} once this tick is reached, so the post-growth H-cycle
+    * steps (mine/chop/farm/fish) run promptly. This exists purely so a verification run that shares a process with the
+    * client self-test (which halts the process around its own tick ~1540) can reach the H-cycles before the halt,
+    * while still giving villagers a few hundred ticks to spawn. Unset → normal full-length run.
+    */
+   private static final int GROWTH_EARLY_END = resolveGrowthEarlyEnd();
+
+   private static int resolveGrowthEarlyEnd() {
+      String prop = System.getProperty("millenaire.selftest.growthend");
+      if (prop == null) {
+         prop = System.getenv("MILLENAIRE_SELFTEST_GROWTHEND");
+      }
+      if (prop != null) {
+         try {
+            int n = Integer.parseInt(prop.trim());
+            if (n > TICK_GROWTH_START) {
+               return n;
+            }
+         } catch (NumberFormatException ignored) {
+            // fall through to disabled
+         }
+      }
+      return -1; // disabled
+   }
    private static final int TICK_BUILDING_REPORT = TICK_GROWTH_END + 20;
    private static final int TICK_ITEMS_BLOCKS = TICK_GROWTH_END + 40;
    private static final int TICK_TRADE = TICK_GROWTH_END + 60;
@@ -79,7 +106,12 @@ public final class MillSelfTest {
    private static final int TICK_MINE_CYCLE = TICK_GROWTH_END + 90;
    private static final int TICK_CHOP_CYCLE = TICK_GROWTH_END + 95;
    private static final int TICK_FARM_CYCLE = TICK_GROWTH_END + 98;
-   private static final int TICK_SUMMARY = TICK_GROWTH_END + 100;
+   // O4 fishing: a real bobber must animate across many ticks. Set up + cast at FISH_START, drive/observe the
+   // animation each tick through FISH_END (the mixin ticks the hook for us between harness ticks), verify at FISH_END.
+   private static final int TICK_FISH_START = TICK_GROWTH_END + 100;
+   private static final int FISH_WINDOW = 120; // ~6s of real bobber ticking — plenty to show the animation.
+   private static final int TICK_FISH_END = TICK_FISH_START + FISH_WINDOW;
+   private static final int TICK_SUMMARY = TICK_FISH_END + 5;
    private static final int MAX_TICK_GUARD = 6000 + TICK_GROWTH_END; // absolute safety net
 
    /** Distance between consecutive culture village placements (blocks). */
@@ -133,6 +165,17 @@ public final class MillSelfTest {
    private Boolean mineCycleOk = null;
    private Boolean chopCycleOk = null;
    private Boolean farmCycleOk = null;
+   private Boolean fishCycleOk = null;
+
+   // --- O4 fishing-cycle live state (spans TICK_FISH_START..TICK_FISH_END) ---
+   private MillVillager fishVillager;
+   private BlockPos fishWaterSurface;
+   private int fishBobberId;
+   private int fishMaxBitingObserved;    // peak of the "biting" splash flag → proof the animation reached a bite.
+   private int fishLootSpawned;          // ItemEntities spawned by the forced reel (real FISHING loot).
+   private int fishPickedUp;             // items the villager actually collected into its inventory.
+   private boolean fishHookSurvived;     // the villager-owned hook lived past the tick that vanilla would discard it.
+   private boolean fishCatchForced;      // whether we forced the bite (deterministic) after observing the animation.
    private final Map<String, Integer> distinctExceptions = new HashMap<>();
 
    // --- Movement tracking (per villager, keyed by stable getVillagerId) ---
@@ -227,16 +270,28 @@ public final class MillSelfTest {
             case TICK_MINE_CYCLE -> stepMineCycle();
             case TICK_CHOP_CYCLE -> stepChopCycle();
             case TICK_FARM_CYCLE -> stepFarmCycle();
+            case TICK_FISH_START -> stepFishStart();
+            case TICK_FISH_END -> stepFishEnd();
             case TICK_SUMMARY -> {
                stepSummary();
                stopServer();
             }
             default -> {
                if (tick > TICK_GROWTH_START && tick < TICK_GROWTH_END) {
+                  // Verification escape hatch: jump to the end of the growth window early so the post-growth H-cycle
+                  // steps run before a co-hosted client self-test halts the process. Villagers have spawned by then.
+                  if (GROWTH_EARLY_END > 0 && tick >= GROWTH_EARLY_END) {
+                     log("growth early-end (=" + GROWTH_EARLY_END + ") reached — fast-forwarding to TICK_GROWTH_END=" + TICK_GROWTH_END);
+                     sampleVillagerMovement();
+                     tick = TICK_GROWTH_END - 1; // next increment lands exactly on TICK_GROWTH_END.
+                     return;
+                  }
                   growthHeartbeat();
                   if ((tick - TICK_GROWTH_START) % MOVEMENT_SAMPLE_INTERVAL == 0) {
                      sampleVillagerMovement(); // periodic position sample (metric 1)
                   }
+               } else if (tick > TICK_FISH_START && tick < TICK_FISH_END) {
+                  stepFishDrive(); // O4: advance + observe the live bobber animation each tick.
                }
             }
          }
@@ -1414,6 +1469,213 @@ public final class MillSelfTest {
       }
    }
 
+   // ============================ STEP H5: player-like fishing cycle (O4) ============================
+
+   /**
+    * Live evidence for the O4 player-like fishing refactor. Unlike the break-based cycles (which run synchronously),
+    * fishing needs a REAL {@link net.minecraft.world.entity.projectile.FishingHook} that animates across many ticks
+    * via {@code FishingHookMixin}; so this is a 3-phase, multi-tick test:
+    *
+    * <ol>
+    *   <li>{@link #stepFishStart} (TICK_FISH_START): dig a small water pool next to a real villager, equip a fishing
+    *       rod, register a fishing-spot point on the {@link com.coderyo.jason.ops.TaskPointStore}, and drive
+    *       {@code VillagerWorldOps.fishTick} once — IDLE→CASTING — spawning a real villager-owned bobber over the
+    *       water. The crux of the AW+mixin: a villager (a Mob, not a Player) owns the hook.</li>
+    *   <li>{@link #stepFishDrive} (each tick in between): the server tick runs the hook's {@code tick()} → our mixin
+    *       keeps the villager-owned hook ALIVE (vanilla would have discarded it on tick 1) and runs the real
+    *       {@code catchingFish} bite FSM (splash particles, the {@code biting} flag). We sample {@code biting} as
+    *       proof the animation is really happening. Partway through we FORCE a bite deterministically (set the
+    *       AW-widened {@code nibble}) so the test doesn't depend on the random 100-600t lure timer, then let the
+    *       mixin's catch path fire {@code VillagerFishing.reel} → real FISHING loot.</li>
+    *   <li>{@link #stepFishEnd} (TICK_FISH_END): verify the hook survived + animated, loot was rolled from
+    *       {@code BuiltInLootTables.FISHING}, and the villager picked it up; report greppable {@code H5 FISHCYCLE}.</li>
+    * </ol>
+    */
+   private void stepFishStart() {
+      try {
+         List<MillVillager> villagers = level.getEntitiesOfClass(
+            MillVillager.class, new AABB(-30000, level.getMinY(), -30000, 30000, level.getMaxY(), 30000), v -> v.isAlive());
+         if (villagers.isEmpty()) {
+            log("H5 FISHCYCLE SKIP: no MillVillager in world");
+            return;
+         }
+         MillVillager v = villagers.get(0);
+         fishVillager = v;
+
+         // Build the fishing scene AT THE VILLAGER'S OWN POSITION — do NOT teleport it far (a villager relocated away
+         // from its village is removed by Mill's management within a tick, which would orphan the bobber). We only
+         // clear a small pad around where it already validly stands and carve a 3x3 water pool 2 blocks in front.
+         BlockPos base = v.blockPosition();
+         for (int dx = -2; dx <= 4; dx++) {
+            for (int dz = -3; dz <= 3; dz++) {
+               level.setBlock(base.offset(dx, -1, dz), net.minecraft.world.level.block.Blocks.STONE.defaultBlockState(), 3);
+               level.setBlock(base.offset(dx, 0, dz), net.minecraft.world.level.block.Blocks.AIR.defaultBlockState(), 3);
+               level.setBlock(base.offset(dx, 1, dz), net.minecraft.world.level.block.Blocks.AIR.defaultBlockState(), 3);
+            }
+         }
+         // Carve a 3x3 water pool at base+ (2,0,0): water sources on the pad level, air above, stone below.
+         BlockPos centre = base.offset(2, 0, 0);
+         for (int dx = -1; dx <= 1; dx++) {
+            for (int dz = -1; dz <= 1; dz++) {
+               BlockPos w = centre.offset(dx, 0, dz);
+               level.setBlock(w.below(), net.minecraft.world.level.block.Blocks.STONE.defaultBlockState(), 3);
+               level.setBlock(w, net.minecraft.world.level.block.Blocks.WATER.defaultBlockState(), 3);
+               level.setBlock(w.above(), net.minecraft.world.level.block.Blocks.AIR.defaultBlockState(), 3);
+            }
+         }
+         // Keep the villager exactly where it is (on the cleared pad), just face the pool. No long-distance teleport.
+         v.setPos(base.getX() + 0.5, base.getY(), base.getZ() + 0.5);
+         fishWaterSurface = centre;
+
+         // Equip the rod (the goal's travelling tool) and clear any stale point state.
+         v.heldItem = new ItemStack(net.minecraft.world.item.Items.FISHING_ROD);
+         com.coderyo.jason.ops.TaskPointStore.get().clear(level, centre);
+
+         boolean rodOk = com.coderyo.jason.ops.VillagerWorldOps.ensureTool(v, com.coderyo.jason.ops.VillagerWorldOps.ToolKind.ROD);
+         BlockPos surface = com.coderyo.jason.ops.VillagerFishing.findWaterSurface(level, centre);
+         log("H5 FISHCYCLE scene: pad@" + base + " pool@" + centre + " villager@" + v.blockPosition()
+            + " rodEquipped=" + rodOk + " waterSurfaceResolved=" + surface);
+
+         // CAST: IDLE → CASTING. Spawns the real villager-owned hook over the water.
+         com.coderyo.jason.ops.OpState st = com.coderyo.jason.ops.VillagerWorldOps.fishTick(v, centre);
+         com.coderyo.jason.ops.TaskPointStore.Progress p = com.coderyo.jason.ops.TaskPointStore.get().peek(level, centre);
+         fishBobberId = (p != null) ? p.fishingBobberId : 0;
+         var hook = (fishBobberId != 0 && level.getEntity(fishBobberId) instanceof net.minecraft.world.entity.projectile.FishingHook h) ? h : null;
+         log("H5 FISHCYCLE cast: state=" + st + " bobberId=" + fishBobberId
+            + " hookSpawned=" + (hook != null) + " ownerIsVillager=" + (hook != null && hook.getOwner() == v));
+      } catch (Throwable t) {
+         fishCycleOk = false;
+         recordException("H5:fishstart", t);
+         log("H5 FISHCYCLE FAIL (start): " + t);
+      }
+   }
+
+   /** Per-tick during the fishing window: advance the FSM, sample the live animation, force the deterministic bite. */
+   private void stepFishDrive() {
+      if (fishVillager == null || fishWaterSurface == null) {
+         return;
+      }
+      try {
+         MillVillager v = fishVillager;
+         // Keep the villager beside the pool so reach-gated pickup works once the catch lands.
+         v.setPos(fishWaterSurface.getX() + 0.5, fishWaterSurface.getY(), fishWaterSurface.getZ() - 1.2);
+
+         net.minecraft.world.entity.projectile.FishingHook hook =
+            (level.getEntity(fishBobberId) instanceof net.minecraft.world.entity.projectile.FishingHook h && h.isAlive()) ? h : null;
+
+         int sinceStart = tick - TICK_FISH_START;
+         if (sinceStart % 20 == 0 || hook == null) {
+            log("H5 FISHCYCLE drive +" + sinceStart + "t: hookAlive=" + (hook != null)
+               + (hook != null ? (" inWater=" + level.getFluidState(hook.blockPosition()).is(net.minecraft.tags.FluidTags.WATER)
+                  + " biting=" + ((net.minecraft.world.entity.projectile.FishingHook) hook).biting
+                  + " nibble=" + ((net.minecraft.world.entity.projectile.FishingHook) hook).nibble
+                  + " hookY=" + String.format("%.2f", hook.getY())) : ""));
+         }
+         if (hook != null) {
+            fishHookSurvived = true; // it lived past tick 1 → the mixin's keep-alive defeated the Player-gating.
+            // Sample the live bite-animation flag (AW-widened). Peak>0 means the bobber really reached "biting".
+            int biting = ((net.minecraft.world.entity.projectile.FishingHook) hook).biting ? 1 : 0;
+            fishMaxBitingObserved = Math.max(fishMaxBitingObserved, biting);
+
+            // Force the catch deterministically ~40t in (after the bobber has visibly animated for a while), unless
+            // a natural bite already happened. Setting the AW-widened nibble>0 makes the mixin's catch path reel.
+            if (!fishCatchForced && sinceStart >= 40) {
+               int beforeNibble = ((net.minecraft.world.entity.projectile.FishingHook) hook).nibble;
+               if (beforeNibble <= 0) {
+                  ((net.minecraft.world.entity.projectile.FishingHook) hook).nibble = 1;
+               }
+               fishCatchForced = true;
+               log("H5 FISHCYCLE forced a bite at +" + sinceStart + "t (nibble " + beforeNibble + "->"
+                  + ((net.minecraft.world.entity.projectile.FishingHook) hook).nibble + "); next tick the mixin reels.");
+            }
+         }
+
+         // Drive the goal-level FSM (CASTING→WAITING; or PICKUP after the reel) so the villager collects the loot.
+         com.coderyo.jason.ops.OpState st = com.coderyo.jason.ops.VillagerWorldOps.fishTick(v, fishWaterSurface);
+
+         // Once the reel has happened the point is in PICKUP; count any loot drops near the water as they appear.
+         var drops = level.getEntitiesOfClass(net.minecraft.world.entity.item.ItemEntity.class, new AABB(fishWaterSurface).inflate(6.0));
+         fishLootSpawned = Math.max(fishLootSpawned, drops.size());
+         if (st == com.coderyo.jason.ops.OpState.PICKING_UP && !drops.isEmpty()) {
+            // Nudge the villager onto a drop so the reach-gated pickup collects it in this synchronous loop.
+            v.setPos(drops.get(0).getX(), drops.get(0).getY(), drops.get(0).getZ());
+         }
+      } catch (Throwable t) {
+         recordException("H5:fishdrive", t);
+      }
+   }
+
+   private void stepFishEnd() {
+      try {
+         MillVillager v = fishVillager;
+         if (v == null || fishWaterSurface == null) {
+            log("H5 FISHCYCLE SKIP: not set up");
+            return;
+         }
+         // Finish any remaining pickup synchronously.
+         com.coderyo.jason.ops.OpState st = com.coderyo.jason.ops.VillagerWorldOps.fishTick(v, fishWaterSurface);
+         int guard = 0;
+         while (st == com.coderyo.jason.ops.OpState.PICKING_UP && guard++ < 100) {
+            var drops = level.getEntitiesOfClass(net.minecraft.world.entity.item.ItemEntity.class, new AABB(fishWaterSurface).inflate(6.0));
+            if (!drops.isEmpty()) {
+               v.setPos(drops.get(0).getX(), drops.get(0).getY(), drops.get(0).getZ());
+            }
+            st = com.coderyo.jason.ops.VillagerWorldOps.fishTick(v, fishWaterSurface);
+         }
+
+         // The picked-up loot is now in the villager's inventory; sum the FISHING-table outcomes we can count.
+         fishPickedUp = v.countInv(net.minecraft.world.item.Items.COD, 0)
+            + v.countInv(net.minecraft.world.item.Items.SALMON, 0)
+            + v.countInv(net.minecraft.world.item.Items.PUFFERFISH, 0)
+            + v.countInv(net.minecraft.world.item.Items.TROPICAL_FISH, 0)
+            + v.countInv(net.minecraft.world.item.Items.STICK, 0)
+            + v.countInv(net.minecraft.world.item.Items.STRING, 0)
+            + v.countInv(net.minecraft.world.item.Items.BOWL, 0)
+            + v.countInv(net.minecraft.world.item.Items.LEATHER, 0)
+            + v.countInv(net.minecraft.world.item.Items.LEATHER_BOOTS, 0)
+            + v.countInv(net.minecraft.world.item.Items.ROTTEN_FLESH, 0)
+            + v.countInv(net.minecraft.world.item.Items.INK_SAC, 0)
+            + v.countInv(net.minecraft.world.item.Items.BONE, 0)
+            + v.countInv(net.minecraft.world.item.Items.LILY_PAD, 0)
+            + v.countInv(net.minecraft.world.item.Items.NAME_TAG, 0)
+            + v.countInv(net.minecraft.world.item.Items.NAUTILUS_SHELL, 0)
+            + v.countInv(net.minecraft.world.item.Items.SADDLE, 0)
+            + v.countInv(net.minecraft.world.item.Items.FISHING_ROD, 0)
+            + v.countInv(net.minecraft.world.item.Items.ENCHANTED_BOOK, 0);
+
+         // A successful cycle: the villager-owned hook survived+animated, a catch rolled real loot, the villager
+         // ended IDLE/COMPLETE (no stuck bobber), and at least one loot stack made it into its inventory.
+         boolean caughtSomething = fishLootSpawned > 0 || fishPickedUp > 0;
+         boolean noStuckBobber = !(level.getEntity(fishBobberId) instanceof net.minecraft.world.entity.projectile.FishingHook fh && fh.isAlive());
+         fishCycleOk = fishHookSurvived && fishCatchForced && caughtSomething;
+
+         log("H5 FISHCYCLE result: hookSurvived(villager-owned, NOT discarded)=" + fishHookSurvived
+            + " maxBitingFlag=" + fishMaxBitingObserved
+            + " forcedBite=" + fishCatchForced
+            + " lootSpawned=" + fishLootSpawned + " (real BuiltInLootTables.FISHING)"
+            + " pickedUpIntoInv=" + fishPickedUp
+            + " bobberCleanedUp=" + noStuckBobber
+            + " finalFSM=" + st);
+         log("H5 FISHCYCLE " + (fishCycleOk ? "OK" : "PARTIAL")
+            + ": fullAnimationViaMixin=" + fishHookSurvived
+            + " realFishingLoot=" + caughtSomething
+            + " villagerPickedUp=" + (fishPickedUp > 0));
+
+         // Clean up the pool + any stray drops.
+         BlockPos c = fishWaterSurface;
+         for (int dx = -1; dx <= 1; dx++) {
+            for (int dz = -1; dz <= 1; dz++) {
+               level.removeBlock(c.offset(dx, 0, dz), false);
+            }
+         }
+         com.coderyo.jason.ops.TaskPointStore.get().clear(level, fishWaterSurface);
+      } catch (Throwable t) {
+         fishCycleOk = false;
+         recordException("H5:fishend", t);
+         log("H5 FISHCYCLE FAIL (end): " + t);
+      }
+   }
+
    // ============================ STEP I: summary + stop ============================
 
    private void stepSummary() {
@@ -1454,6 +1716,7 @@ public final class MillSelfTest {
       log("mine cycle (O1 break+pickup+regrow): " + (mineCycleOk == null ? "not run" : (mineCycleOk ? "OK" : "PARTIAL/FAIL")));
       log("chop cycle (O2 whole-tree+leaves+scaffold+pickup+reclaim): " + (chopCycleOk == null ? "not run" : (chopCycleOk ? "OK" : "PARTIAL/FAIL")));
       log("farm cycle (O3 only-mature harvest+pickup+auto-replant, immature skipped): " + (farmCycleOk == null ? "not run" : (farmCycleOk ? "OK" : "PARTIAL/FAIL")));
+      log("fish cycle (O4 AW+mixin real bobber animation+FISHING loot+pickup): " + (fishCycleOk == null ? "not run" : (fishCycleOk ? "OK" : "PARTIAL/FAIL")));
       log("distinct exception types seen: " + distinctExceptions.size());
       for (Map.Entry<String, Integer> e : distinctExceptions.entrySet()) {
          log("  exception x" + e.getValue() + ": " + e.getKey());

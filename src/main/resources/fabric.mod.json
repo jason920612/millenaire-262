@@ -26,6 +26,7 @@
 	"mixins": [
 		"millenaire.mixins.json"
 	],
+	"accessWidener": "millenaire.accesswidener",
 	"depends": {
 		"fabricloader": ">=0.19.3",
 		"minecraft": "~26.2",

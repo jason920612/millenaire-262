@@ -5,6 +5,8 @@ import java.util.List;
 import net.minecraft.world.item.Items;
 import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.InteractionHand;
+import com.coderyo.jason.ops.OpState;
+import com.coderyo.jason.ops.VillagerWorldOps;
 import org.millenaire.common.block.BlockSilkWorm;
 import org.millenaire.common.block.MillBlocks;
 import org.millenaire.common.config.DocumentedElement;
@@ -30,7 +32,9 @@ public class GoalByzantineGatherSilk extends Goal {
 
    @Override
    public int actionDuration(MillVillager villager) {
-      return 20;
+      // Player-like gather is driven per-tick (reach → swing → 1.12 transform): re-enter every tick (1) instead of
+      // the fixed 20-tick countdown that instantly transformed the block + teleported the yield in.
+      return 1;
    }
 
    @Override
@@ -101,18 +105,43 @@ public class GoalByzantineGatherSilk extends Goal {
       return true;
    }
 
+   /**
+    * Player-like silk gather, driven one tick at a time (actionDuration == 1). STATELESS — this Goal is a SINGLETON
+    * shared across villagers, so the phase is derived from the WORLD each tick (the silk block's PROGRESS state),
+    * never from a per-goal field (mirrors the migrated mine/chop/harvest goals).
+    *
+    * <p>1.12 mechanic + yield KEPT EXACTLY: the silk source is NOT a breakable block — 1.12 TRANSFORMED the ripe
+    * {@code SILK_WORM} (PROGRESS=SILKWORMFULL) back to its empty default state (so it regrows) and granted one
+    * {@link MillItems#SILK}. The transform spawns NO real {@link net.minecraft.world.entity.item.ItemEntity} (the
+    * block stays in place, just reset), so there is nothing to pick up — the {@code SILK} yield is the authoritative
+    * Mill economy item, kept as the 1.12-fixed yield. The change vs 1.12 is ONLY that the villager must be within
+    * player REACH (walk closer / scaffold if not) and SWINGS before the transform — a genuine player-like interact.
+    */
    @Override
    public boolean performAction(MillVillager villager) {
-      if (WorldUtilities.getBlock(villager.level(), villager.getGoalDestPoint()) == MillBlocks.SILK_WORM
-         && WorldUtilities.getBlockState(villager.level(), villager.getGoalDestPoint()).getValue(BlockSilkWorm.PROGRESS)
-            == BlockSilkWorm.EnumType.SILKWORMFULL) {
-         villager.addToInv(MillItems.SILK, 0, 1);
-         villager.setBlockAndMetadata(villager.getGoalDestPoint(), MillBlocks.SILK_WORM, 0);
-         villager.swing(InteractionHand.MAIN_HAND);
-         return false;
-      } else {
+      Point dest = villager.getGoalDestPoint();
+      if (dest == null) {
          return true;
       }
+      // Phase from the world: only act on a still-ripe silk block (PROGRESS == SILKWORMFULL). Anything else (already
+      // harvested this cycle / not silk) → finish so the goal re-picks.
+      if (WorldUtilities.getBlock(villager.level(), dest) != MillBlocks.SILK_WORM
+         || WorldUtilities.getBlockState(villager.level(), dest).getValue(BlockSilkWorm.PROGRESS)
+            != BlockSilkWorm.EnumType.SILKWORMFULL) {
+         return true;
+      }
+
+      // Reach-gate: walk within player reach (scaffold-extend if needed) before interacting.
+      if (!VillagerWorldOps.withinReach(villager, dest.getBlockPos())) {
+         OpState reach = VillagerWorldOps.ensureReach(villager, dest.getBlockPos());
+         return reach == OpState.BLOCKED; // BLOCKED → abandon (true); else keep approaching (false).
+      }
+
+      // Real player-like interact: swing, then perform the 1.12 transform (ripe → empty default) + the 1.12 yield.
+      villager.swing(InteractionHand.MAIN_HAND);
+      villager.setBlockAndMetadata(dest, MillBlocks.SILK_WORM, 0);
+      villager.addToInv(MillItems.SILK, 0, 1); // KEPT-1.12 yield: the transform drops nothing, so grant the Mill item.
+      return false;
    }
 
    @Override

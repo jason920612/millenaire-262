@@ -1,10 +1,11 @@
 package org.millenaire.common.goal;
 
-import net.minecraft.world.level.block.Block;
+import net.minecraft.core.BlockPos;
 import net.minecraft.world.level.block.Blocks;
 import net.minecraft.world.item.Items;
 import net.minecraft.world.item.ItemStack;
-import net.minecraft.world.InteractionHand;
+import com.coderyo.jason.ops.OpState;
+import com.coderyo.jason.ops.VillagerWorldOps;
 import org.millenaire.common.config.DocumentedElement;
 import org.millenaire.common.entity.MillVillager;
 import org.millenaire.common.item.InvItem;
@@ -17,6 +18,12 @@ public class GoalPlantNetherWarts extends Goal {
 
    public GoalPlantNetherWarts() {
       this.icon = InvItem.createInvItem(Items.NETHER_WART);
+   }
+
+   @Override
+   public int actionDuration(MillVillager villager) {
+      // Player-like plant is driven per-tick (reach → real place): re-enter every tick (1).
+      return 1;
    }
 
    @Override
@@ -39,16 +46,36 @@ public class GoalPlantNetherWarts extends Goal {
       return true;
    }
 
+   /**
+    * Player-like nether-wart plant, driven one tick at a time (actionDuration == 1). STATELESS — phase derived from
+    * the WORLD each tick, never a per-goal field (shared SINGLETON).
+    *
+    * <p>1.12 mechanic + economy KEPT: 1.12 planted nether warts at home "for free" (no stock consumed) by setting a
+    * fresh {@code NETHER_WART} block on the empty soil above the dest. Now the villager does a REAL player-like place
+    * ({@link VillagerWorldOps#place} — reach-gated, swing, place sound) of the same fresh (age-0) wart, still free —
+    * the economy is unchanged; the only change vs 1.12 is the reach + the real placement over the op primitive.
+    */
    @Override
    public boolean performAction(MillVillager villager) {
-      Block block = villager.getBlock(villager.getGoalDestPoint());
-      Point cropPoint = villager.getGoalDestPoint().getAbove();
-      block = villager.getBlock(cropPoint);
-      if (block == Blocks.AIR) {
-         villager.setBlockAndMetadata(cropPoint, Blocks.NETHER_WART, 0);
-         villager.swing(InteractionHand.MAIN_HAND);
+      Point dest = villager.getGoalDestPoint();
+      if (dest == null) {
+         return true;
+      }
+      Point cropPoint = dest.getAbove();
+      if (villager.getBlock(cropPoint) != Blocks.AIR) {
+         return true; // slot occupied / already planted — done.
       }
 
+      BlockPos pos = cropPoint.getBlockPos();
+      if (!VillagerWorldOps.withinReach(villager, pos)) {
+         OpState reach = VillagerWorldOps.ensureReach(villager, pos);
+         if (reach == OpState.BLOCKED) {
+            return true;
+         }
+         return false;
+      }
+      // 1.12-faithful free place (no stock consumed). Fresh age-0 wart.
+      VillagerWorldOps.place(villager, pos, Blocks.NETHER_WART.defaultBlockState());
       return true;
    }
 

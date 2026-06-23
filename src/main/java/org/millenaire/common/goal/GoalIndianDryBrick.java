@@ -2,9 +2,11 @@ package org.millenaire.common.goal;
 
 import java.util.ArrayList;
 import java.util.List;
+import net.minecraft.core.BlockPos;
 import net.minecraft.world.level.block.Blocks;
 import net.minecraft.world.item.ItemStack;
-import net.minecraft.world.InteractionHand;
+import com.coderyo.jason.ops.OpState;
+import com.coderyo.jason.ops.VillagerWorldOps;
 import org.millenaire.common.block.MillBlocks;
 import org.millenaire.common.config.DocumentedElement;
 import org.millenaire.common.entity.MillVillager;
@@ -25,7 +27,8 @@ public class GoalIndianDryBrick extends Goal {
 
    @Override
    public int actionDuration(MillVillager villager) {
-      return 20;
+      // Player-like place is driven per-tick (reach → real place): re-enter every tick (1).
+      return 1;
    }
 
    @Override
@@ -96,11 +99,35 @@ public class GoalIndianDryBrick extends Goal {
       return true;
    }
 
+   /**
+    * Player-like brick-drying, driven one tick at a time (actionDuration == 1). STATELESS — phase derived from the
+    * WORLD each tick (the slot is empty → place a wet brick; already filled → re-target), never a per-goal field
+    * (this Goal is a shared SINGLETON).
+    *
+    * <p>1.12 mechanic + yield KEPT: 1.12 instantly set the empty kiln slot to the wet-brick block. Now the villager
+    * does a REAL player-like place ({@link VillagerWorldOps#place} — reach-gated, swing, place sound) of the same
+    * {@code BS_WET_BRICK} (which later dries to the mud brick via its own block tick, unchanged). No item is consumed
+    * (1.12's brick-mould is a held tool, not stock), so the economy is unchanged; the change is ONLY the reach + the
+    * real placement over the op primitive.
+    */
    @Override
    public boolean performAction(MillVillager villager) throws MillLog.MillenaireException {
-      if (WorldUtilities.getBlock(villager.level(), villager.getGoalDestPoint()) == Blocks.AIR) {
-         villager.setBlockstate(villager.getGoalDestPoint(), MillBlocks.BS_WET_BRICK);
-         villager.swing(InteractionHand.MAIN_HAND);
+      Point dest = villager.getGoalDestPoint();
+      if (dest == null) {
+         return true;
+      }
+      BlockPos pos = dest.getBlockPos();
+
+      if (WorldUtilities.getBlock(villager.level(), dest) == Blocks.AIR) {
+         // Reach-gated real place. Out of reach → walk closer (scaffold-extend) and retry next tick.
+         if (!VillagerWorldOps.withinReach(villager, pos)) {
+            OpState reach = VillagerWorldOps.ensureReach(villager, pos);
+            if (reach == OpState.BLOCKED) {
+               return true; // can't reach the slot — abandon so the goal re-picks.
+            }
+            return false; // approaching / extending reach — retry next tick.
+         }
+         VillagerWorldOps.place(villager, pos, MillBlocks.BS_WET_BRICK);
       }
 
       if (villager.getGoalBuildingDest().getResManager().getNbEmptyBrickLocation() > 0) {

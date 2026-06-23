@@ -105,6 +105,9 @@ public final class MillSelfTest {
    private static final int TICK_INTERACT = TICK_GROWTH_END + 80;
    private static final int TICK_MINE_CYCLE = TICK_GROWTH_END + 90;
    private static final int TICK_CHOP_CYCLE = TICK_GROWTH_END + 95;
+   // O6 Mill-specific: the SIM-VALIDATED sugarcane keep-bottom (break upper segments top-down, keep the bottom so it
+   // regrows, pick up the cane). Synchronous like the chop/farm cycles.
+   private static final int TICK_CANE_CYCLE = TICK_GROWTH_END + 97;
    private static final int TICK_FARM_CYCLE = TICK_GROWTH_END + 98;
    // O5 entity gather: spawn ready + already-sheared sheep + a cow, REALLY shear (Sheep.shear) the ready ones, pick up
    // the dropped wool, skip the sheared one, and milk the cow. Synchronous like the chop/farm cycles.
@@ -183,6 +186,7 @@ public final class MillSelfTest {
    private Boolean mineCycleOk = null;
    private Boolean chopCycleOk = null;
    private Boolean farmCycleOk = null;
+   private Boolean caneCycleOk = null;
    private Boolean shearCycleOk = null;
    private Boolean fishCycleOk = null;
 
@@ -295,6 +299,7 @@ public final class MillSelfTest {
             case TICK_INTERACT -> stepVillagerInteraction();
             case TICK_MINE_CYCLE -> stepMineCycle();
             case TICK_CHOP_CYCLE -> stepChopCycle();
+            case TICK_CANE_CYCLE -> stepCaneCycle();
             case TICK_FARM_CYCLE -> stepFarmCycle();
             case TICK_SHEAR_CYCLE -> {
                if (shearCycleOk == null) { // not already run at GROWTH_END (e.g. a full non-early-end run).
@@ -1364,6 +1369,107 @@ public final class MillSelfTest {
       return best;
    }
 
+   // ====================== STEP H7: Mill-specific sugarcane keep-bottom (O6) ======================
+
+   /**
+    * Live evidence for the O6 Mill-specific sugarcane refactor and the SIM-VALIDATED keep-bottom invariant
+    * (opsim {@code run_cane}): build a 3-tall sugar-cane column (bottom + two upper segments) next to a real
+    * villager, then drive the {@link com.coderyo.jason.ops.VillagerWorldOps} primitives the migrated
+    * {@link org.millenaire.common.goal.GoalIndianHarvestSugarCane} now calls — break the UPPER segments TOP-DOWN
+    * ({@code +3} then {@code +2}), KEEP the bottom block ({@code +1}) so the column regrows, and pick up the real
+    * dropped cane. Asserts the bottom survives and exactly the two upper segments were harvested. Greppable as
+    * {@code [MILLTEST] CANECYCLE ...}.
+    */
+   private void stepCaneCycle() {
+      try {
+         List<MillVillager> villagers = level.getEntitiesOfClass(
+            MillVillager.class, new AABB(-30000, level.getMinY(), -30000, 30000, level.getMaxY(), 30000), v -> v.isAlive());
+         if (villagers.isEmpty()) {
+            log("H7 CANECYCLE SKIP: no MillVillager in world");
+            return;
+         }
+         MillVillager v = villagers.get(0);
+
+         // Build the cane column beside the villager. The goal's dest is the SOIL (sand); the bottom cane is dest+1
+         // (KEPT), the harvested upper segments are dest+2 and dest+3.
+         BlockPos vPos = v.blockPosition();
+         BlockPos soil = vPos.offset(2, -1, 0); // sand one block down so the column rises into reach.
+         level.setBlock(soil, net.minecraft.world.level.block.Blocks.SAND.defaultBlockState(), 3);
+         BlockPos bottom = soil.above(1); // dest+1 — the KEPT bottom.
+         BlockPos mid = soil.above(2);    // dest+2 — harvested second.
+         BlockPos top = soil.above(3);    // dest+3 — harvested first (top-down).
+         for (BlockPos seg : new BlockPos[]{bottom, mid, top}) {
+            level.setBlock(seg, net.minecraft.world.level.block.Blocks.SUGAR_CANE.defaultBlockState(), 3);
+         }
+         log("H7 CANECYCLE built a 3-tall cane column (bottom y=" + bottom.getY() + " KEPT, upper y=" + mid.getY()
+            + "," + top.getY() + ")");
+
+         int caneBefore = v.countInv(net.minecraft.world.item.Items.SUGAR_CANE, 0);
+
+         // TOP-DOWN harvest of the UPPER segments only (never the bottom): break +3 then +2, each a single 0-hardness
+         // breakTick, picking up the dropped cane between segments. Nudge the villager adjacent so the reach-gated
+         // ops fire in this synchronous loop.
+         int harvestedSegments = 0;
+         boolean orderTopDownOk = true;
+         BlockPos[] topDown = new BlockPos[]{top, mid};
+         for (BlockPos seg : topDown) {
+            // The bottom must STILL be cane before we touch any upper segment (we never target it).
+            if (level.getBlockState(bottom).getBlock() != net.minecraft.world.level.block.Blocks.SUGAR_CANE) {
+               orderTopDownOk = false;
+            }
+            v.setPos(seg.getX() + 0.5, seg.getY(), seg.getZ() + 1.2);
+            com.coderyo.jason.ops.OpState st = com.coderyo.jason.ops.VillagerWorldOps.breakTick(v, seg);
+            int guard = 0;
+            while (st != com.coderyo.jason.ops.OpState.COMPLETE && st != com.coderyo.jason.ops.OpState.BLOCKED && guard++ < 50) {
+               if (st == com.coderyo.jason.ops.OpState.APPROACHING) {
+                  v.setPos(seg.getX() + 0.5, seg.getY(), seg.getZ() + 1.2);
+               }
+               st = com.coderyo.jason.ops.VillagerWorldOps.breakTick(v, seg);
+            }
+            boolean brokeToAir = level.getBlockState(seg).isAir();
+            log("H7 CANECYCLE segment y=" + seg.getY() + " break state=" + st + " nowAir=" + brokeToAir
+               + " bottomStillCane=" + (level.getBlockState(bottom).getBlock() == net.minecraft.world.level.block.Blocks.SUGAR_CANE));
+            if (st == com.coderyo.jason.ops.OpState.COMPLETE && brokeToAir) {
+               harvestedSegments++;
+            }
+
+            // PICKUP the dropped cane for this segment (walk to each drop).
+            int pg = 0;
+            com.coderyo.jason.ops.OpState pst = com.coderyo.jason.ops.VillagerWorldOps.pickupTick(v, seg);
+            while (pst != com.coderyo.jason.ops.OpState.COMPLETE && pg++ < 100) {
+               var d = level.getEntitiesOfClass(net.minecraft.world.entity.item.ItemEntity.class, new AABB(seg).inflate(5.0));
+               if (!d.isEmpty()) {
+                  v.setPos(d.get(0).getX(), d.get(0).getY(), d.get(0).getZ());
+               }
+               pst = com.coderyo.jason.ops.VillagerWorldOps.pickupTick(v, seg);
+            }
+         }
+
+         // VERIFY the keep-bottom invariant: the bottom block survives, both upper segments are gone, cane was picked.
+         boolean bottomKept = level.getBlockState(bottom).getBlock() == net.minecraft.world.level.block.Blocks.SUGAR_CANE;
+         boolean upperGone = level.getBlockState(mid).isAir() && level.getBlockState(top).isAir();
+         int caneAfter = v.countInv(net.minecraft.world.item.Items.SUGAR_CANE, 0);
+         log("H7 CANECYCLE result: harvestedSegments=" + harvestedSegments + " (expected 2) bottomKept=" + bottomKept
+            + " upperGone=" + upperGone + " topDownOrder=" + orderTopDownOk
+            + " caneInv " + caneBefore + "->" + caneAfter);
+
+         caneCycleOk = harvestedSegments == 2 && bottomKept && upperGone && orderTopDownOk && caneAfter > caneBefore;
+         log("H7 CANECYCLE " + (caneCycleOk ? "OK" : "PARTIAL")
+            + ": twoUpperHarvested=" + (harvestedSegments == 2) + " bottomRegrowsKept=" + bottomKept
+            + " pickedUpCane=" + (caneAfter > caneBefore));
+
+         // Clean up the cane pad (including the kept bottom).
+         for (BlockPos seg : new BlockPos[]{top, mid, bottom}) {
+            level.removeBlock(seg, false);
+         }
+         level.removeBlock(soil, false);
+      } catch (Throwable t) {
+         caneCycleOk = false;
+         recordException("H7:canecycle", t);
+         log("H7 CANECYCLE FAIL: " + t);
+      }
+   }
+
    // ============================ STEP H4: player-like farm cycle (O3) ============================
 
    /**
@@ -1920,6 +2026,7 @@ public final class MillSelfTest {
       log("interaction: " + (interactOk == null ? "not run" : (interactOk ? "OK" : "FAIL")) + " (" + interactDetail + ")");
       log("mine cycle (O1 break+pickup+regrow): " + (mineCycleOk == null ? "not run" : (mineCycleOk ? "OK" : "PARTIAL/FAIL")));
       log("chop cycle (O2 whole-tree+leaves+scaffold+pickup+reclaim): " + (chopCycleOk == null ? "not run" : (chopCycleOk ? "OK" : "PARTIAL/FAIL")));
+      log("cane cycle (O6 Mill-specific sugarcane: top-down break upper segments, KEEP bottom, pickup): " + (caneCycleOk == null ? "not run" : (caneCycleOk ? "OK" : "PARTIAL/FAIL")));
       log("farm cycle (O3 only-mature harvest+pickup+auto-replant, immature skipped): " + (farmCycleOk == null ? "not run" : (farmCycleOk ? "OK" : "PARTIAL/FAIL")));
       log("fish cycle (O4 AW+mixin real bobber animation+FISHING loot+pickup): " + (fishCycleOk == null ? "not run" : (fishCycleOk ? "OK" : "PARTIAL/FAIL")));
       log("shear cycle (O5 real Sheep.shear ready-only+wool pickup+skip-sheared+milk): " + (shearCycleOk == null ? "not run" : (shearCycleOk ? "OK" : "PARTIAL/FAIL")));

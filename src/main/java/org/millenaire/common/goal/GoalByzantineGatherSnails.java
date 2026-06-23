@@ -6,6 +6,8 @@ import net.minecraft.world.item.Items;
 import net.minecraft.world.item.DyeColor;
 import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.InteractionHand;
+import com.coderyo.jason.ops.OpState;
+import com.coderyo.jason.ops.VillagerWorldOps;
 import org.millenaire.common.block.BlockSnailSoil;
 import org.millenaire.common.block.MillBlocks;
 import org.millenaire.common.config.DocumentedElement;
@@ -29,7 +31,8 @@ public class GoalByzantineGatherSnails extends Goal {
 
    @Override
    public int actionDuration(MillVillager villager) {
-      return 20;
+      // Player-like gather is driven per-tick (reach → swing → 1.12 transform): re-enter every tick (1).
+      return 1;
    }
 
    @Override
@@ -100,18 +103,36 @@ public class GoalByzantineGatherSnails extends Goal {
       return true;
    }
 
+   /**
+    * Player-like snail gather, driven one tick at a time (actionDuration == 1). STATELESS — phase derived from the
+    * WORLD (the snail-soil PROGRESS state) each tick, never a per-goal field (this Goal is a shared SINGLETON).
+    *
+    * <p>1.12 mechanic + yield KEPT EXACTLY: like silk, the snail soil is NOT broken — 1.12 TRANSFORMED the ripe
+    * {@code SNAIL_SOIL} (PROGRESS=SNAIL_SOIL_FULL) back to its empty default (so it regrows) and granted one PURPLE
+    * dye. The transform drops nothing real, so there is nothing to pick up; the purple dye is the authoritative,
+    * KEPT-1.12 yield. The only change vs 1.12: walk within player REACH and SWING before the transform.
+    */
    @Override
    public boolean performAction(MillVillager villager) {
-      if (WorldUtilities.getBlock(villager.level(), villager.getGoalDestPoint()) == MillBlocks.SNAIL_SOIL
-         && WorldUtilities.getBlockState(villager.level(), villager.getGoalDestPoint()).getValue(BlockSnailSoil.PROGRESS)
-            == BlockSnailSoil.EnumType.SNAIL_SOIL_FULL) {
-         villager.addToInv(Items.DYE.pick(DyeColor.PURPLE), 1);
-         villager.setBlockAndMetadata(villager.getGoalDestPoint(), MillBlocks.SNAIL_SOIL, 0);
-         villager.swing(InteractionHand.MAIN_HAND);
-         return false;
-      } else {
+      Point dest = villager.getGoalDestPoint();
+      if (dest == null) {
          return true;
       }
+      if (WorldUtilities.getBlock(villager.level(), dest) != MillBlocks.SNAIL_SOIL
+         || WorldUtilities.getBlockState(villager.level(), dest).getValue(BlockSnailSoil.PROGRESS)
+            != BlockSnailSoil.EnumType.SNAIL_SOIL_FULL) {
+         return true;
+      }
+
+      if (!VillagerWorldOps.withinReach(villager, dest.getBlockPos())) {
+         OpState reach = VillagerWorldOps.ensureReach(villager, dest.getBlockPos());
+         return reach == OpState.BLOCKED;
+      }
+
+      villager.swing(InteractionHand.MAIN_HAND);
+      villager.setBlockAndMetadata(dest, MillBlocks.SNAIL_SOIL, 0);
+      villager.addToInv(Items.DYE.pick(DyeColor.PURPLE), 1); // KEPT-1.12 yield: transform drops nothing.
+      return false;
    }
 
    @Override

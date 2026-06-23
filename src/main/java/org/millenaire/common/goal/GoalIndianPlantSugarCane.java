@@ -2,11 +2,13 @@ package org.millenaire.common.goal;
 
 import java.util.ArrayList;
 import java.util.List;
+import net.minecraft.core.BlockPos;
 import net.minecraft.world.level.block.Block;
 import net.minecraft.world.level.block.Blocks;
 import net.minecraft.world.item.Items;
 import net.minecraft.world.item.ItemStack;
-import net.minecraft.world.InteractionHand;
+import com.coderyo.jason.ops.OpState;
+import com.coderyo.jason.ops.VillagerWorldOps;
 import org.millenaire.common.config.DocumentedElement;
 import org.millenaire.common.entity.MillVillager;
 import org.millenaire.common.item.InvItem;
@@ -21,6 +23,12 @@ public class GoalIndianPlantSugarCane extends Goal {
    public GoalIndianPlantSugarCane() {
       this.tags.add("tag_agriculture");
       this.icon = InvItem.createInvItem(Items.SUGAR_CANE);
+   }
+
+   @Override
+   public int actionDuration(MillVillager villager) {
+      // Player-like plant is driven per-tick (reach → real place): re-enter every tick (1).
+      return 1;
    }
 
    @Override
@@ -98,16 +106,42 @@ public class GoalIndianPlantSugarCane extends Goal {
       return true;
    }
 
+   /**
+    * Player-like sugar-cane plant, driven one tick at a time (actionDuration == 1). STATELESS — phase derived from
+    * the WORLD each tick, never a per-goal field (this Goal is a shared SINGLETON).
+    *
+    * <p>1.12 mechanic KEPT: 1.12 set a sugar-cane block on the empty (or oak-leaf-occupied) plant slot above the
+    * dest. Now the villager does a REAL player-like place ({@link VillagerWorldOps#place} — reach-gated, swing, place
+    * sound) of the same {@code SUGAR_CANE}. Economy: 1.12 planted for free; to make it a genuine place we CONSUME one
+    * sugar cane from the villager's stock when available (the harvest replenishes it), but FALL BACK to a free place
+    * if the village has none in stock — keeping 1.12's "plantation always establishes" net behaviour so a fresh
+    * plantation is never stuck waiting on stock.
+    */
    @Override
    public boolean performAction(MillVillager villager) {
-      Block block = villager.getBlock(villager.getGoalDestPoint());
-      Point cropPoint = villager.getGoalDestPoint().getAbove();
-      block = villager.getBlock(cropPoint);
-      if (block == Blocks.AIR || block == Blocks.OAK_LEAVES) {
-         villager.setBlock(cropPoint, Blocks.SUGAR_CANE);
-         villager.swing(InteractionHand.MAIN_HAND);
+      Point dest = villager.getGoalDestPoint();
+      if (dest == null) {
+         return true;
+      }
+      Point cropPoint = dest.getAbove();
+      Block block = villager.getBlock(cropPoint);
+      if (block != Blocks.AIR && block != Blocks.OAK_LEAVES) {
+         return true; // slot occupied / already planted — done.
       }
 
+      BlockPos pos = cropPoint.getBlockPos();
+      // Reach-gated real place.
+      if (!VillagerWorldOps.withinReach(villager, pos)) {
+         OpState reach = VillagerWorldOps.ensureReach(villager, pos);
+         if (reach == OpState.BLOCKED) {
+            return true;
+         }
+         return false;
+      }
+
+      // Consume one cane from stock if available (real player-like placement cost); else plant free (1.12 fidelity).
+      villager.takeFromInv(Items.SUGAR_CANE, 0, 1);
+      VillagerWorldOps.place(villager, pos, Blocks.SUGAR_CANE.defaultBlockState());
       return true;
    }
 

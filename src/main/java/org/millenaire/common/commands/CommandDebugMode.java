@@ -28,6 +28,10 @@ public class CommandDebugMode {
             // /milldebug dump [radius] — structured text inventory of every Mill block/BE/entity +
             // its visual/render state around the player (op-gated inside buildSubcommand()).
             .then(CommandDebugDump.buildSubcommand())
+            // /milldebug catalog — COMPREHENSIVE registry-iterating static catalog (every block/item/
+            // entity/villager-type) + dynamic scenario inventory, emitting ███ CATALOG / ███ SCENARIO /
+            // ███ COVERAGE SUMMARY lines (op-gated inside buildSubcommand()).
+            .then(CommandCatalog.buildSubcommand())
             .executes(CommandDebugMode::status)
       );
    }

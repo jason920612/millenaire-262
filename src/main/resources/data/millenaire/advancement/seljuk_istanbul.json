@@ -1,0 +1,19 @@
+{
+  "parent": "millenaire:leader_seljuk",
+  "display": {
+    "icon": {
+      "id": "millenaire:seljukscimitar"
+    },
+    "title": {
+      "translate": "advancements.seljuk_istanbul.name"
+    },
+    "description": {
+      "translate": "advancements.seljuk_istanbul.desc"
+    }
+  },
+  "criteria": {
+    "leader_seljuk": {
+      "trigger": "minecraft:impossible"
+    }
+  }
+}

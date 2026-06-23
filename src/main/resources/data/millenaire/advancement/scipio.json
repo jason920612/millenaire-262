@@ -1,0 +1,19 @@
+{
+  "parent": "millenaire:attila",
+  "display": {
+    "icon": {
+      "id": "millenaire:negationwand"
+    },
+    "title": {
+      "translate": "advancements.scipio.name"
+    },
+    "description": {
+      "translate": "advancements.scipio.desc"
+    }
+  },
+  "criteria": {
+    "scipio": {
+      "trigger": "minecraft:impossible"
+    }
+  }
+}

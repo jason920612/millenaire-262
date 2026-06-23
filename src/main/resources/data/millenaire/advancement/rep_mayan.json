@@ -1,0 +1,19 @@
+{
+  "parent": "millenaire:friendindeed",
+  "display": {
+    "icon": {
+      "id": "millenaire:cacauhaa"
+    },
+    "title": {
+      "translate": "advancements.rep_mayan.name"
+    },
+    "description": {
+      "translate": "advancements.rep_mayan.desc"
+    }
+  },
+  "criteria": {
+    "rep_mayan": {
+      "trigger": "minecraft:impossible"
+    }
+  }
+}

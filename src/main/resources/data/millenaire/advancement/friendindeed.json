@@ -1,0 +1,19 @@
+{
+  "parent": "millenaire:firstcontact",
+  "display": {
+    "icon": {
+      "id": "minecraft:poppy"
+    },
+    "title": {
+      "translate": "advancements.friendindeed.name"
+    },
+    "description": {
+      "translate": "advancements.friendindeed.desc"
+    }
+  },
+  "criteria": {
+    "friendindeed": {
+      "trigger": "minecraft:impossible"
+    }
+  }
+}

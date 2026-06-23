@@ -1,0 +1,19 @@
+{
+  "parent": "millenaire:rep_indian",
+  "display": {
+    "icon": {
+      "id": "minecraft:iron_helmet"
+    },
+    "title": {
+      "translate": "advancements.leader_indian.name"
+    },
+    "description": {
+      "translate": "advancements.leader_indian.desc"
+    }
+  },
+  "criteria": {
+    "leader_indian": {
+      "trigger": "minecraft:impossible"
+    }
+  }
+}

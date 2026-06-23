@@ -1,0 +1,19 @@
+{
+  "parent": "millenaire:rep_seljuk",
+  "display": {
+    "icon": {
+      "id": "millenaire:seljukhelmet"
+    },
+    "title": {
+      "translate": "advancements.leader_seljuk.name"
+    },
+    "description": {
+      "translate": "advancements.leader_seljuk.desc"
+    }
+  },
+  "criteria": {
+    "leader_seljuk": {
+      "trigger": "minecraft:impossible"
+    }
+  }
+}

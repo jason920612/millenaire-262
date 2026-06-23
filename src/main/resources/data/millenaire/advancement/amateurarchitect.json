@@ -1,0 +1,19 @@
+{
+  "parent": "millenaire:summoningwand",
+  "display": {
+    "icon": {
+      "id": "minecraft:crafting_table"
+    },
+    "title": {
+      "translate": "advancements.amateurarchitect.name"
+    },
+    "description": {
+      "translate": "advancements.amateurarchitect.desc"
+    }
+  },
+  "criteria": {
+    "amateurarchitect": {
+      "trigger": "minecraft:impossible"
+    }
+  }
+}

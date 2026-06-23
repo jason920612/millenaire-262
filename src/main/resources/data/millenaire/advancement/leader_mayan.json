@@ -1,0 +1,19 @@
+{
+  "parent": "millenaire:rep_mayan",
+  "display": {
+    "icon": {
+      "id": "minecraft:leather_helmet"
+    },
+    "title": {
+      "translate": "advancements.leader_mayan.name"
+    },
+    "description": {
+      "translate": "advancements.leader_mayan.desc"
+    }
+  },
+  "criteria": {
+    "leader_mayan": {
+      "trigger": "minecraft:impossible"
+    }
+  }
+}

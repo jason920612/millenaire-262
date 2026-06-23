@@ -1,0 +1,19 @@
+{
+  "parent": "millenaire:friendindeed",
+  "display": {
+    "icon": {
+      "id": "millenaire:cider"
+    },
+    "title": {
+      "translate": "advancements.rep_norman.name"
+    },
+    "description": {
+      "translate": "advancements.rep_norman.desc"
+    }
+  },
+  "criteria": {
+    "rep_norman": {
+      "trigger": "minecraft:impossible"
+    }
+  }
+}

@@ -99,12 +99,13 @@ public class MillAdvancements {
    }
 
    public static void registerTriggers() {
-      // 26.2: CriteriaTriggers.register(ICriterionTrigger) was removed — custom triggers are now
-      // codec-based (SimpleCriterionTrigger) and registered to the CriteriaTriggers registry, with
-      // the advancements themselves defined as datapack JSON. Porting Millénaire's triggers to that
-      // model is an architectural TODO; until then this is a no-op and GenericAdvancement.grant(...)
-      // drives the visible behaviour directly. MILL_ADVANCEMENTS is still populated for that use.
-      MillLog.minor(null, "Mill advancement trigger registration skipped (26.2 codec-trigger port TODO).");
+      // 26.2: CriteriaTriggers.register(ICriterionTrigger) was removed — custom code-granted triggers
+      // no longer need a registered trigger type. Millénaire's triggers were all "always true once the
+      // code path runs", so the datapack advancements (data/millenaire/advancement/*.json) declare the
+      // built-in `minecraft:impossible` trigger for their single criterion, and GenericAdvancement.grant(...)
+      // awards that criterion by name (PlayerAdvancements.award) — making the advancement appear and toast
+      // exactly as in 1.12. No custom trigger registration is therefore required here.
+      MillLog.minor(null, "Mill advancements are datapack-defined (impossible trigger, code-granted via GenericAdvancement.grant).");
    }
 
    static {

@@ -1,0 +1,20 @@
+{
+  "parent": "millenaire:maitreapenser",
+  "display": {
+    "icon": {
+      "id": "millenaire:alchemistexplosive"
+    },
+    "title": {
+      "translate": "advancements.wq_norman.name"
+    },
+    "description": {
+      "translate": "advancements.wq_norman.desc"
+    },
+    "frame": "goal"
+  },
+  "criteria": {
+    "wq_norman": {
+      "trigger": "minecraft:impossible"
+    }
+  }
+}

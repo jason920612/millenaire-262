@@ -1,0 +1,19 @@
+{
+  "parent": "millenaire:firstcontact",
+  "display": {
+    "icon": {
+      "id": "millenaire:denier"
+    },
+    "title": {
+      "translate": "advancements.mp_neighbourtrade.name"
+    },
+    "description": {
+      "translate": "advancements.mp_neighbourtrade.desc"
+    }
+  },
+  "criteria": {
+    "main": {
+      "trigger": "minecraft:impossible"
+    }
+  }
+}

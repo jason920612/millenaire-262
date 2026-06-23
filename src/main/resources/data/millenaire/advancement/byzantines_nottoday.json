@@ -1,0 +1,19 @@
+{
+  "parent": "millenaire:leader_byzantines",
+  "display": {
+    "icon": {
+      "id": "millenaire:byzantineplate"
+    },
+    "title": {
+      "translate": "advancements.byzantines_nottoday.name"
+    },
+    "description": {
+      "translate": "advancements.byzantines_nottoday.desc"
+    }
+  },
+  "criteria": {
+    "leader_seljuk": {
+      "trigger": "minecraft:impossible"
+    }
+  }
+}

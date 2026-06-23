@@ -15,7 +15,8 @@ import org.millenaire.common.forge.MillRegistry;
 /**
  * Sword: 26.2 has no SwordItem — a plain Item with the sword tool properties. The 1.12
  * auto-knockback / onCreated / onItemUseFirst / onLeftClickEntity hooks are Forge-specific
- * and the enchantment system is now component-based; applyEnchantments is a TODO stub.
+ * and the enchantment system is now component-based; applyEnchantments writes the ENCHANTMENTS
+ * data component via ItemStack.enchant (implemented below).
  */
 public class ItemMillenaireSword extends Item implements InvItem.IItemInitialEnchantmens {
    private final boolean knockback;

@@ -1,0 +1,19 @@
+{
+  "parent": "millenaire:friendindeed",
+  "display": {
+    "icon": {
+      "id": "millenaire:rasgulla"
+    },
+    "title": {
+      "translate": "advancements.rep_indian.name"
+    },
+    "description": {
+      "translate": "advancements.rep_indian.desc"
+    }
+  },
+  "criteria": {
+    "villagebhai": {
+      "trigger": "minecraft:impossible"
+    }
+  }
+}

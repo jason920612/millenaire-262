@@ -47,7 +47,8 @@ public class MillenaireMod implements ModInitializer {
 		MillRegistry.registerCreativeTabs();
 		MillBlocks.initBlockStates();
 		// Registration totals are logged from Mill.preInit (after the config / DEBUG_MODE is read).
-		// TODO integration: add the Mill items/blocks to the creative tabs via ItemGroupEvents.
+		// (Creative-tab population is done by MillRegistry.registerCreativeTabs() above, which lists
+		// every registered Mill item/block-item via the tab's displayItems generator.)
 
 		// --- Brigadier commands (replaces 1.12 FMLServerStartingEvent.registerServerCommand) ---
 		CommandRegistrationCallback.EVENT.register((dispatcher, registryAccess, environment) -> MillCommands.registerAll(dispatcher));

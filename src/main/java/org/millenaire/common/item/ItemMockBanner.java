@@ -41,8 +41,9 @@ import org.millenaire.common.forge.MillRegistry;
  *
  * <p>26.2: item metadata, the {@code Patterns}/{@code Base} NBT format, and {@code getDyeDamage} are
  * all gone — banners are component/data-driven ({@code BannerPatternLayers}). The placement logic is
- * ported to {@code useOn(UseOnContext)}; the design payload is a TODO pending the data-driven banner
- * port.
+ * ported to {@code useOn(UseOnContext)} and the design payload is built by {@link #makeBanner} (the
+ * legacy {@code Patterns} NBT is translated to a {@code BannerPatternLayers} component via the dynamic
+ * banner-pattern registry).
  */
 public class ItemMockBanner extends BlockItem {
    public static int BANNER_VILLAGE = 0;

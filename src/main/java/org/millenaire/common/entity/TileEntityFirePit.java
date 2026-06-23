@@ -32,8 +32,9 @@ import org.millenaire.common.block.MillBlocks;
  *
  * <p>1.12→26.2 changes: dropped the Forge {@code ItemStackHandler}/{@code IItemHandler}
  * capability machinery — slots are now a plain {@link NonNullList} exposed through
- * {@link Container} (Fabric's transfer API can wrap this later via
- * {@code InventoryStorage} if hopper interaction is needed, see TODO). Smelting
+ * {@link Container}, which already gives vanilla hopper interaction (hoppers pull/push via the
+ * {@link Container}/{@code WorldlyContainer} contract; a Fabric {@code InventoryStorage} wrapper is
+ * only needed for non-Container automation mods and is intentionally not added here). Smelting
  * now goes through {@link RecipeManager#createCheck} + {@link SingleRecipeInput},
  * fuel through {@code level.fuelValues()}, and ticking through the static
  * {@link #serverTick} hooked from a {@code BlockEntityTicker}. NBT uses

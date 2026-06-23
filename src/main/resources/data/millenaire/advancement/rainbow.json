@@ -1,0 +1,19 @@
+{
+  "parent": "millenaire:hired",
+  "display": {
+    "icon": {
+      "id": "millenaire:painted_brick_decorated_pink"
+    },
+    "title": {
+      "translate": "advancements.rainbow.name"
+    },
+    "description": {
+      "translate": "advancements.rainbow.desc"
+    }
+  },
+  "criteria": {
+    "rainbow": {
+      "trigger": "minecraft:impossible"
+    }
+  }
+}

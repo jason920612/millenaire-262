@@ -1,0 +1,20 @@
+{
+  "parent": "millenaire:leader_norman",
+  "display": {
+    "icon": {
+      "id": "millenaire:wood_deco"
+    },
+    "title": {
+      "translate": "advancements.complete_norman.name"
+    },
+    "description": {
+      "translate": "advancements.complete_norman.desc"
+    },
+    "frame": "goal"
+  },
+  "criteria": {
+    "complete_norman": {
+      "trigger": "minecraft:impossible"
+    }
+  }
+}

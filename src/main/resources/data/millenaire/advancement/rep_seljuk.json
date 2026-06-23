@@ -1,0 +1,19 @@
+{
+  "parent": "millenaire:friendindeed",
+  "display": {
+    "icon": {
+      "id": "millenaire:ayran"
+    },
+    "title": {
+      "translate": "advancements.rep_seljuk.name"
+    },
+    "description": {
+      "translate": "advancements.rep_seljuk.desc"
+    }
+  },
+  "criteria": {
+    "rep_seljuk": {
+      "trigger": "minecraft:impossible"
+    }
+  }
+}

@@ -1,0 +1,20 @@
+{
+  "parent": "millenaire:leader_japanese",
+  "display": {
+    "icon": {
+      "id": "millenaire:paper_wall"
+    },
+    "title": {
+      "translate": "advancements.complete_japanese.name"
+    },
+    "description": {
+      "translate": "advancements.complete_japanese.desc"
+    },
+    "frame": "goal"
+  },
+  "criteria": {
+    "complete_japanese": {
+      "trigger": "minecraft:impossible"
+    }
+  }
+}

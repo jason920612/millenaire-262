@@ -1,0 +1,19 @@
+{
+  "display": {
+    "icon": {
+      "id": "millenaire:denieror"
+    },
+    "title": {
+      "translate": "advancements.firstcontact.name"
+    },
+    "description": {
+      "translate": "advancements.firstcontact.desc"
+    },
+    "background": "minecraft:gui/advancements/backgrounds/stone"
+  },
+  "criteria": {
+    "firstcontact": {
+      "trigger": "minecraft:impossible"
+    }
+  }
+}

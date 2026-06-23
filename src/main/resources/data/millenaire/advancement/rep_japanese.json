@@ -1,0 +1,19 @@
+{
+  "parent": "millenaire:friendindeed",
+  "display": {
+    "icon": {
+      "id": "millenaire:sake"
+    },
+    "title": {
+      "translate": "advancements.rep_japanese.name"
+    },
+    "description": {
+      "translate": "advancements.rep_japanese.desc"
+    }
+  },
+  "criteria": {
+    "rep_japanese": {
+      "trigger": "minecraft:impossible"
+    }
+  }
+}

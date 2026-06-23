@@ -1,0 +1,19 @@
+{
+  "parent": "millenaire:rep_byzantines",
+  "display": {
+    "icon": {
+      "id": "millenaire:byzantinehelmet"
+    },
+    "title": {
+      "translate": "advancements.leader_byzantines.name"
+    },
+    "description": {
+      "translate": "advancements.leader_byzantines.desc"
+    }
+  },
+  "criteria": {
+    "leader_byzantines": {
+      "trigger": "minecraft:impossible"
+    }
+  }
+}

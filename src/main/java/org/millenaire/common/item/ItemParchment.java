@@ -31,9 +31,10 @@ import org.millenaire.common.village.Building;
  * {@code getItemStackDisplayName} to {@code getName(ItemStack)}.
  *
  * <p>NOTE: 1.12 set {@code maxStackSize=1} and {@code setCreativeTab(null)} (to hide obsolete
- * parchments) post-construction; both are now construction-time Properties and are dropped here (the
- * stack-size cap and creative-tab hiding are TODO — pass through a richer ItemMill ctor when MillItems
- * is rewritten).
+ * parchments) post-construction. The stack-size cap is now applied at construction via
+ * {@code Properties.stacksTo(1)}; creative-tab membership for obsolete parchments is decided by
+ * ItemGroupEvents in the mod initializer (the item is simply not added to the tab) rather than a
+ * per-item flag.
  */
 public class ItemParchment extends ItemMill {
    private static final String NBT_VILLAGE_POS = "village_pos_";

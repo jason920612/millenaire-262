@@ -1,0 +1,19 @@
+{
+  "parent": "millenaire:explorer",
+  "display": {
+    "icon": {
+      "id": "minecraft:filled_map"
+    },
+    "title": {
+      "translate": "advancements.marcopolo.name"
+    },
+    "description": {
+      "translate": "advancements.marcopolo.desc"
+    }
+  },
+  "criteria": {
+    "marcopolo": {
+      "trigger": "minecraft:impossible"
+    }
+  }
+}

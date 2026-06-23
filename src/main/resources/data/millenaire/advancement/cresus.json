@@ -1,0 +1,19 @@
+{
+  "parent": "millenaire:firstcontact",
+  "display": {
+    "icon": {
+      "id": "millenaire:purse"
+    },
+    "title": {
+      "translate": "advancements.cresus.name"
+    },
+    "description": {
+      "translate": "advancements.cresus.desc"
+    }
+  },
+  "criteria": {
+    "cresus": {
+      "trigger": "minecraft:impossible"
+    }
+  }
+}

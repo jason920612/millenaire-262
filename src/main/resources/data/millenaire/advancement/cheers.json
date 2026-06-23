@@ -1,0 +1,19 @@
+{
+  "parent": "millenaire:cresus",
+  "display": {
+    "icon": {
+      "id": "millenaire:calva"
+    },
+    "title": {
+      "translate": "advancements.cheers.name"
+    },
+    "description": {
+      "translate": "advancements.cheers.desc"
+    }
+  },
+  "criteria": {
+    "cheers": {
+      "trigger": "minecraft:impossible"
+    }
+  }
+}

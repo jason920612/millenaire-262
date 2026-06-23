@@ -1,0 +1,19 @@
+{
+  "parent": "millenaire:cresus",
+  "display": {
+    "icon": {
+      "id": "millenaire:summoningwand"
+    },
+    "title": {
+      "translate": "advancements.summoningwand.name"
+    },
+    "description": {
+      "translate": "advancements.summoningwand.desc"
+    }
+  },
+  "criteria": {
+    "summoningwand": {
+      "trigger": "minecraft:impossible"
+    }
+  }
+}

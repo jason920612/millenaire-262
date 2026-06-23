@@ -15,8 +15,8 @@ import org.millenaire.common.forge.MillRegistry;
 /**
  * Mayan quest crown — a helmet that auto-applies Respiration/Aqua Affinity/Protection. 1.12 extended
  * ItemArmor and re-applied the enchantments in onItemUseFirst/onUpdate. On 26.2 armour is a plain
- * {@link Item} with humanoidArmor properties, and enchantments are data components, so the
- * auto-enchantment is a TODO (see {@link #applyEnchantments}).
+ * {@link Item} with humanoidArmor properties, and enchantments are data components; the
+ * auto-enchantment is applied via {@link #applyEnchantments} (ItemStack.enchant component writes).
  */
 public class ItemMayanQuestCrown extends Item implements InvItem.IItemInitialEnchantmens {
    public ItemMayanQuestCrown(String itemName, EquipmentSlot type) {

@@ -28,10 +28,11 @@ import org.millenaire.common.ui.MillMenus;
  * Fabric client entrypoint. Mirrors the wiring the 1.12 {@code ClientProxy} did from FML client
  * lifecycle events (see {@code ClientProxy.registerForgeClientClasses} for the full checklist).
  *
- * <p>Wired here: menu {@code MenuType}s, model layers, block-entity renderers, entity renderers,
- * the client networking receiver, and the foliage colour provider (block tint). Still TODO:
- * {@code EntityRendererRegistry} for RenderMillVillager / RenderWallDecoration, and
- * {@code MenuScreens.register(...)} for the GUI screens + key bindings.
+ * <p>Wired here: model layers, block-entity renderers, the entity renderers
+ * ({@code EntityRendererRegistry} for RenderMillVillager / RenderWallDecoration), the client
+ * networking receiver, and the foliage colour provider (block tint). Mill's GUIs use their own
+ * client GUI flow (ClientGuiHandler) rather than vanilla {@code MenuScreens}, so no screen
+ * registration is required.
  */
 @Environment(EnvType.CLIENT)
 public class MillenaireModClient implements ClientModInitializer {

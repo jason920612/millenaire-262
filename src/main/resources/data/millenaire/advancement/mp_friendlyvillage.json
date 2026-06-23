@@ -1,0 +1,20 @@
+{
+  "parent": "millenaire:mp_neighbourtrade",
+  "display": {
+    "icon": {
+      "id": "minecraft:golden_apple"
+    },
+    "title": {
+      "translate": "advancements.mp_friendlyvillage.name"
+    },
+    "description": {
+      "translate": "advancements.mp_friendlyvillage.desc"
+    },
+    "frame": "goal"
+  },
+  "criteria": {
+    "main": {
+      "trigger": "minecraft:impossible"
+    }
+  }
+}

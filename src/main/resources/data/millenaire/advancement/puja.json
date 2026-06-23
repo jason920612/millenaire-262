@@ -1,0 +1,19 @@
+{
+  "parent": "millenaire:wq_indian",
+  "display": {
+    "icon": {
+      "id": "millenaire:indianstatue"
+    },
+    "title": {
+      "translate": "advancements.puja.name"
+    },
+    "description": {
+      "translate": "advancements.puja.desc"
+    }
+  },
+  "criteria": {
+    "puja": {
+      "trigger": "minecraft:impossible"
+    }
+  }
+}

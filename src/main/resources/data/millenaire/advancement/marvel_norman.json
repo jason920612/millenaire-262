@@ -1,0 +1,20 @@
+{
+  "parent": "millenaire:complete_norman",
+  "display": {
+    "icon": {
+      "id": "millenaire:rosette"
+    },
+    "title": {
+      "translate": "advancements.marvel_norman.name"
+    },
+    "description": {
+      "translate": "advancements.marvel_norman.desc"
+    },
+    "frame": "challenge"
+  },
+  "criteria": {
+    "marvel_norman": {
+      "trigger": "minecraft:impossible"
+    }
+  }
+}

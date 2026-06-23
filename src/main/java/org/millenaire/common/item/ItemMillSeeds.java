@@ -19,7 +19,8 @@ import org.millenaire.common.world.UserProfile;
  * Crop seeds that plant a Mill crop block on tilled soil. 1.12 implemented Forge's {@code IPlantable}
  * (getPlant/getPlantType) and overrode {@code onItemUse} using {@code canSustainPlant}/{@code
  * onBlockPlacedBy}. Forge's IPlantable and those hooks are gone in 26.2: planting goes through
- * {@code useOn(UseOnContext)} and the soil-suitability check must be reworked (see TODO).
+ * {@code useOn(UseOnContext)} with the crop requirement replicated directly (clicked block is
+ * FARMLAND with air above), implemented below.
  */
 public class ItemMillSeeds extends ItemMill {
    public final Block crops;

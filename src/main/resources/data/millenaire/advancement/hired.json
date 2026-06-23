@@ -1,0 +1,19 @@
+{
+  "parent": "millenaire:cheers",
+  "display": {
+    "icon": {
+      "id": "millenaire:normanaxe"
+    },
+    "title": {
+      "translate": "advancements.hired.name"
+    },
+    "description": {
+      "translate": "advancements.hired.desc"
+    }
+  },
+  "criteria": {
+    "hired": {
+      "trigger": "minecraft:impossible"
+    }
+  }
+}

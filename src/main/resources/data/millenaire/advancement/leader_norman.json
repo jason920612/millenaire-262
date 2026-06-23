@@ -1,0 +1,19 @@
+{
+  "parent": "millenaire:rep_norman",
+  "display": {
+    "icon": {
+      "id": "millenaire:normanhelmet"
+    },
+    "title": {
+      "translate": "advancements.leader_norman.name"
+    },
+    "description": {
+      "translate": "advancements.leader_norman.desc"
+    }
+  },
+  "criteria": {
+    "leader_norman": {
+      "trigger": "minecraft:impossible"
+    }
+  }
+}

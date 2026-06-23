@@ -1,0 +1,20 @@
+{
+  "parent": "millenaire:leader_inuits",
+  "display": {
+    "icon": {
+      "id": "millenaire:icebrick"
+    },
+    "title": {
+      "translate": "advancements.complete_inuits.name"
+    },
+    "description": {
+      "translate": "advancements.complete_inuits.desc"
+    },
+    "frame": "goal"
+  },
+  "criteria": {
+    "complete_norman": {
+      "trigger": "minecraft:impossible"
+    }
+  }
+}

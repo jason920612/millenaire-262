@@ -1,0 +1,20 @@
+{
+  "parent": "millenaire:magellan",
+  "display": {
+    "icon": {
+      "id": "minecraft:oak_sign"
+    },
+    "title": {
+      "translate": "advancements.pantheon.name"
+    },
+    "description": {
+      "translate": "advancements.pantheon.desc"
+    },
+    "frame": "challenge"
+  },
+  "criteria": {
+    "pantheon": {
+      "trigger": "minecraft:impossible"
+    }
+  }
+}

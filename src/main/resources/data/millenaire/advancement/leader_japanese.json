@@ -1,0 +1,19 @@
+{
+  "parent": "millenaire:rep_japanese",
+  "display": {
+    "icon": {
+      "id": "millenaire:japanesebluehelmet"
+    },
+    "title": {
+      "translate": "advancements.leader_japanese.name"
+    },
+    "description": {
+      "translate": "advancements.leader_japanese.desc"
+    }
+  },
+  "criteria": {
+    "leader_japanese": {
+      "trigger": "minecraft:impossible"
+    }
+  }
+}

@@ -1,0 +1,19 @@
+{
+  "parent": "millenaire:firstcontact",
+  "display": {
+    "icon": {
+      "id": "minecraft:leather_boots"
+    },
+    "title": {
+      "translate": "advancements.explorer.name"
+    },
+    "description": {
+      "translate": "advancements.explorer.desc"
+    }
+  },
+  "criteria": {
+    "explorer": {
+      "trigger": "minecraft:impossible"
+    }
+  }
+}

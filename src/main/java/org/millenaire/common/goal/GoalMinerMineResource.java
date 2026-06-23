@@ -10,6 +10,7 @@ import net.minecraft.world.level.block.Blocks;
 import net.minecraft.world.item.Items;
 import net.minecraft.world.item.ItemStack;
 import com.coderyo.jason.ops.OpState;
+import com.coderyo.jason.ops.OreVeinMiner;
 import com.coderyo.jason.ops.TaskPointStore;
 import com.coderyo.jason.ops.VillagerWorldOps;
 import org.millenaire.common.block.MillBlocks;
@@ -138,6 +139,30 @@ public class GoalMinerMineResource extends Goal {
       if (dest == null) {
          return true; // no target left — let the goal re-pick.
       }
+
+      // --- Phase 1 (#3): REAL ore-vein / cave mining first (com.coderyo.jason.ops). Anchor the mine on the
+      // worksite building (stable per-mine) so its frontier + hazard set are shared across villagers + ticks.
+      // The driver scans for real ore, tunnels to the vein, flood-mines it (real drops carried home), uses
+      // natural caves, advances the FRONTIER outward when local ore is exhausted, and is LAVA-SAFE throughout.
+      // Only when NO real ore is reachable do we fall back to the legacy regrowing-source-block heuristic below.
+      BlockPos anchor = mineAnchor(villager, dest);
+      OreVeinMiner.MineResult mineResult = OreVeinMiner.mineTick(villager, anchor);
+      switch (mineResult) {
+         case WORKING:
+            return false; // mid-cycle: navigating / tunnelling / flood-mining / picking up. Stay in-action.
+         case CYCLE_DONE:
+            return true;  // a vein was cleared / the frontier advanced — let the goal re-pick.
+         case NEED_TOOL:
+            // No pickaxe: do NOT break (no drops). Stay in-goal; GoalGetTool will pre-empt and fetch one.
+            if (MillConfigValues.LogMiner >= 2 && villager.extraLog) {
+               MillLog.debug(this, "No pickaxe for real ore mining at " + anchor + "; waiting for tool.");
+            }
+            return false;
+         case NO_ORE:
+         default:
+            break; // no real ore reachable — fall through to the legacy regrowing-source heuristic.
+      }
+
       BlockPos pos = dest.getBlockPos();
       BlockState blockState = WorldUtilities.getBlockState(villager.level(), dest);
       Block block = blockState.getBlock();
@@ -184,6 +209,19 @@ public class GoalMinerMineResource extends Goal {
          default:
             return false;
       }
+   }
+
+   /**
+    * The stable ANCHOR for this villager's mine: the worksite building's position (so every miner of the same
+    * building shares one frontier + hazard set), falling back to the destination source point if no building dest
+    * is resolved. Keying the {@link TaskPointStore.MineState} here makes the excavation point-owned + shared.
+    */
+   private BlockPos mineAnchor(MillVillager villager, Point dest) {
+      Point bp = villager.getGoalBuildingDestPoint();
+      if (bp != null) {
+         return bp.getBlockPos();
+      }
+      return dest.getBlockPos();
    }
 
    /** Walk-to-each-drop pickup; on COMPLETE reconcile to the 1.12 yield and finish the goal. */

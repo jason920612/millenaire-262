@@ -2,6 +2,7 @@ package com.coderyo.jason.ops;
 
 import java.util.Iterator;
 import java.util.Map;
+import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
 import net.minecraft.core.BlockPos;
 import net.minecraft.resources.Identifier;
@@ -46,6 +47,8 @@ public final class TaskPointStore {
    private final Map<Key, Progress> records = new ConcurrentHashMap<>();
    /** Point-owned regrow schedule: a broken mine source's target state + the game tick it is due to return. */
    private final Map<Key, Regrow> regrows = new ConcurrentHashMap<>();
+   /** Per-MINE excavation state (frontier + permanent hazards + tally), keyed by the mine ANCHOR point. */
+   private final Map<Key, MineState> mines = new ConcurrentHashMap<>();
 
    private TaskPointStore() {
    }
@@ -119,6 +122,38 @@ public final class TaskPointStore {
    public void clearAll() {
       records.clear();
       regrows.clear();
+      mines.clear();
+   }
+
+   // ---- per-mine excavation state (point-owned, keyed by the mine ANCHOR) -------------------------
+
+   /**
+    * The {@link MineState} for the mine anchored at {@code (level, anchor)}, creating a fresh one (with its
+    * frontier seeded at the anchor) if none exists. The anchor is the village's mine entrance / source point;
+    * keying the excavation state here makes the FRONTIER and the permanent HAZARD set shared across every
+    * villager that mines this mine (hand-off), and survives the working villager wandering off — exactly like
+    * the break {@link Progress} records. This is the seed of mining-driven outward expansion (Phase 1, #3).
+    */
+   public MineState getOrCreateMine(Level level, BlockPos anchor) {
+      Key key = keyOf(level, anchor);
+      return mines.computeIfAbsent(key, k -> new MineState(anchor));
+   }
+
+   /** The mine state for an anchor, or {@code null} if this mine has never been worked. Test/diagnostic. */
+   public MineState peekMine(Level level, BlockPos anchor) {
+      return mines.get(keyOf(level, anchor));
+   }
+
+   /** Test/diagnostic: number of live mines being tracked. */
+   public int mineCount() {
+      return mines.size();
+   }
+
+   /** Visit every live {@link MineState} (the observer folds these into its mining summary). */
+   public void forEachMine(java.util.function.Consumer<MineState> visitor) {
+      for (MineState m : mines.values()) {
+         visitor.accept(m);
+      }
    }
 
    // ---- ore regrow (point-owned) ------------------------------------------------------------------
@@ -273,5 +308,48 @@ public final class TaskPointStore {
 
    /** A pending ore regrow: the source block state to restore and the game tick it becomes due. */
    public record Regrow(BlockState state, long dueTick) {
+   }
+
+   /**
+    * Per-MINE excavation state for the real ore-vein miner ({@link OreVeinMiner}), keyed by the mine ANCHOR in
+    * {@link #getOrCreateMine}. Holds the outward {@code frontier} (which advances when local ore is exhausted —
+    * the mine growing), the permanent {@code hazards} set (lava/bedrock/water cells the miner found and must
+    * NEVER mine or route through — they are NOT converted to re-minable stone, so they stay avoided), the
+    * outward {@code dirX/dirZ} the frontier pushes, and tallies for observation. Mutable struct, shared across
+    * every villager working this mine (hand-off) and across ticks.
+    */
+   public static final class MineState {
+      /** The mine anchor (village mine entrance / source point) this state belongs to. */
+      public final BlockPos anchor;
+      /** The current outward mine frontier (advances when the local vein is exhausted). */
+      public BlockPos frontier;
+      /** Permanent DON'T-MINE / DON'T-ENTER cells (lava/bedrock/water), stored as packed BlockPos longs. */
+      public final Set<Long> hazards = ConcurrentHashMap.newKeySet();
+      /** Horizontal outward direction the frontier advances (defaults to +X; set on first advance). */
+      public int dirX = 1;
+      public int dirZ = 0;
+      /** Total ore cells this mine has flood-mined (observation / future resource-intake accounting). */
+      public int oreMined;
+      /** Total times the frontier has advanced outward (the mine's outward reach — feeds expansion later). */
+      public int frontierAdvances;
+      /** Game tick this mine state was last touched (for the observer's throttling). */
+      public long lastTickTouched;
+      /** Packed pos of the last vein-start logged, so the "VEIN found" line isn't spammed every tick. */
+      public long lastVeinStartLogged = Long.MIN_VALUE;
+
+      MineState(BlockPos anchor) {
+         this.anchor = anchor;
+         this.frontier = anchor;
+      }
+
+      /** Permanently mark {@code pos} as a hazard never to be mined or routed through. */
+      public void markHazard(BlockPos pos) {
+         this.hazards.add(pos.asLong());
+      }
+
+      /** True if {@code pos} has been permanently marked a hazard for this mine. */
+      public boolean isHazard(BlockPos pos) {
+         return this.hazards.contains(pos.asLong());
+      }
    }
 }

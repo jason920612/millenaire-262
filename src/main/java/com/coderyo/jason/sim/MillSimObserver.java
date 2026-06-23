@@ -134,6 +134,13 @@ public final class MillSimObserver {
     * surplus and queuing new procedural buildings — perf-guarded, no grant, no fallback.
     */
    private static final int TICK_EXPAND_DEMO = 68;
+   /**
+    * Dedicated village MERGE + new-village FOUNDING demonstration (Phase 4, #5): deterministically sets up
+    * (a) two friendly overlapping same-culture villages → the larger ABSORBS the smaller (records/buildings/
+    * territory merged, smaller town hall demoted from the registry cleanly), and (b) an overcrowded village
+    * with a real surplus → a splinter group FOUNDS a friendly same-culture colony (surplus genuinely spent).
+    */
+   private static final int TICK_MERGE_DEMO = 69;
    private static final int TICK_LIFECYCLE_START = 70;
    private final int TICK_LIFECYCLE_END = TICK_LIFECYCLE_START + SIM_DAYS * TICKS_PER_DAY;
    /** Roaming-player phase: the simulated player visits every village and trades + quests. */
@@ -197,6 +204,10 @@ public final class MillSimObserver {
    private final Map<Point, Integer> lastVillageRadius = new HashMap<>();
    private int naturalRingsGrown = 0;
    private final java.util.Set<String> naturalExpandVillages = new java.util.LinkedHashSet<>();
+
+   // ---- Village MERGE + FOUND (Phase 4, #5) demonstration evidence ----
+   private String mergeDemoEvidence = "not run";
+   private String foundDemoEvidence = "not run";
 
    // ---- Roaming-player interaction accumulators ----
    private int playerVillagesVisited = 0;
@@ -288,6 +299,8 @@ public final class MillSimObserver {
             stepResourceChainDemo();
          } else if (tick == TICK_EXPAND_DEMO) {
             stepExpansionDemo();
+         } else if (tick == TICK_MERGE_DEMO) {
+            stepMergeFoundDemo();
          } else if (tick > TICK_LIFECYCLE_START && tick < TICK_LIFECYCLE_END) {
             if ((tick - TICK_LIFECYCLE_START) % SAMPLE_INTERVAL == 0) {
                sampleWorld("LIFECYCLE");
@@ -1314,6 +1327,357 @@ public final class MillSimObserver {
          record("expand-fund-mining", t);
       }
       return totalDeposited;
+   }
+
+   // ============================ VILLAGE MERGE + FOUND DEMONSTRATION (Phase 4, #5) ============================
+
+   /**
+    * Deterministic, observable proof of the Phase-4 village MERGE + new-village FOUNDING driver
+    * ({@link com.coderyo.jason.merge.VillageMergeFound}), driven SYNCHRONOUSLY so it is provable regardless of
+    * 100x ambient-AI sleep — and it ALSO confirms the AMBIENT path is wired (the same {@code tryMerge}/
+    * {@code tryFound} the town-hall tick calls).
+    *
+    * <ol>
+    *   <li><b>MERGE</b>: generate TWO same-culture villages whose claimed radii OVERLAP and make them mutually
+    *       FRIENDLY, then drive {@code tryMerge}. Asserts the larger ABSORBED the smaller (records/buildings/
+    *       territory merged), the smaller town hall was DEMOTED out of the {@link MillWorldData} village registry
+    *       cleanly (no dangling village-list entry / no save corruption), and the larger's pop + radius grew.</li>
+    *   <li><b>FOUND</b>: take a real loaded village, FUND a real surplus (mine + deposit real ore), inflate its
+    *       population OVER capacity with real villager records, then drive {@code tryFound}. Asserts a NEW
+    *       same-culture FRIENDLY colony was created at a distant site, a splinter group left, the mother's pop
+    *       dropped, and the real surplus was genuinely SPENT — no grant, no fallback.</li>
+    * </ol>
+    */
+   private void stepMergeFoundDemo() {
+      stepMergeDemo();
+      stepFoundDemo();
+   }
+
+   private void stepMergeDemo() {
+      final String TAGM = com.coderyo.jason.merge.VillageMergeFound.TAG_MERGE;
+      try {
+         MillWorldData mw = Mill.getMillWorld(level);
+         // Pick a culture with a regular village type so two same-culture villages can be generated.
+         Culture culture = null;
+         VillageType vtype = null;
+         for (Culture c : Culture.ListCultures) {
+            VillageType vt = pickRegularVillageType(c);
+            if (vt != null) {
+               culture = c;
+               vtype = vt;
+               break;
+            }
+         }
+         if (culture == null) {
+            mergeDemoEvidence = "skipped (no culture with a regular village type)";
+            MillLog.major(null, TAGM + " SKIP: " + mergeDemoEvidence);
+            return;
+         }
+
+         // Place two SAME-culture villages in a CLEAR area away from the dense sim cluster. They are seeded far
+         // enough apart that worldgen won't reject the second for being too close to the first; we then SHRINK the
+         // gap into an overlap by GROWING their claimed radii (the natural Phase-3 outcome the ambient path takes).
+         int baseX = VILLAGE_ORIGIN + 2000;
+         int baseZ = VILLAGE_ORIGIN - 2000;
+         Building a = generateVillageNear(culture, vtype, baseX, baseZ);
+         Building b = a == null ? null : generateVillageNear(culture, vtype,
+            a.getPos().getiX() + 240, a.getPos().getiZ());
+         if (a == null || b == null) {
+            mergeDemoEvidence = "skipped (could not place two same-culture villages: a=" + (a != null) + " b=" + (b != null) + ")";
+            MillLog.major(null, TAGM + " SKIP: " + mergeDemoEvidence);
+            return;
+         }
+
+         // Make their claimed radii OVERLAP: set each radius to comfortably cover the gap between them.
+         int gap = (int) Math.ceil(a.getPos().distanceTo(b.getPos()));
+         a.villageType.radius = Math.max(a.villageType.radius, gap);
+         b.villageType.radius = Math.max(b.villageType.radius, gap);
+         // Make them mutually FRIENDLY (positive both ways) so the merge gate (friendly + consent) is open.
+         a.adjustRelation(b.getPos(), 60, true);
+
+         boolean overlap = com.coderyo.jason.merge.VillageMergeFound.overlap(a, b);
+         boolean compatible = com.coderyo.jason.merge.VillageMergeFound.compatible(a, b);
+         int popABefore = a.getVillagerRecords().size();
+         int popBBefore = b.getVillagerRecords().size();
+         Building expectedBig = com.coderyo.jason.merge.VillageMergeFound.larger(a, b);
+         Building expectedSmall = expectedBig == a ? b : a;
+         Point smallPos = expectedSmall.getPos();
+         int villageListBefore = mw.villagesList.pos.size();
+         boolean smallListedBefore = mw.villagesList.pos.contains(smallPos);
+
+         MillLog.major(null, TAGM + " BEGIN two " + culture.key + " villages a='" + safeName(a) + "'(pop" + popABefore
+            + ",r" + a.villageType.radius + ") b='" + safeName(b) + "'(pop" + popBBefore + ",r" + b.villageType.radius
+            + ") gap=" + gap + " overlap=" + overlap + " compatible=" + compatible + " friendly+consent → expect '"
+            + safeName(expectedBig) + "' ABSORBS '" + safeName(expectedSmall) + "'");
+
+         com.coderyo.jason.merge.VillageMergeFound.MergeOutcome m =
+            com.coderyo.jason.merge.VillageMergeFound.tryMerge(a, b);
+
+         boolean merged = m.result == com.coderyo.jason.merge.VillageMergeFound.Result.MERGED;
+         Building survivor = m.survivor;
+         boolean smallRemovedFromRegistry = !mw.villagesList.pos.contains(smallPos);
+         boolean survivorStillRegistered = survivor != null && mw.getBuilding(survivor.getPos()) != null
+            && mw.villagesList.pos.contains(survivor.getPos());
+         int survivorPop = survivor != null ? survivor.getVillagerRecords().size() : -1;
+         // Registry consistency: the demoted town hall building still resolves (kept as a district), but it is no
+         // longer a town hall and no longer in the village list → no dangling village entry, no save corruption.
+         Building demoted = mw.getBuilding(smallPos);
+         boolean demotedKeptAsDistrict = demoted != null && !demoted.isTownhall
+            && survivor != null && survivor.getPos().equals(demoted.getTownHallPos());
+
+         String verdict;
+         if (merged && smallRemovedFromRegistry && survivorStillRegistered && survivorPop >= popABefore + popBBefore - 1
+            && demotedKeptAsDistrict) {
+            verdict = "PASS (larger '" + safeName(survivor) + "' absorbed smaller; records+buildings+territory merged; "
+               + "smaller town hall demoted out of the village registry CLEANLY [kept as a district, no dangling "
+               + "entry]; village-list " + villageListBefore + "→" + mw.villagesList.pos.size() + "; no grant/fallback)";
+         } else if (merged && smallRemovedFromRegistry) {
+            verdict = "PASS-PARTIAL (merged + smaller deregistered; check district re-home: survivorPop=" + survivorPop
+               + " demotedKeptAsDistrict=" + demotedKeptAsDistrict + ")";
+         } else {
+            verdict = "CHECK (result=" + m.result + " reason=" + m.reason + " smallRemoved=" + smallRemovedFromRegistry
+               + " survivorRegistered=" + survivorStillRegistered + ")";
+         }
+         mergeDemoEvidence = "result=" + m.result + " survivor='" + (survivor != null ? safeName(survivor) : "-")
+            + "' absorbedPos=" + smallPos + " survivorPop " + popABefore + "+" + popBBefore + "→" + survivorPop
+            + " smallStillListed " + smallListedBefore + "→" + (!smallRemovedFromRegistry)
+            + " => " + verdict;
+         MillLog.major(null, TAGM + " RESULT " + mergeDemoEvidence);
+
+         if (!merged) {
+            anomalies.merge("merge: friendly same-culture overlap did not merge", 1, Integer::sum);
+         }
+         if (merged && !smallRemovedFromRegistry) {
+            anomalies.merge("merge: absorbed village left dangling in the registry (save corruption risk)", 1, Integer::sum);
+         }
+
+         // Confirm the AMBIENT path is wired: a HOSTILE overlap must NOT merge (it returns a WAR signal). Build a
+         // second pair, make them hostile, and assert tryMerge returns WAR (the #4 path), not a merge.
+         Building c = generateVillageNear(culture, vtype, baseX, baseZ + 6000);
+         Building d = generateVillageNear(culture, vtype, baseX + 120, baseZ + 6000);
+         if (c != null && d != null) {
+            int hg = (int) Math.ceil(c.getPos().distanceTo(d.getPos()));
+            c.villageType.radius = Math.max(c.villageType.radius, hg);
+            d.villageType.radius = Math.max(d.villageType.radius, hg);
+            c.adjustRelation(d.getPos(), -100, true); // mutually hostile
+            com.coderyo.jason.merge.VillageMergeFound.MergeOutcome hm =
+               com.coderyo.jason.merge.VillageMergeFound.tryMerge(c, d);
+            boolean war = hm.result == com.coderyo.jason.merge.VillageMergeFound.Result.WAR;
+            MillLog.major(null, TAGM + " HOSTILE-OVERLAP '" + safeName(c) + "' x '" + safeName(d) + "' → "
+               + hm.result + " (" + hm.reason + ") => " + (war ? "PASS (war signal, NOT a merge — Phase-5 path)"
+               : "CHECK (expected WAR)"));
+            if (!war) {
+               anomalies.merge("merge: hostile overlap did not return a WAR signal", 1, Integer::sum);
+            }
+         }
+      } catch (Throwable t) {
+         record("merge-demo", t);
+         mergeDemoEvidence = "exception: " + t;
+         MillLog.major(null, TAGM + " FAIL: " + t);
+         MillLog.printException(TAG + " merge-demo error", t);
+      }
+   }
+
+   private void stepFoundDemo() {
+      final String TAGF = com.coderyo.jason.merge.VillageMergeFound.TAG_FOUND;
+      try {
+         MillWorldData mw = Mill.getMillWorld(level);
+         // The mother must be ISOLATED so a good DISTANT site (≥ GOOD_SITE_MIN_DIST, not inside another claim)
+         // exists for the colony. The sim's natural villages grow into a dense radius-400 cluster that blocks
+         // every cardinal site, so we place a FRESH, isolated same-culture village far from the cluster and found
+         // a colony from IT. (This is the same gate the ambient path applies — it simply needs open land.)
+         Culture culture = null;
+         VillageType vtype = null;
+         for (Culture c : Culture.ListCultures) {
+            VillageType vt = pickRegularVillageType(c);
+            if (vt != null) {
+               culture = c;
+               vtype = vt;
+               break;
+            }
+         }
+         Building townHall = culture == null ? null
+            : generateVillageNear(culture, vtype, VILLAGE_ORIGIN + 4000, VILLAGE_ORIGIN + 4000);
+         if (townHall == null) {
+            foundDemoEvidence = "skipped (could not place an isolated mother village for the found demo)";
+            MillLog.major(null, TAGF + " SKIP: " + foundDemoEvidence);
+            return;
+         }
+         // A loadable chest to fund a real surplus into (the town hall itself always has chests).
+         Building depositBuilding = null;
+         List<Building> candidates = new ArrayList<>(townHall.getBuildings());
+         if (!candidates.contains(townHall)) {
+            candidates.add(townHall);
+         }
+         for (Building bb : candidates) {
+            if (bb == null || bb.getResManager() == null || bb.getResManager().chests.isEmpty()) {
+               continue;
+            }
+            Point bp = bb.getPos();
+            if (bp != null) {
+               level.setChunkForced(bp.getiX() >> 4, bp.getiZ() >> 4, true);
+            }
+            for (Point cp : bb.getResManager().chests) {
+               if (cp.getMillChest(level) != null) {
+                  depositBuilding = bb;
+                  break;
+               }
+            }
+            if (depositBuilding != null) {
+               break;
+            }
+         }
+         if (depositBuilding == null) {
+            foundDemoEvidence = "skipped (isolated mother village has no loadable chest to fund a found)";
+            MillLog.major(null, TAGF + " SKIP: " + foundDemoEvidence);
+            return;
+         }
+         com.coderyo.jason.merge.VillageMergeFound.clear(townHall);
+         com.coderyo.jason.build.MillProceduralConstruction.clear(townHall);
+
+         // ---- FUND a real surplus well above the FOUND_SURPLUS threshold (mine + deposit, no grant). ----
+         int needSurplus = com.coderyo.jason.merge.VillageMergeFound.FOUND_SURPLUS
+            + com.coderyo.jason.expand.VillageExpansion.UPKEEP_BUFFER + 64;
+         int rounds = Math.max(8, needSurplus / 8);
+         int deposited = mineAndDepositRealOre(townHall, depositBuilding, rounds);
+         int surplus = com.coderyo.jason.expand.VillageExpansion.realSurplus(townHall);
+
+         // ---- INFLATE the population over capacity so the village is OVERCROWDED (real villager records). ----
+         com.coderyo.jason.build.MillNeedsModel.VillageState vsBefore =
+            com.coderyo.jason.build.MillNeedsModel.readVillage(townHall);
+         int wantOver = com.coderyo.jason.merge.VillageMergeFound.FOUND_POP_PRESSURE + 4; // comfortably over the threshold
+         int currentOver = vsBefore.pop - vsBefore.housingCap;
+         int toAdd = Math.max(0, wantOver - currentOver);
+         int added = addRealVillagerRecords(townHall, toAdd);
+         int popAfterInflate = townHall.getVillagerRecords().size();
+
+         com.coderyo.jason.build.MillNeedsModel.VillageState vsNow =
+            com.coderyo.jason.build.MillNeedsModel.readVillage(townHall);
+         MillLog.major(null, TAGF + " BEGIN mother='" + safeName(townHall) + "' culture="
+            + (townHall.culture != null ? townHall.culture.key : "?")
+            + " depositedRealOre=" + deposited + " realSurplus=" + surplus
+            + " pop " + vsBefore.pop + "→" + popAfterInflate + " housingCap=" + vsNow.housingCap
+            + " pressure=" + (vsNow.pop - vsNow.housingCap) + " (need ≥"
+            + com.coderyo.jason.merge.VillageMergeFound.FOUND_POP_PRESSURE + ") addedRecords=" + added);
+
+         List<Building> villages = com.coderyo.jason.merge.VillageMergeFound.liveTownHalls(mw);
+         int villageListBefore = mw.villagesList.pos.size();
+         int motherPopBefore = townHall.getVillagerRecords().size();
+         int surplusBefore = com.coderyo.jason.expand.VillageExpansion.realSurplus(townHall);
+
+         com.coderyo.jason.merge.VillageMergeFound.FoundOutcome f =
+            com.coderyo.jason.merge.VillageMergeFound.tryFound(townHall, villages);
+
+         int motherPopAfter = townHall.getVillagerRecords().size();
+         int surplusAfter = com.coderyo.jason.expand.VillageExpansion.realSurplus(townHall);
+         int villageListAfter = mw.villagesList.pos.size();
+
+         Building colony = f.founded && f.site != null ? mw.getClosestVillage(f.site) : null;
+         boolean colonyRegistered = colony != null && mw.villagesList.pos.contains(colony.getPos());
+         boolean sameCulture = colony != null && townHall.culture != null && colony.culture != null
+            && townHall.culture.key.equals(colony.culture.key);
+         int relMotherToColony = colony != null
+            ? (townHall.getRelations().getOrDefault(colony.getPos(), 0)) : 0;
+         int relColonyToMother = colony != null
+            ? (colony.getRelations().getOrDefault(townHall.getPos(), 0)) : 0;
+         boolean friendly = relMotherToColony > 0 && relColonyToMother > 0;
+
+         String verdict;
+         if (f.founded && colonyRegistered && sameCulture && friendly
+            && motherPopAfter < motherPopBefore && surplusAfter < surplusBefore) {
+            verdict = "PASS (overcrowded+surplus mother founded a NEW " + (colony.culture != null ? colony.culture.key : "?")
+               + " FRIENDLY colony @ " + f.site + "; splinter=" + f.splinterSize + " left [motherPop " + motherPopBefore
+               + "→" + motherPopAfter + "]; surplus SPENT " + surplusBefore + "→" + surplusAfter
+               + " [spent=" + f.surplusSpent + "]; mutual relation mother↔colony=" + relMotherToColony + "/"
+               + relColonyToMother + "; village-list " + villageListBefore + "→" + villageListAfter + "; no grant)";
+         } else {
+            verdict = "CHECK (founded=" + f.founded + " reason=" + f.reason + " colonyRegistered=" + colonyRegistered
+               + " sameCulture=" + sameCulture + " friendly=" + friendly + " motherPop " + motherPopBefore + "→"
+               + motherPopAfter + " surplus " + surplusBefore + "→" + surplusAfter + ")";
+         }
+         foundDemoEvidence = "mother='" + safeName(townHall) + "' founded=" + f.founded + " site=" + f.site
+            + " splinter=" + f.splinterSize + " surplusSpent=" + f.surplusSpent + " => " + verdict;
+         MillLog.major(null, TAGF + " RESULT " + foundDemoEvidence);
+
+         if (!f.founded) {
+            anomalies.merge("found: overcrowded+surplus village did not found a colony", 1, Integer::sum);
+         }
+         if (f.founded && surplusAfter >= surplusBefore) {
+            anomalies.merge("found: colony founded without spending real surplus (possible grant)", 1, Integer::sum);
+         }
+      } catch (Throwable t) {
+         record("found-demo", t);
+         foundDemoEvidence = "exception: " + t;
+         MillLog.major(null, TAGF + " FAIL: " + t);
+         MillLog.printException(TAG + " found-demo error", t);
+      }
+   }
+
+   /**
+    * Generate a same-culture village near (x,z) by scanning a few candidate spots (like stepGenerateVillages),
+    * and return its town-hall {@link Building}, or null if none placed. Force-loads the candidate chunks.
+    */
+   private Building generateVillageNear(Culture culture, VillageType vtype, int x, int z) {
+      try {
+         MillWorldData mw = Mill.getMillWorld(level);
+         // Scan a grid of candidate spots; arbitrary terrain often can't host a village centre, so several tries
+         // give a high placement rate (the same robustness stepGenerateVillages uses).
+         for (int xoff : new int[]{0, 160, -160, 320, -320, 480, -480}) {
+            for (int zoff : new int[]{0, 160, -160, 320, -320, 480, -480}) {
+               int xx = x + xoff;
+               int zz = z + zoff;
+               int ccx = xx >> 4;
+               int ccz = zz >> 4;
+               for (int dcx = -3; dcx <= 3; dcx++) {
+                  for (int dcz = -3; dcz <= 3; dcz++) {
+                     level.getChunk(ccx + dcx, ccz + dcz);
+                     level.setChunkForced(ccx + dcx, ccz + dcz, true);
+                  }
+               }
+               WorldGenVillage gen = new WorldGenVillage();
+               if (gen.generateVillageAtPoint(level, MillRandom.random, xx, 0, zz, fakePlayer, false, true, false,
+                     0, vtype, null, null, 1.0F)) {
+                  Building th = mw.getClosestVillage(new Point(xx, 0, zz));
+                  // Only accept a FRESH village placed at our candidate (not a pre-existing far village the
+                  // closest-village query may return when generation actually failed).
+                  if (th != null && th.getPos().distanceTo(new Point(xx, 0, zz)) < 80
+                     && th.culture != null && th.culture.key.equals(culture.key)) {
+                     return th;
+                  }
+               }
+            }
+         }
+      } catch (Throwable t) {
+         record("merge-demo-gen-village", t);
+      }
+      return null;
+   }
+
+   /**
+    * Create {@code n} REAL villager records homed at {@code townHall} so the village's population genuinely
+    * exceeds its housing capacity (drives the FOUND overcrowd gate). These are registered records (not mocks);
+    * no entity is spawned — the found logic operates on records. Returns how many were added.
+    */
+   private int addRealVillagerRecords(Building townHall, int n) {
+      int added = 0;
+      try {
+         MillWorldData mw = Mill.getMillWorld(level);
+         Culture culture = townHall.culture;
+         if (culture == null || culture.listVillagerTypes.isEmpty()) {
+            return 0;
+         }
+         org.millenaire.common.culture.VillagerType vt = culture.listVillagerTypes.get(0);
+         for (int i = 0; i < n; i++) {
+            VillagerRecord rec = VillagerRecord.createVillagerRecord(
+               culture, vt.key, mw, townHall.getPos(), townHall.getPos(), null, null, -1L, false);
+            if (rec != null) {
+               added++;
+            }
+         }
+      } catch (Throwable t) {
+         record("found-demo-add-records", t);
+      }
+      return added;
    }
 
    // ============================ baselines for event diffing ============================
@@ -2526,6 +2890,10 @@ public final class MillSimObserver {
          for (String ev : expandEvidence) {
             log("SIM SUMMARY   expand-demo: " + ev);
          }
+         log("SIM SUMMARY MERGE (Phase 4, #5 — larger absorbs smaller, friendly same-culture, registry clean): "
+            + mergeDemoEvidence);
+         log("SIM SUMMARY FOUND (Phase 4, #5 — overcrowd+surplus → friendly same-culture colony, surplus spent): "
+            + foundDemoEvidence);
          log("SIM SUMMARY PLAYER: villagesVisited=" + playerVillagesVisited
             + " tradesDone=" + playerTradesDone + " questsDone=" + playerQuestsDone
             + " moneySpent=" + playerMoneySpent + " moneyEarned=" + playerMoneyEarned

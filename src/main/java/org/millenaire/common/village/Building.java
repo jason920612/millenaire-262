@@ -3431,6 +3431,18 @@ public class Building {
       return this.townHallPos;
    }
 
+   /**
+    * Re-point this building's owning town hall. Used by the Phase-4 ({@code com.coderyo.jason}) village MERGE
+    * driver to re-home an absorbed village's sub-buildings to the surviving (larger) town hall cleanly — the
+    * same authoritative field the loader/diplomacy paths set. Marks the building for save so the new ownership
+    * persists (no dangling reference to the demoted town hall). No fabrication; only re-links existing records.
+    */
+   public void setTownHallPos(Point townHallPos) {
+      this.townHallPos = townHallPos;
+      this.saveNeeded = true;
+      this.saveReason = "Town hall re-homed (Phase-4 merge)";
+   }
+
    public int getVillageAttackerStrength() {
       int strength = 0;
 
@@ -5927,6 +5939,15 @@ public class Building {
          com.coderyo.jason.expand.VillageExpansion.Outcome expansion =
             com.coderyo.jason.expand.VillageExpansion.tick(this);
          if (expansion.expanded) {
+            return true;
+         }
+         // Phase 4 (#5) MERGE / FOUND: AFTER expansion has grown the claim, evaluate whether this village should
+         // MERGE with a friendly same-culture neighbour it has now grown INTO (larger absorbs smaller — real
+         // records/buildings/territory merged, smaller town hall demoted out of the registry cleanly), or FOUND a
+         // colony if it is overcrowded with a real surplus (a splinter group leaves, a same-culture friendly
+         // sub-village is created, the surplus is genuinely spent). Strict no-grant / no-fallback: unmet
+         // conditions → no-op this tick. A merge/found counts as a construction change.
+         if (com.coderyo.jason.merge.VillageMergeFound.tick(this)) {
             return true;
          }
          return com.coderyo.jason.build.MillProceduralConstruction.tick(this);

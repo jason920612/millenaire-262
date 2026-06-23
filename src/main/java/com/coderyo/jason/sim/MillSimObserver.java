@@ -26,6 +26,11 @@ import org.millenaire.common.culture.Culture;
 import org.millenaire.common.culture.VillageType;
 import org.millenaire.common.entity.MillVillager;
 import org.millenaire.common.forge.Mill;
+import org.millenaire.common.item.TradeGood;
+import org.millenaire.common.quest.QuestInstance;
+import org.millenaire.common.ui.ContainerTrade;
+import org.millenaire.common.utilities.VillageInventory;
+import org.millenaire.common.world.UserProfile;
 import org.millenaire.common.utilities.MillLog;
 import org.millenaire.common.utilities.MillRandom;
 import org.millenaire.common.utilities.Point;
@@ -114,7 +119,11 @@ public final class MillSimObserver {
    private static final int TICK_START_DUMP = 55;
    private static final int TICK_LIFECYCLE_START = 70;
    private final int TICK_LIFECYCLE_END = TICK_LIFECYCLE_START + SIM_DAYS * TICKS_PER_DAY;
-   private final int TICK_WAR_DECLARE = TICK_LIFECYCLE_END + 20;
+   /** Roaming-player phase: the simulated player visits every village and trades + quests. */
+   private final int TICK_PLAYER_INTERACT = TICK_LIFECYCLE_END + 10;
+   /** One village is visited per tick during this window; generous bound (villages are far apart). */
+   private final int TICK_PLAYER_INTERACT_END = TICK_PLAYER_INTERACT + 200;
+   private final int TICK_WAR_DECLARE = TICK_PLAYER_INTERACT_END + 20;
    private final int TICK_WAR_END = TICK_WAR_DECLARE + 600; // ~30s to observe the in-world combat fully
    private final int TICK_END_DUMP = TICK_WAR_END + 20;
    private final int TICK_CATALOG = TICK_END_DUMP + 10;
@@ -148,6 +157,20 @@ public final class MillSimObserver {
    private int blockActionEvents = 0;
    private int tradesObserved = 0;
    private int sampleCount = 0;
+
+   // ---- Roaming-player interaction accumulators ----
+   private int playerVillagesVisited = 0;
+   private int playerTradesDone = 0;
+   private int playerQuestsDone = 0;
+   private int playerMoneySpent = 0;   // deniers spent on buys
+   private int playerMoneyEarned = 0;  // deniers earned on sells + quest rewards
+   private final List<String> playerInteractionLog = new ArrayList<>();
+   // Incremental roam state: visit ONE village per tick (villages can be 8000+ blocks apart; doing all of
+   // them in a single tick force-loads enough chunks to trip the 60s dedicated-server watchdog).
+   private UserProfile playerProfile;
+   private List<Building> playerRoamTargets;
+   private int playerRoamIndex = 0;
+   private int playerStartMoney = -1;
 
    // ---- War state ----
    private Building attacker;
@@ -221,6 +244,10 @@ public final class MillSimObserver {
             if ((tick - TICK_LIFECYCLE_START) % SAMPLE_INTERVAL == 0) {
                sampleWorld("LIFECYCLE");
             }
+         } else if (tick == TICK_PLAYER_INTERACT) {
+            stepPlayerInteractionBegin();
+         } else if (tick > TICK_PLAYER_INTERACT && tick <= TICK_PLAYER_INTERACT_END) {
+            stepPlayerInteractionDrive();
          } else if (tick == TICK_WAR_DECLARE) {
             sampleWorld("PRE-WAR");
             stepDeclareWar();
@@ -648,6 +675,408 @@ public final class MillSimObserver {
          }
       }
       return out;
+   }
+
+   // ============================ ROAMING PLAYER: roam + trade + quest ============================
+
+   /**
+    * The simulated player ROAMS every observed village and INTERACTS with its villagers — server-side,
+    * headless, fully textualised. For each village it: (1) teleports the fakePlayer to the town-hall area
+    * and wanders to a few spots inside it (ROAM), (2) finds a villager/shop that sells goods, buys one
+    * the player can afford and (if possible) sells one, mutating money + village stock exactly like a
+    * confirmed {@link ContainerTrade} trade (TRADE), and (3) takes a quest from a village villager and
+    * advances a step via {@code QuestInstance.completeStep}, observing the reputation change (QUEST).
+    *
+    * <p>It is the same authoritative server-side path the client harness drives, adapted to the headless
+    * sim's own {@code fakePlayer} + its {@code UserProfile}. Every effect is logged with a greppable
+    * {@code ███ SIM PLAYER ...} tag and folded into the SUMMARY. CME-safe (snapshots the village list)
+    * and never throws out (each village is wrapped).
+    */
+   private void stepPlayerInteractionBegin() {
+      MillWorldData mw = Mill.getMillWorld(level);
+      if (mw == null || fakePlayer == null) {
+         playerLog("SKIP: no MillWorldData / no fakePlayer to roam with");
+         return;
+      }
+      try {
+         playerProfile = mw.getProfile(fakePlayer);
+      } catch (Throwable t) {
+         record("player-profile", t);
+         playerLog("SKIP: could not obtain UserProfile for the simulated player: " + t);
+         return;
+      }
+      // Give the simulated player a real purse so trades have effect (and the buy is affordable).
+      try {
+         int money = VillageInventory.countMoney(fakePlayer.getInventory());
+         int topUp = Math.max(0, 4096 - money);
+         if (topUp > 0) {
+            VillageInventory.changeMoney(fakePlayer.getInventory(), topUp, fakePlayer);
+         }
+         playerStartMoney = VillageInventory.countMoney(fakePlayer.getInventory());
+      } catch (Throwable t) {
+         record("player-money-setup", t);
+         playerStartMoney = -1;
+      }
+      playerRoamTargets = townhalls(mw);
+      playerRoamIndex = 0;
+      playerLog("BEGIN simulated-player roam: player='" + fakePlayer.getName().getString()
+         + "' profile=" + (playerProfile != null ? playerProfile.uuid : "?") + " money=" + playerStartMoney
+         + " villagesToVisit=" + playerRoamTargets.size() + " (one village per tick — watchdog-safe)");
+   }
+
+   /**
+    * Visits ONE village per tick: roam in, trade, quest. Villages can be thousands of blocks apart, so
+    * doing them all in a single server tick force-loads enough chunks to trip the 60s tick watchdog —
+    * spreading them across ticks keeps every tick short and the run clean.
+    */
+   private void stepPlayerInteractionDrive() {
+      if (playerRoamTargets == null || playerProfile == null) {
+         return;
+      }
+      if (playerRoamIndex >= playerRoamTargets.size()) {
+         return; // already done; END was emitted on the completing tick
+      }
+      MillWorldData mw = Mill.getMillWorld(level);
+      Building th = playerRoamTargets.get(playerRoamIndex);
+      playerRoamIndex++;
+      try {
+         playerRoamVillage(mw, th);
+         playerVillagesVisited++;
+         playerTradeAtVillage(mw, th, playerProfile);
+         playerQuestAtVillage(mw, th, playerProfile);
+      } catch (Throwable t) {
+         record("player-interact-village", t);
+         playerLog("village='" + safeName(th) + "' interaction error: " + t);
+      }
+      if (playerRoamIndex >= playerRoamTargets.size()) {
+         int endMoney = -1;
+         try {
+            endMoney = VillageInventory.countMoney(fakePlayer.getInventory());
+         } catch (Throwable ignored) {
+         }
+         playerLog("END simulated-player roam: villagesVisited=" + playerVillagesVisited
+            + " tradesDone=" + playerTradesDone + " questsDone=" + playerQuestsDone
+            + " moneySpent=" + playerMoneySpent + " moneyEarned=" + playerMoneyEarned
+            + " money " + playerStartMoney + "->" + endMoney);
+      }
+   }
+
+   /** Walk the simulated player to the town hall, then to a few spots inside the village ("wander around"). */
+   private void playerRoamVillage(MillWorldData mw, Building th) {
+      Point p = th.getPos();
+      // Stand the player on a resolved surface at the town-hall centre.
+      int sy;
+      try {
+         sy = org.millenaire.common.utilities.WorldUtilities.findTopSoilBlock(level, p.getiX(), p.getiZ());
+      } catch (Throwable t) {
+         sy = p.getiY();
+      }
+      double baseY = Math.max(level.getMinY() + 2, sy + 1);
+      movePlayer(p.getiX() + 0.5, baseY, p.getiZ() + 0.5);
+      playerLog("ROAM village=" + safeName(th) + " at " + blockPos(fakePlayer)
+         + " (culture=" + cultureKey(th) + " pop=" + th.getVillagerRecords().size() + ") — arrived at town hall");
+
+      // Wander to a few spots inside the village so the coverage walks across the area.
+      int[][] spots = {{12, 0}, {-12, 8}, {0, -14}, {10, 12}};
+      int wandered = 0;
+      for (int[] off : spots) {
+         double wx = p.getiX() + off[0] + 0.5;
+         double wz = p.getiZ() + off[1] + 0.5;
+         double wy;
+         try {
+            wy = Math.max(level.getMinY() + 2,
+               org.millenaire.common.utilities.WorldUtilities.findTopSoilBlock(level, (int) wx, (int) wz) + 1);
+         } catch (Throwable t) {
+            wy = baseY;
+         }
+         movePlayer(wx, wy, wz);
+         wandered++;
+      }
+      playerLog("ROAM village=" + safeName(th) + " wandered to " + wandered + " spot(s) around " + p
+         + "; nearby villagers=" + villagersNear(p, 32).size());
+   }
+
+   /**
+    * Executes a real, confirmed trade at the village SERVER-side: buy a good the player can afford from the
+    * village shop (money down, items up, village stock down) and, if the shop buys anything, sell one
+    * (items down, money up). Mirrors {@link ContainerTrade#executeTrade} on a confirmed purchase/sale.
+    */
+   private void playerTradeAtVillage(MillWorldData mw, Building th, UserProfile profile) {
+      Building shop = findSellingShop(mw, th);
+      if (shop == null) {
+         playerLog("TRADE village=" + safeName(th) + " SKIP: no building in this village sells goods");
+         return;
+      }
+      // ---- BUY: player buys a good the shop sells. ----
+      try {
+         shop.computeShopGoods(fakePlayer);
+         Set<TradeGood> selling = shop.getSellingGoods(fakePlayer);
+         TradeGood buyGood = pickAffordable(shop, selling);
+         if (buyGood == null) {
+            playerLog("TRADE village=" + safeName(th) + " BUY SKIP: shop has no affordable selling good");
+         } else {
+            int price = shop.getSellingPrice(buyGood, fakePlayer);
+            int qty = 4;
+            int moneyBefore = VillageInventory.countMoney(fakePlayer.getInventory());
+            int itemsBefore = VillageInventory.countChestItems(fakePlayer.getInventory(), buyGood.item.getItem(), buyGood.item.meta);
+            ContainerTrade menu = new ContainerTrade(0, fakePlayer, shop);
+            menu.executeTrade(buyGood, true, false, qty, fakePlayer);
+            int moneyAfter = VillageInventory.countMoney(fakePlayer.getInventory());
+            int itemsAfter = VillageInventory.countChestItems(fakePlayer.getInventory(), buyGood.item.getItem(), buyGood.item.meta);
+            int gained = itemsAfter - itemsBefore;
+            int spent = moneyBefore - moneyAfter;
+            boolean ok = spent > 0 && gained > 0;
+            if (ok) {
+               playerTradesDone++;
+               playerMoneySpent += spent;
+            }
+            playerLog("TRADE village=" + safeName(th) + " villager=" + safeName(shop)
+               + " bought=" + buyGood.key + " x" + gained + " for " + spent
+               + " (playerMoney " + moneyBefore + "->" + moneyAfter + ") "
+               + (ok ? "OK" : "no-move(price=" + price + ")"));
+         }
+      } catch (Throwable t) {
+         record("player-buy", t);
+         playerLog("TRADE village=" + safeName(th) + " BUY ERROR: " + t);
+      }
+
+      // ---- SELL: player sells a good the shop buys (give the player some stock first). ----
+      try {
+         Set<TradeGood> buying = shop.getBuyingGoods(fakePlayer);
+         TradeGood sellGood = (buying == null || buying.isEmpty()) ? null : buying.iterator().next();
+         if (sellGood == null) {
+            playerLog("TRADE village=" + safeName(th) + " SELL SKIP: shop buys nothing");
+         } else {
+            int qty = 4;
+            VillageInventory.putItemsInChest(fakePlayer.getInventory(), sellGood.item.getItem(), sellGood.item.meta, qty);
+            shop.computeShopGoods(fakePlayer);
+            int price = shop.getBuyingPrice(sellGood, fakePlayer);
+            int moneyBefore = VillageInventory.countMoney(fakePlayer.getInventory());
+            int itemsBefore = VillageInventory.countChestItems(fakePlayer.getInventory(), sellGood.item.getItem(), sellGood.item.meta);
+            ContainerTrade menu = new ContainerTrade(0, fakePlayer, shop);
+            menu.executeTrade(sellGood, false, false, qty, fakePlayer);
+            int moneyAfter = VillageInventory.countMoney(fakePlayer.getInventory());
+            int itemsAfter = VillageInventory.countChestItems(fakePlayer.getInventory(), sellGood.item.getItem(), sellGood.item.meta);
+            int sold = itemsBefore - itemsAfter;
+            int earned = moneyAfter - moneyBefore;
+            boolean ok = sold > 0 && earned >= 0;
+            if (ok) {
+               playerTradesDone++;
+               playerMoneyEarned += earned;
+            }
+            playerLog("TRADE village=" + safeName(th) + " villager=" + safeName(shop)
+               + " sold=" + sellGood.key + " x" + sold + " for " + earned
+               + " (playerMoney " + moneyBefore + "->" + moneyAfter + ") "
+               + (ok ? "OK" : "no-move(price=" + price + ")"));
+         }
+      } catch (Throwable t) {
+         record("player-sell", t);
+         playerLog("TRADE village=" + safeName(th) + " SELL ERROR: " + t);
+      }
+   }
+
+   /**
+    * Takes a quest from one of this village's villagers and advances a step. If no active quest exists for
+    * the player, SEEDS one directly (build a {@link QuestInstance} for a quest whose starting villager type
+    * is present here), then ACCEPTS + completes a step via {@code QuestInstance.completeStep} — the same
+    * authoritative call {@code GuiActions.questCompleteStep} makes — observing the reputation change.
+    */
+   private void playerQuestAtVillage(MillWorldData mw, Building th, UserProfile profile) {
+      if (profile == null) {
+         playerLog("QUEST village=" + safeName(th) + " SKIP: no UserProfile");
+         return;
+      }
+      try {
+         QuestInstance qi = findOrSeedQuest(mw, th, profile);
+         if (qi == null) {
+            playerLog("QUEST village=" + safeName(th) + " SKIP: no quest could be taken (no matching villager record)");
+            return;
+         }
+         org.millenaire.common.entity.MillVillager villager = qi.getCurrentVillager().getVillager(level);
+         String questKey = qi.quest != null ? qi.quest.key : "?";
+         int stepBefore = qi.currentStep;
+         int repBefore = th.getReputation(fakePlayer);
+         if (villager == null) {
+            // The starting villager isn't spawned as a live entity; create a mock so completeStep has a body
+            // to receive the required-good transfer / hand out rewards. createMockVillager does NOT link the
+            // mock back to its VillagerRecord (no setVillagerId / house / townhall), so getRecord() would be
+            // null and completeStep's addToInv -> updateVillagerRecord NPEs. Wire those up from the real record
+            // so the mock resolves to its record + town hall exactly like a live villager.
+            org.millenaire.common.village.VillagerRecord vr = qi.getCurrentVillager().getVillagerRecord(level);
+            if (vr != null) {
+               villager = org.millenaire.common.entity.MillVillager.createMockVillager(vr, level);
+               if (villager != null) {
+                  villager.setVillagerId(vr.getVillagerId());
+                  villager.housePoint = vr.getHousePos();
+                  villager.townHallPoint = vr.getTownHallPos();
+               }
+            }
+         }
+         if (villager == null) {
+            playerLog("QUEST village=" + safeName(th) + " quest=" + questKey
+               + " SKIP: current-step villager has no loadable body");
+            return;
+         }
+         String res = null;
+         Throwable completeError = null;
+         try {
+            res = qi.completeStep(fakePlayer, villager);
+         } catch (Throwable t) {
+            // completeStep mutates the quest state (currentStep++, rewards transferred) BEFORE its final
+            // client-notify (sendQuestInstancePacket / sendProfilePacket). In the headless sim the fake
+            // player isn't resolvable via world.getPlayerByUUID, so that notify can throw — but the quest
+            // HAS already advanced server-side. Detect the real before->after change rather than treating
+            // the cosmetic notify failure as a quest failure.
+            completeError = t;
+            record("player-quest-complete", t);
+         }
+         int stepAfter = qi.currentStep;
+         int repAfter = th.getReputation(fakePlayer);
+         boolean stillActive = profile.questInstances.contains(qi);
+         boolean advanced = stepAfter != stepBefore || !stillActive;
+         if (advanced) {
+            playerQuestsDone++;
+            String result = stillActive ? "advanced" : "completed";
+            playerLog("QUEST village=" + safeName(th) + " quest=" + questKey + " step=" + stepBefore
+               + (stepAfter != stepBefore ? "->" + stepAfter : "") + " result=" + result
+               + " reputation " + repBefore + "->" + repAfter
+               + (completeError != null ? " (server-side advance OK; client-notify skipped: " + completeError.getClass().getSimpleName() + ")" : "")
+               + " reward='" + (res == null ? "" : res.replace("\n", " ").replace("<ret>", " ")) + "'");
+         } else {
+            playerLog("QUEST village=" + safeName(th) + " quest=" + questKey + " step=" + stepBefore
+               + " result=no-advance reputation " + repBefore + "->" + repAfter
+               + (completeError != null ? " ERROR: " + completeError : ""));
+         }
+      } catch (Throwable t) {
+         record("player-quest", t);
+         playerLog("QUEST village=" + safeName(th) + " ERROR: " + t);
+      }
+   }
+
+   /**
+    * Returns an existing quest instance for the player that involves this village, or seeds a fresh one.
+    * Seeding: find a quest whose first {@code definevillager} type matches a villager record in this town
+    * hall, build the starting {@link QuestInstanceVillager}, and register a {@link QuestInstance} on the
+    * profile (mirrors the registration {@code Quest.testQuest} performs on a successful roll).
+    */
+   private QuestInstance findOrSeedQuest(MillWorldData mw, Building th, UserProfile profile) {
+      // (1) Reuse any quest the player already has whose current villager belongs to this village.
+      for (QuestInstance qi : new ArrayList<>(profile.questInstances)) {
+         try {
+            if (qi.getCurrentVillager() != null && th.getPos().equals(qi.getCurrentVillager().townHall)) {
+               return qi;
+            }
+         } catch (Throwable ignored) {
+         }
+      }
+      // (2) Seed directly: any quest whose starting villager type is present in this village's records.
+      //     (We deliberately do NOT call Quest.testQuest here: it gates on reputation via the world-resolved
+      //     player — which is null for the headless fake player — and rolls a probability. Direct seeding is
+      //     deterministic and exercises the same QuestInstance + completeStep path.)
+      for (org.millenaire.common.quest.Quest q : org.millenaire.common.quest.Quest.quests.values()) {
+         try {
+            if (q.steps.isEmpty() || q.villagersOrdered.isEmpty()) {
+               continue;
+            }
+            org.millenaire.common.quest.QuestVillager startVillager = q.villagersOrdered.get(0);
+            // A quest is seedable here only if EVERY required villager can be resolved from THIS village's
+            // records (multi-villager quests reference other villages; skip those for a clean single-village seed).
+            if (q.villagersOrdered.size() != 1) {
+               continue;
+            }
+            // The map key must match the first step's villager reference (QuestVillager.key is package-private,
+            // but QuestStep.villager — set to that same key — is public and is what getCurrentVillager() looks up).
+            String startKey = q.steps.get(0).villager;
+            if (startKey == null) {
+               continue;
+            }
+            for (org.millenaire.common.village.VillagerRecord vr : new ArrayList<>(th.getAllVillagerRecords())) {
+               if (startVillager.testVillager(profile, vr)) {
+                  HashMap<String, org.millenaire.common.quest.QuestInstanceVillager> villagers = new HashMap<>();
+                  villagers.put(startKey,
+                     new org.millenaire.common.quest.QuestInstanceVillager(mw, th.getPos(), vr.getVillagerId(), vr));
+                  QuestInstance qi = new QuestInstance(mw, q, profile, villagers, level.getOverworldClockTime());
+                  profile.questInstances.add(qi);
+                  for (org.millenaire.common.quest.QuestInstanceVillager qiv : villagers.values()) {
+                     profile.villagersInQuests.put(qiv.id, qi);
+                  }
+                  playerLog("QUEST seeded directly: quest=" + q.key + " startVillager='" + vr.getName()
+                     + "' (id=" + vr.getVillagerId() + ")");
+                  return qi;
+               }
+            }
+         } catch (Throwable ignored) {
+         }
+      }
+      return null;
+   }
+
+   /** First building in the village (incl. the town hall) that has a non-empty selling list for the player. */
+   private Building findSellingShop(MillWorldData mw, Building th) {
+      Point thp = th.getPos();
+      for (Building b : new ArrayList<>(mw.allBuildings())) {
+         try {
+            if (b == null || b.getPos() == null || b.getPos().distanceTo(thp) >= 80) {
+               continue;
+            }
+            if (b.getTownHall() == null) {
+               continue;
+            }
+            b.computeShopGoods(fakePlayer);
+            Set<TradeGood> selling = b.getSellingGoods(fakePlayer);
+            if (selling != null && !selling.isEmpty()) {
+               return b;
+            }
+         } catch (Throwable ignored) {
+         }
+      }
+      return null;
+   }
+
+   /** Picks the first selling good the player can afford (price > 0 and <= current money). */
+   private TradeGood pickAffordable(Building shop, Set<TradeGood> selling) {
+      if (selling == null || selling.isEmpty()) {
+         return null;
+      }
+      int money;
+      try {
+         money = VillageInventory.countMoney(fakePlayer.getInventory());
+      } catch (Throwable t) {
+         money = 0;
+      }
+      TradeGood firstPriced = null;
+      for (TradeGood g : selling) {
+         int price = shop.getSellingPrice(g, fakePlayer);
+         if (price <= 0) {
+            continue;
+         }
+         if (firstPriced == null) {
+            firstPriced = g;
+         }
+         if (price <= money) {
+            return g;
+         }
+      }
+      // None affordable at qty? Still return a priced good; executeTrade clamps qty to what's affordable.
+      return firstPriced;
+   }
+
+   /**
+    * Moves the simulated player (server-side ServerPlayer) to a position. Snaps both current + previous
+    * pos so the move is clean. Forces the chunk loaded first so the surface/villagers are present.
+    */
+   private void movePlayer(double x, double y, double z) {
+      try {
+         level.getChunk(((int) x) >> 4, ((int) z) >> 4);
+         fakePlayer.snapTo(x, y, z, fakePlayer.getYRot(), fakePlayer.getXRot());
+      } catch (Throwable t) {
+         record("player-move", t);
+      }
+   }
+
+   private void playerLog(String s) {
+      playerInteractionLog.add(s);
+      MillLog.major(null, TAG + " PLAYER " + s);
    }
 
    // ============================ VILLAGE WAR ============================
@@ -1137,6 +1566,10 @@ public final class MillSimObserver {
             + " buildingCompletions=" + buildingsCompletedEvents
             + " taskChanges=" + taskChangeEvents + " blockActions=" + blockActionEvents
             + " tradesObserved=" + tradesObserved);
+         log("SIM SUMMARY PLAYER: villagesVisited=" + playerVillagesVisited
+            + " tradesDone=" + playerTradesDone + " questsDone=" + playerQuestsDone
+            + " moneySpent=" + playerMoneySpent + " moneyEarned=" + playerMoneyEarned
+            + " interactionLines=" + playerInteractionLog.size());
          log("SIM SUMMARY WAR: " + warOutcome + " | attacker=" + (attacker != null ? safeName(attacker) : "-")
             + " defender=" + (defender != null ? safeName(defender) : "-")
             + " raidParty=" + raidParty.size() + " hits=" + warHits

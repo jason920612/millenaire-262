@@ -23,6 +23,10 @@ loom {
 		}
 	}
 
+	// Widens FishingHook private bite-FSM members (nibble/biting/...) so the villager-fishing mixin + self-test
+	// can drive the full vanilla bobber animation. MUST match the fabric repo (kept in sync manually — build.gradle
+	// is NOT covered by the src/ sync, which is why CI broke: nibble/biting reported "has private access").
+	accessWidenerPath = file("src/main/resources/millenaire.accesswidener")
 }
 
 dependencies {

@@ -17,7 +17,10 @@ import org.millenaire.common.forge.MillRegistry;
  * Decorative full block carrying its 1.12 metadata variants as a {@link EnumProperty}.
  * Per-variant map colour is supplied through the {@code mapColor(Function)} property.
  * The old item-metadata machinery (getMetaFromState/getSubBlocks/IMetaBlockName) is gone;
- * variants are exposed as separate creative-tab entries by the item layer (TODO: items).
+ * each variant is exposed as its own creative-tab entry by the item layer — the BlockItem
+ * ({@code ItemBlockMeta}) implements {@code IVariantCreativeItem} and emits one stack per variant
+ * (all except COOKEDBRICK, matching 1.12 {@code getSubBlocks}), the variant carried on the
+ * {@code minecraft:block_state} data component so placement reproduces it.
  */
 public class BlockDecorativeStone extends Block {
    public static final EnumProperty<EnumType> VARIANT = EnumProperty.create("variant", EnumType.class);

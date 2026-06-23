@@ -16,8 +16,10 @@ import org.millenaire.common.forge.MillRegistry;
 /**
  * Variant stone slab. Top/bottom/double are handled natively by {@link SlabBlock}'s
  * {@code TYPE} property; the 1.12 metadata variant becomes a {@link #VARIANT} property
- * layered on top. (Item-side per-variant selection is a follow-up; placement defaults
- * to MUDBRICK — see [[port-state]] TODO on item metadata removal.)
+ * layered on top. Item-side per-variant selection is handled by the BlockItem
+ * ({@code ItemSlabMeta}), which implements {@code IVariantCreativeItem} and emits one creative-tab
+ * stack per slab-capable variant (MUDBRICK + COOKEDBRICK, matching 1.12 {@code getSubBlocks}'s
+ * {@code hasSlab()} filter), the variant carried on the {@code minecraft:block_state} data component.
  */
 public class BlockSlabStone extends SlabBlock {
    public static final EnumProperty<BlockDecorativeStone.EnumType> VARIANT =

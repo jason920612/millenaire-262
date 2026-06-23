@@ -111,8 +111,18 @@ public final class MillRegistry {
 		int failed = 0;
 		for (Item item : REGISTERED_ITEMS) {
 			try {
-				output.accept(new net.minecraft.world.item.ItemStack(item));
-				added++;
+				// Variant blocks (decorative stone / stone slab) expand into one entry per 1.12 metadata
+				// variant (via IVariantCreativeItem), each carrying the variant on the BLOCK_STATE data
+				// component so placement reproduces it. Everything else adds a single default stack, as before.
+				if (item instanceof org.millenaire.common.item.IVariantCreativeItem variantItem) {
+					for (net.minecraft.world.item.ItemStack variantStack : variantItem.creativeVariants()) {
+						output.accept(variantStack);
+						added++;
+					}
+				} else {
+					output.accept(new net.minecraft.world.item.ItemStack(item));
+					added++;
+				}
 			} catch (Throwable t) {
 				failed++;
 				if (failed <= 3) {

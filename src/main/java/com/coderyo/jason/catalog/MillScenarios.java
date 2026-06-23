@@ -27,7 +27,7 @@ import org.millenaire.common.world.MillWorldData;
 /**
  * DYNAMIC scenario inventory: the catch-all that ENSURES every AI behaviour + interaction the mod has
  * (movement/nav, door open/close, swim, combat melee+ranged, trade, quest, reputation, sleep, the
- * task-op cycles mine/chop/farm/fish/shear/cane/construction, village raid/war) has a textualised
+ * task-op cycles mine/chop/farm/fish/shear/cane/construction, point-owned hand-off, village raid/war) has a textualised
  * harness check, and emits one greppable {@code ███ SCENARIO <name> OK/FAIL} line per behaviour.
  *
  * <h2>Don't rebuild what's covered; fill gaps</h2>
@@ -98,6 +98,7 @@ public final class MillScenarios {
       n += restate(sink, cov, "FARM", "O3 mature-only harvest+replant (H4 FARMCYCLE)");
       n += restate(sink, cov, "FISH", "O4 real bobber animation+FISHING loot, inline at GROWTH_END (H5 FISHCYCLE)");
       n += restate(sink, cov, "SHEAR", "O5 real Sheep.shear ready-only+milk (H6 SHEARCYCLE)");
+      n += restate(sink, cov, "HANDOFF", "point-owned task-state hand-off: B continues A's TaskPointStore progress (H8 HANDOFFCYCLE)");
       n += restate(sink, cov, "TRADE", "server buy/sell money-delta (step G)");
       n += restate(sink, cov, "INTERACT", "villager processInteract (step H)");
       n += restate(sink, cov, "MOVEMENT", "villager nav path-distance over growth window (metric 1)");

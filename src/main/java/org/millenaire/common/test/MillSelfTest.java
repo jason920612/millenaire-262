@@ -112,6 +112,10 @@ public final class MillSelfTest {
    // O5 entity gather: spawn ready + already-sheared sheep + a cow, REALLY shear (Sheep.shear) the ready ones, pick up
    // the dropped wool, skip the sheared one, and milk the cow. Synchronous like the chop/farm cycles.
    private static final int TICK_SHEAR_CYCLE = TICK_GROWTH_END + 99;
+   // Architecture key feature: point-owned task-state HAND-OFF. Villager A breaks a block partway, leaves; villager B
+   // arrives at the SAME pos, reads the SAME TaskPointStore progress (NOT reset to 0), and finishes the break. The
+   // finisher (B) collects the drop. Synchronous like the chop/farm cycles — runs at the GROWTH_END consolidation.
+   private static final int TICK_HANDOFF_CYCLE = TICK_GROWTH_END + 96;
    // O4 fishing: a real bobber must animate across many ticks. Set up + cast at FISH_START, drive/observe the
    // animation each tick through FISH_END (the mixin ticks the hook for us between harness ticks), verify at FISH_END.
    private static final int TICK_FISH_START = TICK_GROWTH_END + 100;
@@ -193,6 +197,9 @@ public final class MillSelfTest {
    private Boolean caneCycleOk = null;
    private Boolean shearCycleOk = null;
    private Boolean fishCycleOk = null;
+   // H8 HANDOFFCYCLE (point-owned task-state hand-off): villager A breaks a block PARTWAY, leaves; villager B
+   // arrives at the SAME pos and reads the SAME TaskPointStore progress (not reset) and finishes the break + pickup.
+   private Boolean handoffCycleOk = null;
    // COMPREHENSIVE catalog + scenario coverage (com.coderyo.jason.catalog.MillCatalog) result.
    private com.coderyo.jason.catalog.MillCatalog.Result catalogResult = null;
 
@@ -327,6 +334,9 @@ public final class MillSelfTest {
                if (farmCycleOk == null) {
                   stepFarmCycle();
                }
+               if (handoffCycleOk == null) {
+                  stepHandoffCycle();
+               }
                // FISH is multi-tick (real bobber animation), but its dedicated window (TICK_FISH_*) is LATER than
                // GROWTH_END and the co-hosted client halts before reaching it. Run the INLINE fishing cycle HERE — it
                // drives the real hook's tick() loop itself (mixin still animates) + forces the bite deterministically,
@@ -382,6 +392,11 @@ public final class MillSelfTest {
             case TICK_SHEAR_CYCLE -> {
                if (shearCycleOk == null) { // not already run at GROWTH_END (e.g. a full non-early-end run).
                   stepShearCycle();
+               }
+            }
+            case TICK_HANDOFF_CYCLE -> {
+               if (handoffCycleOk == null) {
+                  stepHandoffCycle();
                }
             }
             case TICK_FISH_START -> {
@@ -1903,6 +1918,198 @@ public final class MillSelfTest {
       return total;
    }
 
+   // ============================ STEP H8: point-owned task-state HAND-OFF ============================
+
+   /**
+    * Live evidence for the architecture's KEY feature: task progress lives on the {@link com.coderyo.jason.ops.TaskPointStore}
+    * POINT (keyed by dim+pos), NOT on the villager — so a DIFFERENT villager can continue a partially-done task. This
+    * mirrors the SIM-VALIDATED {@code opsim.py run_handoff} and the unit test ({@code getOrCreate} returns the same
+    * record), but proves it END-TO-END in the co-hosted client+server harness against REAL villagers + a REAL block.
+    *
+    * <p>Sequence: villager A breaks a stone block PARTWAY (a few {@code breakTick}s, so {@code 0 < breakProgress < 1}
+    * and the block is STILL present) → capture {@code progressAfterA}. A is moved far away (removed from the equation;
+    * the POINT progress must persist). Villager B (a freshly-spawned, distinct villager) is placed at the SAME pos and
+    * its FIRST {@code peek} of the point must read {@code == progressAfterA} (proving point-owned hand-off, NOT a
+    * per-villager reset to 0). B then drives {@code breakTick} to COMPLETE and {@code pickupTick}; the block must break
+    * and B (the FINISHER) must collect the drop. Greppable as {@code [MILLTEST] H8 HANDOFFCYCLE ...} ending
+    * {@code ███ SCENARIO HANDOFF OK} (or FAIL with the reason).
+    */
+   private void stepHandoffCycle() {
+      MillVillager a = null;
+      MillVillager b = null;
+      BlockPos source = null;
+      try {
+         List<MillVillager> villagers = level.getEntitiesOfClass(
+            MillVillager.class, new AABB(-30000, level.getMinY(), -30000, 30000, level.getMaxY(), 30000), v -> v.isAlive());
+         if (villagers.isEmpty()) {
+            log("H8 HANDOFFCYCLE SKIP: no MillVillager in world");
+            return;
+         }
+         // B is the FINISHER — it collects the drop into its Mill inventory (addToInv → updateVillagerRecord), which
+         // needs a real world-registered VillagerRecord. So B is the existing world villager (has a record) and A (the
+         // STARTER, which only breakTicks and never writes inventory) is the freshly-spawned distinct mock. This keeps
+         // the two villagers genuinely distinct while letting the finisher's inventory write succeed.
+         b = villagers.get(0);
+         a = spawnDistinctVillager();
+         if (a == null) {
+            log("H8 HANDOFFCYCLE SKIP: could not spawn a distinct villager A");
+            return;
+         }
+
+         // A clear pad: a stone source one block across from B's home pos, with solid support beneath. We position A
+         // adjacent (in reach) to start the break; B is moved adjacent later to finish it.
+         BlockPos aPos = b.blockPosition();
+         source = aPos.offset(1, 0, 0);
+         level.setBlock(source.below(), net.minecraft.world.level.block.Blocks.STONE.defaultBlockState(), 3);
+         level.setBlock(source, net.minecraft.world.level.block.Blocks.STONE.defaultBlockState(), 3);
+
+         // Both get a pickaxe via the strict ensureTool path so the break really progresses + drops on completion.
+         a.heldItem = new ItemStack(net.minecraft.world.item.Items.IRON_PICKAXE);
+         b.heldItem = new ItemStack(net.minecraft.world.item.Items.IRON_PICKAXE);
+         boolean toolA = com.coderyo.jason.ops.VillagerWorldOps.ensureTool(a, com.coderyo.jason.ops.VillagerWorldOps.ToolKind.PICKAXE);
+         boolean toolB = com.coderyo.jason.ops.VillagerWorldOps.ensureTool(b, com.coderyo.jason.ops.VillagerWorldOps.ToolKind.PICKAXE);
+
+         // Make sure no stale record exists for this point (clean baseline).
+         com.coderyo.jason.ops.TaskPointStore.get().clear(level, source);
+
+         // --- A breaks PARTWAY: a few ticks, stopping while 0 < progress < 1 AND the block is still present. ---
+         a.setPos(aPos.getX() + 0.5, aPos.getY(), aPos.getZ() + 0.5);
+         int aTicks = 0;
+         com.coderyo.jason.ops.OpState aState = null;
+         // Drive A for a bounded number of ticks but STOP before completion so a real hand-off is possible.
+         while (aTicks < 5) {
+            aState = com.coderyo.jason.ops.VillagerWorldOps.breakTick(a, source);
+            aTicks++;
+            if (aState != com.coderyo.jason.ops.OpState.IN_PROGRESS) {
+               break; // APPROACHING/BLOCKED/COMPLETE — handled below.
+            }
+            var midP = com.coderyo.jason.ops.TaskPointStore.get().peek(level, source);
+            // Stop once we have meaningful-but-incomplete progress, leaving the block present for B to finish.
+            if (midP != null && midP.breakProgress >= 0.10f) {
+               break;
+            }
+         }
+         var progA = com.coderyo.jason.ops.TaskPointStore.get().peek(level, source);
+         float progressAfterA = progA != null ? progA.breakProgress : -1.0f;
+         boolean blockStillPresentAfterA = !level.getBlockState(source).isAir();
+         boolean partial = progressAfterA > 0.0f && progressAfterA < 1.0f && blockStillPresentAfterA;
+         log("H8 HANDOFFCYCLE A(id=" + a.getId() + ") broke partway in " + aTicks + " ticks: progressAfterA="
+            + String.format(java.util.Locale.ROOT, "%.3f", progressAfterA) + " state=" + aState
+            + " blockStillPresent=" + blockStillPresentAfterA);
+
+         // --- Remove A from the equation: move it FAR away. The POINT progress must persist (it lives on the store,
+         //     not on A), so this is the real hand-off precondition. ---
+         a.setPos(aPos.getX() + 256.5, aPos.getY(), aPos.getZ() + 256.5);
+         var progAfterAleft = com.coderyo.jason.ops.TaskPointStore.get().peek(level, source);
+         boolean progressPersisted = progAfterAleft != null
+            && Math.abs(progAfterAleft.breakProgress - progressAfterA) < 1.0e-6f;
+
+         // --- B arrives at the SAME pos and reads the SAME point progress (its FIRST peek == progressAfterA). ---
+         b.setPos(source.getX() - 0.5, source.getY(), source.getZ() + 0.5); // adjacent to the source (in reach)
+         var bSees = com.coderyo.jason.ops.TaskPointStore.get().peek(level, source);
+         float bSawProgress = bSees != null ? bSees.breakProgress : -1.0f;
+         boolean bSawSame = bSees != null && Math.abs(bSawProgress - progressAfterA) < 1.0e-6f;
+         log("H8 HANDOFFCYCLE B(id=" + b.getId() + ") arrived at SAME pos, FIRST peek progress="
+            + String.format(java.util.Locale.ROOT, "%.3f", bSawProgress) + " (A left it at "
+            + String.format(java.util.Locale.ROOT, "%.3f", progressAfterA) + ") -> point-owned="
+            + bSawSame + " progressPersistedWhileNoVillager=" + progressPersisted);
+
+         // --- B continues breakTick FROM A's progress to COMPLETE (NOT restarting from 0). ---
+         com.coderyo.jason.ops.OpState bState = null;
+         int bTicks = 0;
+         while (bTicks++ < 2000) {
+            bState = com.coderyo.jason.ops.VillagerWorldOps.breakTick(b, source);
+            if (bState != com.coderyo.jason.ops.OpState.IN_PROGRESS) {
+               break;
+            }
+         }
+         boolean blockBroke = level.getBlockState(source).isAir() && bState == com.coderyo.jason.ops.OpState.COMPLETE;
+         log("H8 HANDOFFCYCLE B finished break in " + bTicks + " ticks: state=" + bState + " blockNowAir="
+            + level.getBlockState(source).isAir());
+
+         // --- B (the FINISHER) collects the drop. Drive pickupTick, nudging B onto the drop (headless: no real path). ---
+         int beforeCobbleB = b.countInv(net.minecraft.world.level.block.Blocks.COBBLESTONE.asItem());
+         com.coderyo.jason.ops.OpState pst = null;
+         int pTicks = 0;
+         while (pTicks++ < 200) {
+            pst = com.coderyo.jason.ops.VillagerWorldOps.pickupTick(b, source);
+            if (pst == com.coderyo.jason.ops.OpState.COMPLETE) {
+               break;
+            }
+            var drops = level.getEntitiesOfClass(
+               net.minecraft.world.entity.item.ItemEntity.class, new AABB(source).inflate(5.0));
+            if (!drops.isEmpty()) {
+               b.setPos(drops.get(0).getX(), drops.get(0).getY(), drops.get(0).getZ());
+            }
+         }
+         int afterCobbleB = b.countInv(net.minecraft.world.level.block.Blocks.COBBLESTONE.asItem());
+         boolean bCollected = afterCobbleB > beforeCobbleB;
+         log("H8 HANDOFFCYCLE B pickup state=" + pst + " cobblestoneInInv(B) " + beforeCobbleB + " -> " + afterCobbleB);
+
+         handoffCycleOk = toolA && toolB && partial && progressPersisted && bSawSame && blockBroke && bCollected
+            && a.getId() != b.getId();
+         log("H8 HANDOFFCYCLE result: progressAfterA="
+            + String.format(java.util.Locale.ROOT, "%.3f", progressAfterA)
+            + " B-saw-same=" + bSawSame + " block-broke=" + blockBroke + " B-collected=" + bCollected
+            + " distinctVillagers=" + (a.getId() != b.getId()));
+         log("H8 HANDOFFCYCLE " + (handoffCycleOk ? "OK" : "PARTIAL")
+            + ": tools=" + (toolA && toolB) + " A-partial=" + partial + " progressPersisted=" + progressPersisted
+            + " B-continuedNotReset=" + bSawSame + " broke=" + blockBroke + " finisherCollected=" + bCollected);
+      } catch (Throwable t) {
+         handoffCycleOk = false;
+         recordException("H8:handoffcycle", t);
+         log("H8 HANDOFFCYCLE FAIL: " + t);
+      } finally {
+         // Clean up the scratch block + the point record, and discard the spawned mock A (B is the real world
+         // villager — leave it alone so later steps still find it).
+         try {
+            if (source != null) {
+               com.coderyo.jason.ops.TaskPointStore.get().clear(level, source);
+               level.removeBlock(source, false);
+               level.removeBlock(source.below(), false);
+            }
+         } catch (Throwable ignored) {
+         }
+         if (a != null) {
+            try {
+               a.discard();
+            } catch (Throwable ignored) {
+            }
+         }
+      }
+   }
+
+   /**
+    * Spawn a fresh, distinct mock {@link MillVillager} into the world for the hand-off test's STARTER villager A (a
+    * different entity id from the world villager B). Mirrors the scenario-inventory spawn path: first culture/type that yields a
+    * {@link org.millenaire.common.village.VillagerRecord} → {@code createMockVillager} → {@code addFreshEntity}.
+    */
+   private MillVillager spawnDistinctVillager() {
+      MillWorldData mw = Mill.getMillWorld(level);
+      if (mw == null) {
+         return null;
+      }
+      for (Culture c : Culture.ListCultures) {
+         for (org.millenaire.common.culture.VillagerType vt : c.listVillagerTypes) {
+            try {
+               org.millenaire.common.village.VillagerRecord rec =
+                  org.millenaire.common.village.VillagerRecord.createVillagerRecord(
+                     c, vt.key, mw, null, null, null, null, -1L, true);
+               if (rec == null) {
+                  continue;
+               }
+               MillVillager v = MillVillager.createMockVillager(rec, level);
+               if (v != null) {
+                  level.addFreshEntity(v);
+                  return v;
+               }
+            } catch (Throwable ignored) {
+            }
+         }
+      }
+      return null;
+   }
+
    // ============================ STEP H5: player-like fishing cycle (O4) ============================
 
    /**
@@ -2297,6 +2504,7 @@ public final class MillSelfTest {
             .put("FARM", farmCycleOk)
             .put("FISH", fishCycleOk)
             .put("SHEAR", shearCycleOk)
+            .put("HANDOFF", handoffCycleOk)
             .put("TRADE", tradeOk)
             .put("INTERACT", interactOk)
             // Movement/goals: treat as covered+OK if the metrics ran (they always do over the growth window).

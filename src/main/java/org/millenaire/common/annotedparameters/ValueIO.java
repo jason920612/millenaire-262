@@ -17,6 +17,7 @@ import org.millenaire.common.entity.VillagerConfig;
 import org.millenaire.common.goal.Goal;
 import org.millenaire.common.item.InvItem;
 import org.millenaire.common.utilities.BlockStateUtilities;
+import org.millenaire.common.utilities.MillCrash;
 import org.millenaire.common.utilities.MillLog;
 
 public abstract class ValueIO {
@@ -31,7 +32,17 @@ public abstract class ValueIO {
    public abstract void readValue(Object var1, Field var2, String var3) throws Exception;
 
    public void readValueCulture(Culture culture, Object targetClass, Field field, String value) throws Exception {
-      MillLog.error(this, "Trying to use readValueCulture but it is not implemented.");
+      // Unreachable in correct operation: AnnotedParameter dispatches here ONLY when useCulture()==true, and
+      // every ValueIO that returns useCulture()==true (the CultureValueIO subclasses) overrides this method.
+      // Reaching the base means a ValueIO returned useCulture()==true but forgot to override readValueCulture
+      // — a programming bug that the old MillLog.error swallowed (it logged then returned, leaving the field
+      // unread). Fail-fast (no silent degradation) so the misconfigured type + field surface loudly.
+      throw MillCrash.fail(
+         "ValueIO",
+         this.getClass().getName() + " returns useCulture()=true but does not override readValueCulture (field '"
+            + (field != null ? field.getName() : "?") + "', value '" + value + "', culture '"
+            + (culture != null ? culture.key : "?") + "')"
+      );
    }
 
    public boolean skipWritingValue(Object value) {

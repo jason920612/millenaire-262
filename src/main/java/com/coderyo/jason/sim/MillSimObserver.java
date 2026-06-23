@@ -287,25 +287,36 @@ public final class MillSimObserver {
          // far-apart points per culture give each its own buildable lane (and don't stack). Natural villages
          // in the force-loaded area remain the robust fallback if a point's terrain can't host the centre.
          int x = VILLAGE_ORIGIN + idx * VILLAGE_SPACING;
-         int z = VILLAGE_ORIGIN;
          try {
-            int ccx = x >> 4;
-            int ccz = z >> 4;
-            for (int dcx = -2; dcx <= 2; dcx++) {
-               for (int dcz = -2; dcz <= 2; dcz++) {
-                  level.getChunk(ccx + dcx, ccz + dcz);
+            // Try several candidate Z offsets per culture: a fixed point often can't host the centre building
+            // on arbitrary terrain (findBuildingLocation fails). Scanning a few spots until one places gives a
+            // high success rate so each wanted culture is reliably observed (not left to whatever spawns naturally).
+            boolean result = false;
+            int placedZ = VILLAGE_ORIGIN;
+            for (int zoff : new int[]{0, 400, -400, 800, -800, 1200, -1200}) {
+               int z = VILLAGE_ORIGIN + zoff;
+               int ccx = x >> 4;
+               int ccz = z >> 4;
+               for (int dcx = -2; dcx <= 2; dcx++) {
+                  for (int dcz = -2; dcz <= 2; dcz++) {
+                     level.getChunk(ccx + dcx, ccz + dcz);
+                  }
+               }
+               WorldGenVillage gen = new WorldGenVillage();
+               if (gen.generateVillageAtPoint(
+                     level, MillRandom.random, x, 0, z, fakePlayer, false, true, false, 0, vtype, null, null, 1.0F)) {
+                  result = true;
+                  placedZ = z;
+                  break;
                }
             }
-            WorldGenVillage gen = new WorldGenVillage();
-            boolean result = gen.generateVillageAtPoint(
-               level, MillRandom.random, x, 0, z, fakePlayer, false, true, false, 0, vtype, null, null, 1.0F);
             villageByCulture.put(culture.key, result);
             if (result) {
-               villagePoints.add(new Point(x, 0, z));
+               villagePoints.add(new Point(x, 0, placedZ));
                placed++;
             }
-            log("villagegen[" + culture.key + "] " + (result ? "OK" : "FAIL") + ": type=" + vtype.key
-               + " at " + x + "/" + z);
+            log("villagegen[" + culture.key + "] " + (result ? "OK" : "FAIL (tried 7 candidate spots)")
+               + ": type=" + vtype.key + " at " + x + "/" + placedZ);
          } catch (Throwable t) {
             villageByCulture.put(culture.key, false);
             record("villagegen:" + culture.key, t);

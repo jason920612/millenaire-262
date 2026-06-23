@@ -96,6 +96,20 @@ public final class VillagerWorldOps {
       // Player-like swing.
       v.swing(InteractionHand.MAIN_HAND);
 
+      // 0-HARDNESS guard (crops, tall grass, scaffolding, sugar cane, …). Vanilla {@code getDestroyProgress} is
+      // {@code speed / hardness / divisor}; at hardness 0 that is a division by zero → +Infinity → the block breaks
+      // in a SINGLE tick (a ripe wheat crop pops instantly when a player hits it). The pure helpers above already
+      // return 0 for {@code hardness <= 0} to avoid a NaN/Infinity leaking into the math, so without this guard a
+      // 0-hardness block would accumulate 0 progress forever (never break). Mirror vanilla: break it this tick.
+      // (The sim's {@code break_tick}: {@code if h==0: break_progress=1.0}.)
+      float hardness0 = state.getDestroySpeed(level, pos);
+      if (hardness0 == 0.0f) {
+         doBreak(v, pos, state);
+         clearCracks(v, pos);
+         TaskPointStore.get().clear(level, pos);
+         return OpState.COMPLETE;
+      }
+
       TaskPointStore.Progress progress = TaskPointStore.get().getOrCreate(level, pos);
       float perTick = destroyProgressPerTick(v, pos);
       float total = progress.advance(perTick);

@@ -78,6 +78,7 @@ public final class MillSelfTest {
    private static final int TICK_INTERACT = TICK_GROWTH_END + 80;
    private static final int TICK_MINE_CYCLE = TICK_GROWTH_END + 90;
    private static final int TICK_CHOP_CYCLE = TICK_GROWTH_END + 95;
+   private static final int TICK_FARM_CYCLE = TICK_GROWTH_END + 98;
    private static final int TICK_SUMMARY = TICK_GROWTH_END + 100;
    private static final int MAX_TICK_GUARD = 6000 + TICK_GROWTH_END; // absolute safety net
 
@@ -131,6 +132,7 @@ public final class MillSelfTest {
    private String interactDetail = "not run";
    private Boolean mineCycleOk = null;
    private Boolean chopCycleOk = null;
+   private Boolean farmCycleOk = null;
    private final Map<String, Integer> distinctExceptions = new HashMap<>();
 
    // --- Movement tracking (per villager, keyed by stable getVillagerId) ---
@@ -224,6 +226,7 @@ public final class MillSelfTest {
             case TICK_INTERACT -> stepVillagerInteraction();
             case TICK_MINE_CYCLE -> stepMineCycle();
             case TICK_CHOP_CYCLE -> stepChopCycle();
+            case TICK_FARM_CYCLE -> stepFarmCycle();
             case TICK_SUMMARY -> {
                stepSummary();
                stopServer();
@@ -1275,6 +1278,142 @@ public final class MillSelfTest {
       return best;
    }
 
+   // ============================ STEP H4: player-like farm cycle (O3) ============================
+
+   /**
+    * Live evidence for the O3 player-like farm refactor: lay a row of wheat crops next to a real villager — most
+    * RIPE (age 7), one IMMATURE (age 2) — equip a hoe, and drive the {@link com.coderyo.jason.ops.VillagerWorldOps}
+    * primitives the migrated {@link org.millenaire.common.goal.generic.GoalGenericHarvestCrop} now calls: for each
+    * MATURE crop, {@code breakTick} (0-hardness → instant break this tick, real wheat+seed drops) → {@code pickupTick}
+    * (walk to each drop) → AUTO-REPLANT a fresh age-0 crop in place. The IMMATURE crop must be SKIPPED (left to grow).
+    * Mirrors the Python sim's {@code run_farm}. Each phase greppable as {@code [MILLTEST] FARMCYCLE ...}.
+    */
+   private void stepFarmCycle() {
+      try {
+         List<MillVillager> villagers = level.getEntitiesOfClass(
+            MillVillager.class, new AABB(-30000, level.getMinY(), -30000, 30000, level.getMaxY(), 30000), v -> v.isAlive());
+         if (villagers.isEmpty()) {
+            log("H4 FARMCYCLE SKIP: no MillVillager in world");
+            return;
+         }
+         MillVillager v = villagers.get(0);
+
+         net.minecraft.world.level.block.CropBlock wheat = (net.minecraft.world.level.block.CropBlock) net.minecraft.world.level.block.Blocks.WHEAT;
+         int ripeAge = wheat.getMaxAge();        // 7
+         int immatureAge = 2;
+
+         // Build a flat farm pad: farmland row at vPos.y-1, crops at vPos.y. 5 crops; index 0 is immature.
+         BlockPos vPos = v.blockPosition();
+         int row = 5;
+         BlockPos[] cropPos = new BlockPos[row];
+         for (int i = 0; i < row; i++) {
+            BlockPos crop = vPos.offset(2, 0, i - 2); // a row beside the villager, within reach.
+            cropPos[i] = crop;
+            // Clear above, place farmland below, plant the crop.
+            level.setBlock(crop.above(), net.minecraft.world.level.block.Blocks.AIR.defaultBlockState(), 3);
+            level.setBlock(crop.below(), net.minecraft.world.level.block.Blocks.FARMLAND.defaultBlockState(), 3);
+            int age = (i == 0) ? immatureAge : ripeAge;
+            level.setBlock(crop, wheat.getStateForAge(age), 3);
+         }
+         log("H4 FARMCYCLE laid " + row + " wheat crops (1 immature age=" + immatureAge + ", " + (row - 1) + " ripe age=" + ripeAge + ")");
+
+         // Equip a hoe (the harvest goal's travelling tool) and seed the villager's stock so the replant can consume.
+         v.heldItem = new ItemStack(net.minecraft.world.item.Items.IRON_HOE);
+         v.addToInv(net.minecraft.world.item.Items.WHEAT_SEEDS, 16);
+         int seedsBefore = v.countInv(net.minecraft.world.item.Items.WHEAT_SEEDS, 0);
+         int wheatBefore = v.countInv(net.minecraft.world.item.Items.WHEAT, 0);
+
+         int harvested = 0;
+         int replanted = 0;
+         int skippedImmature = 0;
+
+         for (int i = 0; i < row; i++) {
+            BlockPos crop = cropPos[i];
+            net.minecraft.world.level.block.state.BlockState state = level.getBlockState(crop);
+            boolean ripe = state.getBlock() == wheat && wheat.getAge(state) >= ripeAge;
+            if (!ripe) {
+               skippedImmature++;
+               continue; // MATURE-only: immature crop is left to grow (sim: skip age < max).
+            }
+
+            // Nudge the villager adjacent so the reach-gated break/pickup fire in the synchronous harness loop.
+            v.setPos(crop.getX() + 0.5, crop.getY(), crop.getZ() + 1.2);
+
+            // BREAK: a 0-hardness ripe crop must break in a SINGLE breakTick (the 0-hardness guard).
+            com.coderyo.jason.ops.OpState st = com.coderyo.jason.ops.VillagerWorldOps.breakTick(v, crop);
+            int guard = 0;
+            while (st != com.coderyo.jason.ops.OpState.COMPLETE && st != com.coderyo.jason.ops.OpState.BLOCKED && guard++ < 50) {
+               if (st == com.coderyo.jason.ops.OpState.APPROACHING) {
+                  v.setPos(crop.getX() + 0.5, crop.getY(), crop.getZ() + 1.2);
+               }
+               st = com.coderyo.jason.ops.VillagerWorldOps.breakTick(v, crop);
+            }
+            boolean brokeToAir = level.getBlockState(crop).isAir();
+            log("H4 FARMCYCLE crop[" + i + "] break state=" + st + " after " + guard + " extra ticks, nowAir=" + brokeToAir);
+            if (st != com.coderyo.jason.ops.OpState.COMPLETE) {
+               continue;
+            }
+            harvested++;
+
+            // PICKUP: walk to each real wheat/seed drop and collect it.
+            int pg = 0;
+            com.coderyo.jason.ops.OpState pst = com.coderyo.jason.ops.VillagerWorldOps.pickupTick(v, crop);
+            while (pst != com.coderyo.jason.ops.OpState.COMPLETE && pg++ < 100) {
+               var d = level.getEntitiesOfClass(net.minecraft.world.entity.item.ItemEntity.class, new AABB(crop).inflate(5.0));
+               if (!d.isEmpty()) {
+                  v.setPos(d.get(0).getX(), d.get(0).getY(), d.get(0).getZ());
+               }
+               pst = com.coderyo.jason.ops.VillagerWorldOps.pickupTick(v, crop);
+            }
+
+            // AUTO-REPLANT: place a fresh age-0 crop, consuming one seed (mirrors the goal's replant()).
+            int taken = v.takeFromInv(net.minecraft.world.item.Items.WHEAT_SEEDS, 0, 1);
+            if (taken > 0 && level.getBlockState(crop).isAir()) {
+               v.setBlockstate(new Point(crop), wheat.defaultBlockState());
+               replanted++;
+            }
+         }
+
+         // Verify: only mature harvested; all harvested plots now hold a fresh age-0 crop; immature untouched.
+         int freshReplants = 0;
+         for (int i = 1; i < row; i++) { // index 0 is the immature one.
+            net.minecraft.world.level.block.state.BlockState s = level.getBlockState(cropPos[i]);
+            if (s.getBlock() == wheat && wheat.getAge(s) == 0) {
+               freshReplants++;
+            }
+         }
+         net.minecraft.world.level.block.state.BlockState immatureState = level.getBlockState(cropPos[0]);
+         boolean immatureUntouched = immatureState.getBlock() == wheat && wheat.getAge(immatureState) == immatureAge;
+         int seedsAfter = v.countInv(net.minecraft.world.item.Items.WHEAT_SEEDS, 0);
+         int wheatAfter = v.countInv(net.minecraft.world.item.Items.WHEAT, 0);
+
+         log("H4 FARMCYCLE result: harvested=" + harvested + " (expected " + (row - 1) + ")"
+            + " replanted=" + replanted + " freshAge0Crops=" + freshReplants
+            + " skippedImmature=" + skippedImmature + " immatureUntouched=" + immatureUntouched
+            + " seeds " + seedsBefore + "->" + seedsAfter + " (net " + (seedsAfter - seedsBefore)
+            + ", picked-up + replant) wheatInv " + wheatBefore + "->" + wheatAfter);
+
+         farmCycleOk = harvested == (row - 1)
+            && freshReplants == (row - 1)
+            && skippedImmature == 1
+            && immatureUntouched;
+         log("H4 FARMCYCLE " + (farmCycleOk ? "OK" : "PARTIAL")
+            + ": onlyMatureHarvested=" + (harvested == (row - 1) && skippedImmature == 1)
+            + " autoReplantedInPlace=" + (freshReplants == (row - 1))
+            + " immatureLeftAlone=" + immatureUntouched);
+
+         // Clean up the farm pad.
+         for (int i = 0; i < row; i++) {
+            level.removeBlock(cropPos[i], false);
+            level.removeBlock(cropPos[i].below(), false);
+         }
+      } catch (Throwable t) {
+         farmCycleOk = false;
+         recordException("H4:farmcycle", t);
+         log("H4 FARMCYCLE FAIL: " + t);
+      }
+   }
+
    // ============================ STEP I: summary + stop ============================
 
    private void stepSummary() {
@@ -1314,6 +1453,7 @@ public final class MillSelfTest {
       log("interaction: " + (interactOk == null ? "not run" : (interactOk ? "OK" : "FAIL")) + " (" + interactDetail + ")");
       log("mine cycle (O1 break+pickup+regrow): " + (mineCycleOk == null ? "not run" : (mineCycleOk ? "OK" : "PARTIAL/FAIL")));
       log("chop cycle (O2 whole-tree+leaves+scaffold+pickup+reclaim): " + (chopCycleOk == null ? "not run" : (chopCycleOk ? "OK" : "PARTIAL/FAIL")));
+      log("farm cycle (O3 only-mature harvest+pickup+auto-replant, immature skipped): " + (farmCycleOk == null ? "not run" : (farmCycleOk ? "OK" : "PARTIAL/FAIL")));
       log("distinct exception types seen: " + distinctExceptions.size());
       for (Map.Entry<String, Integer> e : distinctExceptions.entrySet()) {
          log("  exception x" + e.getValue() + ": " + e.getKey());

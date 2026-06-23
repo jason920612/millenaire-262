@@ -12,6 +12,7 @@ import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.InteractionHand;
 import net.minecraft.resources.Identifier;
 import net.minecraft.world.level.Level;
+import com.coderyo.jason.ops.VillagerWorldOps;
 import org.millenaire.common.annotedparameters.AnnotedParameter;
 import org.millenaire.common.annotedparameters.ConfigAnnotations;
 import org.millenaire.common.block.BlockGrapeVine;
@@ -20,7 +21,6 @@ import org.millenaire.common.forge.Mill;
 import org.millenaire.common.goal.Goal;
 import org.millenaire.common.item.InvItem;
 import org.millenaire.common.utilities.BlockItemUtilities;
-import org.millenaire.common.utilities.MillCommonUtilities;
 import org.millenaire.common.utilities.MillRandom;
 import org.millenaire.common.utilities.MillCrash;
 import org.millenaire.common.utilities.MillLog;
@@ -65,7 +65,9 @@ public class GoalGenericPlantCrop extends GoalGeneric {
 
    @Override
    public void applyDefaultSettings() {
-      this.duration = 2;
+      // Player-like planting is driven one tick at a time (ensureTool(HOE)/reach → till soil → place the age-0 crop
+      // consuming a seed), so the action re-enters each tick rather than the 1.12 fixed 2-tick countdown.
+      this.duration = 1;
       this.lookAtGoal = true;
       this.tags.add("tag_agriculture");
    }
@@ -142,62 +144,93 @@ public class GoalGenericPlantCrop extends GoalGeneric {
       }
    }
 
+   /**
+    * Player-like FIRST-planting of an empty tilled plot, driven one tick at a time (duration == 1). This goal keeps
+    * its 1.12 role: planting empty farmland; the harvest goal now AUTO-REPLANTS harvested plots in place
+    * (see {@link GoalGenericHarvestCrop}), so this fires only for plots with no crop yet.
+    *
+    * <p>Cycle (sim-faithful real place, not an instant fake):
+    * <ol>
+    *   <li>{@code ensureTool(HOE)} — strict: a planter tills with a hoe. If the villager has no hoe, stay in-goal
+    *       ({@code return false}) so {@code GoalGetTool} can pre-empt and fetch one rather than placing for free.</li>
+    *   <li>ensureReach the plot (ground-level, normally already in reach).</li>
+    *   <li>Consume one {@link #seed} from stock (or the building), then till the soil below to {@link #soilType}
+    *       via the real {@code place} primitive, and finally place the crop (age 0) on top. DoublePlant/grapevine
+    *       crops also get their upper half. This mirrors 1.12's setBlock sequence but as genuine player-like
+    *       placement (swing + place sound) rather than an instant silent setBlock.</li>
+    * </ol>
+    */
    @Override
    public boolean performAction(MillVillager villager) {
       Building dest = villager.getGoalBuildingDest();
-      if (dest == null) {
+      Point above = villager.getGoalDestPoint();
+      if (dest == null || above == null) {
          return true;
-      } else if (!this.isValidPlantingLocation(villager.level(), villager.getGoalDestPoint().getBelow())) {
+      } else if (!this.isValidPlantingLocation(villager.level(), above.getBelow())) {
          return true;
+      }
+
+      // Hoe is BEST-EFFORT, not strict: 1.12 planting never required a hoe (it directly setBlock'd the soil+crop), so
+      // gating planting on a hoe could deadlock villages without one. We equip a hoe if the villager has one (so the
+      // till is player-like), but proceed to plant regardless — preserving the 1.12 ability to plant bare-handed.
+      VillagerWorldOps.ensureTool(villager, VillagerWorldOps.ToolKind.HOE);
+
+      Point soil = above.getBelow();
+
+      // ensureReach (ground-level plot; normally already in reach). If still extending reach, keep going next tick.
+      if (!VillagerWorldOps.withinReach(villager, above.getBlockPos())
+         && VillagerWorldOps.ensureReach(villager, above.getBlockPos()) != com.coderyo.jason.ops.OpState.COMPLETE) {
+         return false;
+      }
+
+      // Consume the seed (villager stock first, then the building's goods) — 1.12 economy preserved.
+      if (this.seed != null) {
+         int taken = villager.takeFromInv(this.seed, 1);
+         if (taken == 0) {
+            dest.takeGoods(this.seed, 1);
+         }
+      }
+
+      // Till the soil below to the configured soil block via the real place primitive (consume/place + sound).
+      Block soilBlock = BuiltInRegistries.BLOCK.getValue(this.soilType);
+      if (soil.getBlock(villager.level()) != soilBlock) {
+         VillagerWorldOps.place(villager, soil.getBlockPos(), soilBlock.defaultBlockState());
+      }
+
+      // Place the crop (age 0) on top — real player-like placement.
+      if (!this.plantBlockState.isEmpty()) {
+         BlockState cropState = this.plantBlockState.get(MillRandom.randomInt(this.plantBlockState.size()));
+         VillagerWorldOps.place(villager, above.getBlockPos(), cropState);
+         if (cropState.getBlock() instanceof DoublePlantBlock) {
+            VillagerWorldOps.place(villager, above.getAbove().getBlockPos(),
+               cropState.setValue(DoublePlantBlock.HALF, DoubleBlockHalf.UPPER));
+         }
       } else {
-         if (this.seed != null) {
-            int taken = villager.takeFromInv(this.seed, 1);
-            if (taken == 0) {
-               dest.takeGoods(this.seed, 1);
-            }
+         Block cropBlock = BuiltInRegistries.BLOCK.getValue(this.cropType);
+         VillagerWorldOps.place(villager, above.getBlockPos(), cropBlock.defaultBlockState());
+         if (cropBlock instanceof DoublePlantBlock) {
+            // 26.2: the 1.12 upper-half meta (cropMeta | 8) is now the DoublePlantBlock.HALF=UPPER blockstate.
+            VillagerWorldOps.place(villager, above.getAbove().getBlockPos(),
+               cropBlock.defaultBlockState().setValue(DoublePlantBlock.HALF, DoubleBlockHalf.UPPER));
+         } else if (cropBlock instanceof BlockGrapeVine) {
+            // Grapevine upper half (1.12 meta | 8); place its default upper state.
+            villager.setBlockAndMetadata(above.getAbove(), cropBlock, getCropBlockMeta(this.cropType) | 8);
+         }
+      }
+
+      villager.swing(InteractionHand.MAIN_HAND);
+      if (this.isDestPossibleSpecific(villager, villager.getGoalBuildingDest())) {
+         try {
+            villager.setGoalInformation(this.getDestination(villager));
+         } catch (MillLog.MillenaireException destException) {
+            // FAIL-FAST: failing to recompute the plant destination left the villager's goal state stale
+            // (1.12 logged-and-continued). Surface the navigation corruption loudly.
+            throw MillCrash.fail("Goal", "failed to recompute plant-crop destination for " + villager + ": " + destException);
          }
 
-         Block soil = BuiltInRegistries.BLOCK.getValue(this.soilType);
-         if (villager.getGoalDestPoint().getBelow().getBlock(villager.level()) != soil) {
-            villager.setBlockAndMetadata(villager.getGoalDestPoint().getBelow(), soil, 0);
-         }
-
-         if (!this.plantBlockState.isEmpty()) {
-            BlockState cropState = this.plantBlockState.get(MillRandom.randomInt(this.plantBlockState.size()));
-            villager.setBlockstate(villager.getGoalDestPoint(), cropState);
-            if (cropState.getBlock() instanceof DoublePlantBlock) {
-               villager.setBlockstate(villager.getGoalDestPoint().getAbove(), cropState.setValue(DoublePlantBlock.HALF, DoubleBlockHalf.UPPER));
-            }
-         } else {
-            Block cropBlock = BuiltInRegistries.BLOCK.getValue(this.cropType);
-            int cropMeta = getCropBlockMeta(this.cropType);
-            villager.setBlockAndMetadata(villager.getGoalDestPoint(), cropBlock, cropMeta);
-            if (cropBlock instanceof DoublePlantBlock) {
-               // 26.2: the 1.12 upper-half meta (cropMeta | 8) is now the DoublePlantBlock.HALF=UPPER
-               // blockstate property.
-               villager.setBlockstate(
-                  villager.getGoalDestPoint().getAbove(),
-                  cropBlock.defaultBlockState().setValue(DoublePlantBlock.HALF, DoubleBlockHalf.UPPER)
-               );
-            } else if (cropBlock instanceof BlockGrapeVine) {
-               villager.setBlockAndMetadata(villager.getGoalDestPoint().getAbove(), cropBlock, cropMeta | 8);
-            }
-         }
-
-         villager.swing(InteractionHand.MAIN_HAND);
-         if (this.isDestPossibleSpecific(villager, villager.getGoalBuildingDest())) {
-            try {
-               villager.setGoalInformation(this.getDestination(villager));
-            } catch (MillLog.MillenaireException destException) {
-               // FAIL-FAST: failing to recompute the plant destination left the villager's goal state stale
-               // (1.12 logged-and-continued). Surface the navigation corruption loudly.
-               throw MillCrash.fail("Goal", "failed to recompute plant-crop destination for " + villager + ": " + destException);
-            }
-
-            return false;
-         } else {
-            return true;
-         }
+         return false;
+      } else {
+         return true;
       }
    }
 

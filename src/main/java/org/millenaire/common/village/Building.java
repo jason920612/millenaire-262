@@ -5950,6 +5950,17 @@ public class Building {
          if (com.coderyo.jason.merge.VillageMergeFound.tick(this)) {
             return true;
          }
+         // Phase 5 (#4) EXPANSION-DRIVEN WAR: AFTER merge/found, accrue TENSION with each overlapping neighbour
+         // (from territorial overlap + shared-resource competition + relation decay). When tension crosses the
+         // threshold a war is DECLARED (the existing raid/war system is engaged) and RESOLVED by the abstract
+         // strength model + in-world attrition: the winner takes territory + a real share of resources, the loser
+         // is ABSORBED if crushed (reusing the Phase-4 registry-safe absorb) else RETREATS, and an overwhelming
+         // disparity makes the weaker sue for peace (never annihilated). Post-war the pair's relations recover
+         // slowly toward neutral. Strict no-grant / no-fallback: unmet conditions → no-op this tick. A resolved
+         // war counts as a construction change (territory/registry mutated).
+         if (com.coderyo.jason.war.VillageWar.tick(this)) {
+            return true;
+         }
          return com.coderyo.jason.build.MillProceduralConstruction.tick(this);
       }
 

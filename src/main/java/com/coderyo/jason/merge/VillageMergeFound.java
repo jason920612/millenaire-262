@@ -184,8 +184,10 @@ public final class VillageMergeFound {
             return true;
          }
          if (m.result == Result.WAR) {
-            // Don't merge a hostile overlap — flag it for the Phase-5 war path and leave the villages intact.
+            // Don't merge a hostile overlap — feed it into the Phase-5 expansion-war path (seed tension to the
+            // threshold so the war tick declares + resolves it) and leave the villages intact for now.
             logMerge(m, townHall, other);
+            com.coderyo.jason.war.VillageWar.onHostileOverlap(townHall, other);
          }
       }
 
@@ -336,6 +338,23 @@ public final class VillageMergeFound {
     * DEMOTES the smaller town hall out of the {@link MillWorldData} village registry cleanly. Mutates the
     * registry only through its own APIs so the save stays consistent (no dangling references).
     */
+   /**
+    * Phase-5 WAR entry point: the war winner ABSORBS a crushed loser, REUSING the same registry-safe
+    * {@link #absorb} the merge path uses (records/buildings/territory folded in, the loser town hall demoted out
+    * of the {@link MillWorldData} village registry cleanly, double-absorb guarded by {@code isActive}). This is
+    * the plan's "REUSE absorb for 'winner absorbs crushed loser'". Strict: an already-inactive loser is skipped
+    * (no double-absorb / no dangling registry entry). No grant — real village data is moved.
+    */
+   public static MergeOutcome absorbForWar(Building winner, Building loser) {
+      if (winner == null || loser == null || winner == loser) {
+         return MergeOutcome.no("invalid war-absorb pair");
+      }
+      if (!winner.isActive || !loser.isActive) {
+         return MergeOutcome.no("a village is no longer active (already absorbed/removed)");
+      }
+      return absorb(winner, loser);
+   }
+
    private static MergeOutcome absorb(Building big, Building small) {
       MillWorldData mw = big.mw;
       int bigPopBefore = popOf(big);
@@ -395,6 +414,7 @@ public final class VillageMergeFound {
       big.getRelations().remove(small.getPos());
       VillageExpansion.clear(small);
       MillProceduralConstruction.clear(small);
+      com.coderyo.jason.war.VillageWar.clear(small);
 
       // ---- (e) persist the merged state ----
       big.saveTownHall("Phase-4 merge: absorbed " + safeName(small));

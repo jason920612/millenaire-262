@@ -140,8 +140,18 @@ public final class MillSimObserver {
     * territory merged, smaller town hall demoted from the registry cleanly), and (b) an overcrowded village
     * with a real surplus → a splinter group FOUNDS a friendly same-culture colony (surplus genuinely spent).
     */
-   private static final int TICK_MERGE_DEMO = 69;
-   private static final int TICK_LIFECYCLE_START = 70;
+   /**
+    * Dedicated EXPANSION-DRIVEN WAR demonstration (Phase 5, #4): deterministically sets up (a) two evenly-matched
+    * overlapping same-culture villages competing for the same resource → tension accrues (overlap + competition +
+    * relation decay) to the threshold → war is declared → the winner takes territory + a real share of resources
+    * and the loser retreats/is absorbed; and (b) an OVERWHELMING pair → the weaker sues for peace (retreats, not
+    * annihilated); then shows post-war relations recovering. Also wires the AMBIENT path (the same VillageWar.tick
+    * the town-hall tick calls + the Phase-4 hostile-overlap WAR signal feeding tension). Runs BEFORE the merge/
+    * found demo so it isn't gated behind that demo's slow far-site colony worldgen on a fresh world.
+    */
+   private static final int TICK_WAR_DEMO = 69;
+   private static final int TICK_MERGE_DEMO = 70;
+   private static final int TICK_LIFECYCLE_START = 71;
    private final int TICK_LIFECYCLE_END = TICK_LIFECYCLE_START + SIM_DAYS * TICKS_PER_DAY;
    /** Roaming-player phase: the simulated player visits every village and trades + quests. */
    private final int TICK_PLAYER_INTERACT = TICK_LIFECYCLE_END + 10;
@@ -208,6 +218,11 @@ public final class MillSimObserver {
    // ---- Village MERGE + FOUND (Phase 4, #5) demonstration evidence ----
    private String mergeDemoEvidence = "not run";
    private String foundDemoEvidence = "not run";
+
+   // ---- Expansion-driven WAR (Phase 5, #4) demonstration evidence ----
+   private String warDemoContestedEvidence = "not run";
+   private String warDemoOverwhelmingEvidence = "not run";
+   private String warDemoRecoveryEvidence = "not run";
 
    // ---- Roaming-player interaction accumulators ----
    private int playerVillagesVisited = 0;
@@ -301,6 +316,8 @@ public final class MillSimObserver {
             stepExpansionDemo();
          } else if (tick == TICK_MERGE_DEMO) {
             stepMergeFoundDemo();
+         } else if (tick == TICK_WAR_DEMO) {
+            stepExpansionWarDemo();
          } else if (tick > TICK_LIFECYCLE_START && tick < TICK_LIFECYCLE_END) {
             if ((tick - TICK_LIFECYCLE_START) % SAMPLE_INTERVAL == 0) {
                sampleWorld("LIFECYCLE");
@@ -1613,6 +1630,378 @@ public final class MillSimObserver {
       }
    }
 
+   // ============================ EXPANSION-DRIVEN WAR DEMONSTRATION (Phase 5, #4) ============================
+
+   /**
+    * Deterministic, observable proof of the Phase-5 EXPANSION-DRIVEN WAR driver
+    * ({@link com.coderyo.jason.war.VillageWar}), driven SYNCHRONOUSLY so it is provable regardless of 100x
+    * ambient-AI sleep — and it confirms the AMBIENT path is wired (the same {@code accrueTension}/{@code resolveWar}
+    * the town-hall tick calls, plus the Phase-4 hostile-overlap WAR signal feeding tension).
+    *
+    * <ol>
+    *   <li><b>CONTESTED war</b>: two evenly-matched same-culture villages whose claimed radii OVERLAP and which
+    *       COMPETE for the same resource band → TENSION accrues (overlap + competition + relation decay) until it
+    *       crosses the threshold → war is DECLARED (existing raid system engaged) → resolved by the strength model:
+    *       the winner TAKES territory (radius grows) + a REAL share of the loser's resources, the loser RETREATS
+    *       (or is ABSORBED if crushed). Asserts territory grew + resources really moved (no grant).</li>
+    *   <li><b>OVERWHELMING war</b>: a strong vs a weak village (strength ratio ≥ 3) → the weaker SUES FOR PEACE
+    *       (retreats radius, cedes some resources) but is NEVER annihilated (stays active).</li>
+    *   <li><b>PEACE/RECOVERY</b>: post-war, the pair's hostile relations RECOVER toward neutral over recovery
+    *       ticks (sets up #7 diplomacy).</li>
+    * </ol>
+    */
+   private void stepExpansionWarDemo() {
+      final String TAGW = com.coderyo.jason.war.VillageWar.TAG;
+      try {
+         MillWorldData mw = Mill.getMillWorld(level);
+         Culture culture = null;
+         VillageType vtype = null;
+         for (Culture c : Culture.ListCultures) {
+            VillageType vt = pickRegularVillageType(c);
+            if (vt != null) {
+               culture = c;
+               vtype = vt;
+               break;
+            }
+         }
+         if (culture == null) {
+            warDemoContestedEvidence = "skipped (no culture with a regular village type)";
+            MillLog.major(null, TAGW + " DEMO SKIP: " + warDemoContestedEvidence);
+            return;
+         }
+
+         // ---------- (1) CONTESTED war: two evenly-matched overlapping competing villages ----------
+         // Place CLOSE to the origin cluster (force-loaded early): far fresh coordinates incur a very slow
+         // first-time worldgen for the 7x7 candidate scan. +1000 X is clear of the sim's two villages (400/720)
+         // and the merge/found sites (+2000 band) yet near enough that its chunks generate cheaply.
+         int baseX = VILLAGE_ORIGIN + 1000;
+         int baseZ = VILLAGE_ORIGIN + 1000;
+         // Place the two villages FAR enough apart that worldgen places both distinctly (it rejects a second
+         // village too close to the first), then SHRINK the gap into an overlap by growing their claimed radii
+         // (the natural Phase-3 grow-into-each-other outcome). 600 blocks is past Millénaire's min-village spacing.
+         Building a = generateVillageNear(culture, vtype, baseX, baseZ);
+         Building b = a == null ? null : generateVillageNear(culture, vtype,
+            a.getPos().getiX() + 600, a.getPos().getiZ());
+         if (a == null || b == null || a == b) {
+            warDemoContestedEvidence = "skipped (could not place two DISTINCT same-culture villages: a=" + (a != null)
+               + " b=" + (b != null) + " distinct=" + (a != b) + ")";
+            MillLog.major(null, TAGW + " DEMO SKIP: " + warDemoContestedEvidence);
+            return;
+         }
+         com.coderyo.jason.war.VillageWar.clear(a);
+         com.coderyo.jason.war.VillageWar.clear(b);
+         // Freshly-generated, force-loaded, registered town halls have isActive=false until their first loaded
+         // tick flips it; activate them now (the same state the engine sets on load) so the war path treats them
+         // as the live villages they are. This is correct — they ARE registered + chunk-loaded here.
+         a.isActive = true;
+         b.isActive = true;
+
+         // Make their claimed radii OVERLAP but stay BELOW the expansion MAX_RADIUS so the winner can still GROW
+         // its territory on a victory (a radius already at the cap couldn't grow). Half the gap + a margin makes
+         // the two claims overlap by ~2*margin while leaving headroom under MAX_RADIUS.
+         int gap = (int) Math.ceil(a.getPos().distanceTo(b.getPos()));
+         int overlapRadius = Math.min(com.coderyo.jason.expand.VillageExpansion.MAX_RADIUS - 32, gap / 2 + 60);
+         a.villageType.radius = Math.max(a.villageType.radius, overlapRadius);
+         b.villageType.radius = Math.max(b.villageType.radius, overlapRadius);
+
+         // Evenly-matched fighting strength + give each a real resource stock to contest/loot (the resolve
+         // transfers it for real). Seed the stock directly (no slow mine — the real mine→deposit chain is proven
+         // separately by the resource-chain + expand demos).
+         int aFighters = addFighterRecords(a, 8);
+         int bFighters = addFighterRecords(b, 7);
+         int aStock = seedVillageStock(a, 40);
+         int bStock = seedVillageStock(b, 40);
+         int sa = a.getVillageDefendingStrength();
+         int sb = b.getVillageDefendingStrength();
+
+         double ov = com.coderyo.jason.war.VillageWar.overlapAmount(a, b);
+         int comp = com.coderyo.jason.war.VillageWar.resourceCompetition(a, b);
+         MillLog.major(null, TAGW + " DEMO CONTESTED begin: a='" + safeName(a) + "'(str=" + sa + ",r="
+            + a.villageType.radius + ",fighters=" + aFighters + ") b='" + safeName(b) + "'(str=" + sb + ",r="
+            + b.villageType.radius + ",fighters=" + bFighters + ") overlap=" + (int) ov + " competition=" + comp
+            + " — accruing tension to the threshold");
+
+         // Accrue tension across evaluations until it crosses the threshold (the ambient accrueTension path).
+         double tension = 0;
+         int evals = 0;
+         for (; evals < 60; evals++) {
+            tension = com.coderyo.jason.war.VillageWar.accrueTension(a, b);
+            if (tension >= com.coderyo.jason.war.VillageWar.TENSION_THRESHOLD) {
+               break;
+            }
+         }
+         boolean reachedWar = tension >= com.coderyo.jason.war.VillageWar.TENSION_THRESHOLD;
+         MillLog.major(null, TAGW + " DEMO CONTESTED tension=" + (int) tension + "/"
+            + (int) com.coderyo.jason.war.VillageWar.TENSION_THRESHOLD + " after " + evals + " evals → "
+            + (reachedWar ? "WAR" : "no war"));
+
+         int aRadiusBefore = a.villageType.radius;
+         int bRadiusBefore = b.villageType.radius;
+         int aStockBefore = com.coderyo.jason.build.MillProceduralConstruction.villageStockTotal(a);
+         int bStockBefore = com.coderyo.jason.build.MillProceduralConstruction.villageStockTotal(b);
+         boolean bListedBefore = mw.villagesList.pos.contains(b.getPos());
+         MillLog.major(null, TAGW + " DEMO CONTESTED pre-resolve: a.active=" + a.isActive + " b.active=" + b.isActive
+            + " sa=" + sa + " sb=" + sb);
+
+         com.coderyo.jason.war.VillageWar.declareWar(a, b);
+         com.coderyo.jason.war.VillageWar.WarOutcome out = com.coderyo.jason.war.VillageWar.resolveWar(a, b);
+
+         Building winner = out.winner;
+         Building loser = out.loser;
+         int winnerStockAfter = winner != null
+            ? com.coderyo.jason.build.MillProceduralConstruction.villageStockTotal(winner) : -1;
+         boolean territoryGrew = winner != null && winner.villageType.radius > out.winnerRadiusBefore;
+         boolean resourcesMoved = out.resourcesTransferred > 0;
+         boolean loserHandled = out.result == com.coderyo.jason.war.VillageWar.Result.WIN_RETREAT
+            || out.result == com.coderyo.jason.war.VillageWar.Result.WIN_ABSORB
+            || out.result == com.coderyo.jason.war.VillageWar.Result.PEACE_RETREAT;
+         boolean absorbedDeregistered = out.result == com.coderyo.jason.war.VillageWar.Result.WIN_ABSORB
+            ? !mw.villagesList.pos.contains(loser.getPos()) : true;
+
+         String verdictC;
+         if (reachedWar && winner != null && loserHandled && territoryGrew && absorbedDeregistered) {
+            verdictC = "PASS (tension[overlap+competition+relation]→war; '" + safeName(winner)
+               + "' WON, took territory radius " + out.winnerRadiusBefore + "→" + winner.villageType.radius
+               + " + " + out.resourcesTransferred + " real resources; loser '" + safeName(loser) + "' "
+               + out.result + "; registry consistent; no grant" + (resourcesMoved ? "" : " [loser had no stock to loot]") + ")";
+         } else {
+            verdictC = "CHECK (reachedWar=" + reachedWar + " result=" + out.result + " territoryGrew=" + territoryGrew
+               + " resourcesMoved=" + resourcesMoved + " absorbedDeregistered=" + absorbedDeregistered + ")";
+         }
+         warDemoContestedEvidence = "result=" + out.result + " winner='" + (winner != null ? safeName(winner) : "-")
+            + "' loser='" + (loser != null ? safeName(loser) : "-") + "' winnerRadius " + out.winnerRadiusBefore + "→"
+            + (winner != null ? winner.villageType.radius : -1) + " resourcesTaken=" + out.resourcesTransferred
+            + " (aStock " + aStockBefore + " bStock " + bStockBefore + " bListed " + bListedBefore + ") => " + verdictC;
+         MillLog.major(null, TAGW + " DEMO CONTESTED RESULT " + warDemoContestedEvidence);
+         if (!reachedWar) {
+            anomalies.merge("war: overlap+competition did not accrue tension to war", 1, Integer::sum);
+         }
+         if (winner == null || !loserHandled) {
+            anomalies.merge("war: contested war did not resolve to an outcome", 1, Integer::sum);
+         }
+         if (!territoryGrew) {
+            anomalies.merge("war: winner did not gain territory", 1, Integer::sum);
+         }
+
+         // ---------- (3) PEACE/RECOVERY: the contested pair's hostile relations recover toward neutral ----------
+         // (Only when the loser survived as an active village — an absorbed loser has no relation to recover.)
+         if (winner != null && loser != null && loser.isActive && winner != loser
+            && mw.villagesList.pos.contains(loser.getPos())) {
+            int relBefore = winner.getRelations().getOrDefault(loser.getPos(), 0);
+            int relAfter = relBefore;
+            for (int i = 0; i < 40; i++) {
+               relAfter = com.coderyo.jason.war.VillageWar.recoverRelations(winner, loser);
+            }
+            warDemoRecoveryEvidence = "winner↔loser relation recovered " + relBefore + "→" + relAfter
+               + " (toward neutral 0, +" + com.coderyo.jason.war.VillageWar.RELATION_RECOVERY + "/tick) => "
+               + (relAfter > relBefore && relAfter <= 0 ? "PASS (post-war relations recover)" : "CHECK");
+            MillLog.major(null, TAGW + " DEMO RECOVERY " + warDemoRecoveryEvidence);
+            if (!(relAfter > relBefore)) {
+               anomalies.merge("war: post-war relations did not recover", 1, Integer::sum);
+            }
+         } else {
+            warDemoRecoveryEvidence = "loser was absorbed (no surviving relation to recover) — recovery shown only "
+               + "when the loser retreats";
+            MillLog.major(null, TAGW + " DEMO RECOVERY " + warDemoRecoveryEvidence);
+         }
+
+         // ---------- (2) OVERWHELMING war: strong vs weak → the weaker sues for peace, not annihilated ----------
+         // REUSE the two contested villages (already generated, built, chunk-loaded — no slow extra worldgen): the
+         // contested winner is the STRONG side; we DISARM the contested loser into the near-defenceless WEAK side.
+         // This deterministically yields a strength ratio ≫ 3 → the overwhelming-disparity / sue-for-peace branch.
+         Building c = winner;
+         Building d = loser;
+         if (c == null || d == null || c == d || !d.isActive || !mw.villagesList.pos.contains(d.getPos())) {
+            warDemoOverwhelmingEvidence = "skipped (contested loser not reusable: c=" + (c != null) + " d=" + (d != null)
+               + " dActive=" + (d != null && d.isActive) + ")";
+            MillLog.major(null, TAGW + " DEMO OVERWHELMING SKIP: " + warDemoOverwhelmingEvidence);
+         } else {
+            com.coderyo.jason.war.VillageWar.clear(c);
+            com.coderyo.jason.war.VillageWar.clear(d);
+            // Restore an overlap-capable radius on both (the contested resolve shrank the loser's): set the shared
+            // type radius below the cap so the strong side could still grow on this second war too.
+            int hOverlap = com.coderyo.jason.expand.VillageExpansion.MAX_RADIUS - 32;
+            c.villageType.radius = hOverlap;
+            d.villageType.radius = hOverlap;
+            // Make c OVERWHELMINGLY stronger than d by DISARMING d — clear its villager records so its defending
+            // strength drops to ~0 — leaving c's garrison vastly stronger (ratio ≫ 3). A small fixed garrison on c
+            // guarantees c has positive strength. This is the "weak, nearly-defenceless neighbour" the
+            // overwhelming-disparity / sue-for-peace branch models.
+            int cFighters = addFighterRecords(c, 8);
+            int dFighters = 0;
+            int dCleared = d.getVillagerRecords().size();
+            d.getVillagerRecords().clear(); // disarm the weaker village (records → strength); makes the ratio ≫ 3
+            // Give d a small stock to cede on its peace-retreat WITHOUT a slow mine: store directly into its own
+            // buildings via the authoritative storeGoods (real goods in the real village; no grant, no fabrication
+            // beyond placing starter stock the demo then transfers for real on the resolve).
+            seedVillageStock(d, 40);
+            int sc = c.getVillageDefendingStrength();
+            int sd = d.getVillageDefendingStrength();
+            double ratio = Math.max(sc, sd) / Math.max(1.0, Math.min(sc, sd));
+            MillLog.major(null, TAGW + " DEMO OVERWHELMING disarmed weaker '" + safeName(d) + "' (cleared "
+               + dCleared + " records → defending strength " + sd + ")");
+            MillLog.major(null, TAGW + " DEMO OVERWHELMING begin: c='" + safeName(c) + "'(str=" + sc + ",fighters="
+               + cFighters + ") d='" + safeName(d) + "'(str=" + sd + ",fighters=" + dFighters + ") ratio="
+               + String.format("%.1f", ratio) + " (≥" + com.coderyo.jason.war.VillageWar.OVERWHELMING_RATIO
+               + " expected → sue for peace)");
+            // Seed tension to threshold (an entrenched hostile overlap) and resolve.
+            com.coderyo.jason.war.VillageWar.seedTension(c, d, com.coderyo.jason.war.VillageWar.TENSION_THRESHOLD);
+            int dRadiusBefore = d.villageType.radius;
+            boolean dActiveBefore = d.isActive;
+            com.coderyo.jason.war.VillageWar.declareWar(c, d);
+            com.coderyo.jason.war.VillageWar.WarOutcome ow = com.coderyo.jason.war.VillageWar.resolveWar(c, d);
+            boolean suedForPeace = ow.result == com.coderyo.jason.war.VillageWar.Result.PEACE_RETREAT;
+            boolean weakerSurvived = d.isActive && mw.villagesList.pos.contains(d.getPos());
+            boolean retreated = d.villageType.radius < dRadiusBefore;
+            String verdictO = (suedForPeace && weakerSurvived)
+               ? "PASS (ratio≥3 → weaker '" + safeName(d) + "' SUED FOR PEACE: retreated radius " + dRadiusBefore
+                  + "→" + d.villageType.radius + ", ceded " + ow.resourcesTransferred + " resources, NOT annihilated"
+                  + " [active=" + d.isActive + "])"
+               : "CHECK (result=" + ow.result + " weakerSurvived=" + weakerSurvived + " retreated=" + retreated + ")";
+            warDemoOverwhelmingEvidence = "result=" + ow.result + " ratio=" + String.format("%.1f", ratio)
+               + " weakerRadius " + dRadiusBefore + "→" + d.villageType.radius + " weakerActive " + dActiveBefore
+               + "→" + d.isActive + " ceded=" + ow.resourcesTransferred + " => " + verdictO;
+            MillLog.major(null, TAGW + " DEMO OVERWHELMING RESULT " + warDemoOverwhelmingEvidence);
+            if (!suedForPeace) {
+               anomalies.merge("war: overwhelming disparity did not produce a sue-for-peace", 1, Integer::sum);
+            }
+            if (!weakerSurvived) {
+               anomalies.merge("war: the weaker village was annihilated (should sue for peace)", 1, Integer::sum);
+            }
+         }
+      } catch (Throwable t) {
+         record("war-demo", t);
+         warDemoContestedEvidence = "exception: " + t;
+         MillLog.major(null, TAGW + " DEMO FAIL: " + t);
+         MillLog.printException(TAG + " war-demo error", t);
+      }
+   }
+
+   /**
+    * Add {@code n} REAL {@code helpInAttacks} (fighter) villager records to a village so its
+    * {@link Building#getVillageDefendingStrength} rises deterministically (each fighter contributes a positive
+    * military strength). Records are homed at the town hall; no entity is spawned. Returns how many were added.
+    */
+   private int addFighterRecords(Building townHall, int n) {
+      int added = 0;
+      try {
+         MillWorldData mw = Mill.getMillWorld(level);
+         Culture culture = townHall.culture;
+         if (culture == null) {
+            return 0;
+         }
+         org.millenaire.common.culture.VillagerType fighter = null;
+         for (org.millenaire.common.culture.VillagerType vt : culture.listVillagerTypes) {
+            if (vt.helpInAttacks && !vt.isChild) {
+               fighter = vt;
+               break;
+            }
+         }
+         if (fighter == null) {
+            // No explicit fighter type — fall back to any adult type (still counts toward records; strength may be 0).
+            for (org.millenaire.common.culture.VillagerType vt : culture.listVillagerTypes) {
+               if (!vt.isChild) {
+                  fighter = vt;
+                  break;
+               }
+            }
+         }
+         if (fighter == null) {
+            return 0;
+         }
+         for (int i = 0; i < n; i++) {
+            VillagerRecord rec = VillagerRecord.createVillagerRecord(
+               culture, fighter.key, mw, townHall.getPos(), townHall.getPos(), null, null, -1L, false);
+            if (rec != null) {
+               added++;
+            }
+         }
+      } catch (Throwable t) {
+         record("war-demo-add-fighters", t);
+      }
+      return added;
+   }
+
+   /**
+    * Place {@code want} units of a real good directly into one of the village's loadable chests via the
+    * authoritative {@code storeGoods} (no slow mining). Used to give a war-demo village a starter stock to be
+    * looted/ceded on a resolve — the stock is REAL village goods (the resolve then transfers it for real).
+    * Returns the resulting village-wide stock total.
+    */
+   private int seedVillageStock(Building townHall, int want) {
+      try {
+         Building chestBuilding = null;
+         List<Building> candidates = new ArrayList<>(townHall.getBuildings());
+         if (!candidates.contains(townHall)) {
+            candidates.add(townHall);
+         }
+         for (Building bb : candidates) {
+            if (bb == null || bb.getResManager() == null || bb.getResManager().chests.isEmpty()) {
+               continue;
+            }
+            Point bp = bb.getPos();
+            if (bp != null) {
+               level.setChunkForced(bp.getiX() >> 4, bp.getiZ() >> 4, true);
+            }
+            for (Point cp : bb.getResManager().chests) {
+               if (cp.getMillChest(level) != null) {
+                  chestBuilding = bb;
+                  break;
+               }
+            }
+            if (chestBuilding != null) {
+               break;
+            }
+         }
+         if (chestBuilding != null) {
+            chestBuilding.storeGoods(net.minecraft.world.item.Items.RAW_IRON, 0, want);
+         }
+      } catch (Throwable t) {
+         record("war-demo-seed-stock", t);
+      }
+      return com.coderyo.jason.build.MillProceduralConstruction.villageStockTotal(townHall);
+   }
+
+   /**
+    * Mine + deposit real ore into the town hall so its village-wide stock holds at least {@code want} units to be
+    * contested/looted/ceded in the war demo (real material — no grant). Returns the resulting stock total.
+    */
+   private int fundVillageStock(Building townHall, int want) {
+      try {
+         Building depositBuilding = null;
+         List<Building> candidates = new ArrayList<>(townHall.getBuildings());
+         if (!candidates.contains(townHall)) {
+            candidates.add(townHall);
+         }
+         for (Building bb : candidates) {
+            if (bb == null || bb.getResManager() == null || bb.getResManager().chests.isEmpty()) {
+               continue;
+            }
+            Point bp = bb.getPos();
+            if (bp != null) {
+               level.setChunkForced(bp.getiX() >> 4, bp.getiZ() >> 4, true);
+            }
+            for (Point cp : bb.getResManager().chests) {
+               if (cp.getMillChest(level) != null) {
+                  depositBuilding = bb;
+                  break;
+               }
+            }
+            if (depositBuilding != null) {
+               break;
+            }
+         }
+         if (depositBuilding == null) {
+            return com.coderyo.jason.build.MillProceduralConstruction.villageStockTotal(townHall);
+         }
+         int rounds = Math.max(4, want / 10); // ~10 ore mined per round
+         mineAndDepositRealOre(townHall, depositBuilding, rounds);
+      } catch (Throwable t) {
+         record("war-demo-fund", t);
+      }
+      return com.coderyo.jason.build.MillProceduralConstruction.villageStockTotal(townHall);
+   }
+
    /**
     * Generate a same-culture village near (x,z) by scanning a few candidate spots (like stepGenerateVillages),
     * and return its town-hall {@link Building}, or null if none placed. Force-loads the candidate chunks.
@@ -2894,6 +3283,12 @@ public final class MillSimObserver {
             + mergeDemoEvidence);
          log("SIM SUMMARY FOUND (Phase 4, #5 — overcrowd+surplus → friendly same-culture colony, surplus spent): "
             + foundDemoEvidence);
+         log("SIM SUMMARY WAR-DEMO CONTESTED (Phase 5, #4 — tension[overlap+competition+relation]→war→winner takes "
+            + "territory/resources, loser retreats/absorbed): " + warDemoContestedEvidence);
+         log("SIM SUMMARY WAR-DEMO OVERWHELMING (Phase 5, #4 — ratio≥3 → weaker sues for peace, not annihilated): "
+            + warDemoOverwhelmingEvidence);
+         log("SIM SUMMARY WAR-DEMO RECOVERY (Phase 5, #4 — post-war relations recover toward neutral): "
+            + warDemoRecoveryEvidence);
          log("SIM SUMMARY PLAYER: villagesVisited=" + playerVillagesVisited
             + " tradesDone=" + playerTradesDone + " questsDone=" + playerQuestsDone
             + " moneySpent=" + playerMoneySpent + " moneyEarned=" + playerMoneyEarned

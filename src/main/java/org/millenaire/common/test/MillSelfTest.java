@@ -76,6 +76,7 @@ public final class MillSelfTest {
    private static final int TICK_ITEMS_BLOCKS = TICK_GROWTH_END + 40;
    private static final int TICK_TRADE = TICK_GROWTH_END + 60;
    private static final int TICK_INTERACT = TICK_GROWTH_END + 80;
+   private static final int TICK_MINE_CYCLE = TICK_GROWTH_END + 90;
    private static final int TICK_SUMMARY = TICK_GROWTH_END + 100;
    private static final int MAX_TICK_GUARD = 6000 + TICK_GROWTH_END; // absolute safety net
 
@@ -127,6 +128,7 @@ public final class MillSelfTest {
    private String tradeDetail = "not run";
    private Boolean interactOk = null;
    private String interactDetail = "not run";
+   private Boolean mineCycleOk = null;
    private final Map<String, Integer> distinctExceptions = new HashMap<>();
 
    // --- Movement tracking (per villager, keyed by stable getVillagerId) ---
@@ -218,6 +220,7 @@ public final class MillSelfTest {
             case TICK_ITEMS_BLOCKS -> stepItemsAndBlocks();
             case TICK_TRADE -> stepTradeLogic();
             case TICK_INTERACT -> stepVillagerInteraction();
+            case TICK_MINE_CYCLE -> stepMineCycle();
             case TICK_SUMMARY -> {
                stepSummary();
                stopServer();
@@ -983,6 +986,106 @@ public final class MillSelfTest {
       }
    }
 
+   // ============================ STEP H2: player-like mine cycle (O1) ============================
+
+   /**
+    * Live evidence for the O1 player-like mine refactor: drive {@link com.coderyo.jason.ops.VillagerWorldOps}'s
+    * break → pickup cycle on a REAL villager + a REAL stone block, then the point-owned regrow. Logs each phase so
+    * the cycle is greppable in the harness output ({@code [MILLTEST] MINECYCLE ...}). This exercises the actual
+    * primitives the migrated {@link org.millenaire.common.goal.GoalMinerMineResource} now calls.
+    */
+   private void stepMineCycle() {
+      try {
+         List<MillVillager> villagers = level.getEntitiesOfClass(
+            MillVillager.class, new AABB(-30000, level.getMinY(), -30000, 30000, level.getMaxY(), 30000), v -> v.isAlive());
+         if (villagers.isEmpty()) {
+            log("H2 MINECYCLE SKIP: no MillVillager in world");
+            return;
+         }
+         MillVillager v = villagers.get(0);
+
+         // A clear pad next to the villager: source block one across, villager standing adjacent (in reach).
+         BlockPos vPos = v.blockPosition();
+         BlockPos source = vPos.offset(1, 0, 0);
+         level.setBlock(source.below(), net.minecraft.world.level.block.Blocks.STONE.defaultBlockState(), 3);
+         level.setBlock(source, net.minecraft.world.level.block.Blocks.STONE.defaultBlockState(), 3);
+
+         // Equip the correct tool (strict-tool path) and verify ensureTool accepts it.
+         v.heldItem = new ItemStack(net.minecraft.world.item.Items.IRON_PICKAXE);
+         boolean toolOk = com.coderyo.jason.ops.VillagerWorldOps.ensureTool(v, com.coderyo.jason.ops.VillagerWorldOps.ToolKind.PICKAXE);
+         log("H2 MINECYCLE ensureTool(PICKAXE) on held iron_pickaxe = " + toolOk);
+
+         BlockState sourceState = level.getBlockState(source);
+
+         // --- BREAK over time: call breakTick until COMPLETE, logging the crack progression. ---
+         com.coderyo.jason.ops.OpState st = null;
+         int guard = 0;
+         int lastStage = -1;
+         while (guard++ < 2000) {
+            st = com.coderyo.jason.ops.VillagerWorldOps.breakTick(v, source);
+            if (st == com.coderyo.jason.ops.OpState.IN_PROGRESS) {
+               var prog = com.coderyo.jason.ops.TaskPointStore.get().peek(level, source);
+               int stage = prog != null ? prog.crackStage() : -1;
+               if (stage != lastStage) {
+                  log("H2 MINECYCLE breaking… crackStage=" + stage);
+                  lastStage = stage;
+               }
+            } else {
+               break;
+            }
+         }
+         log("H2 MINECYCLE break finished after " + guard + " ticks, state=" + st
+            + ", blockNowAir=" + level.getBlockState(source).isAir());
+
+         // --- DROPS: real ItemEntities should now be on the ground near the source. ---
+         List<net.minecraft.world.entity.item.ItemEntity> drops = level.getEntitiesOfClass(
+            net.minecraft.world.entity.item.ItemEntity.class, new AABB(source).inflate(5.0));
+         log("H2 MINECYCLE drops on ground = " + drops.size()
+            + (drops.isEmpty() ? "" : " first=" + safeId(drops.get(0).getItem().getItem())));
+
+         // --- PICKUP: walk-to-each-drop until COMPLETE (drive several ticks; teleport-collect is distance-gated). ---
+         int beforeCobble = v.countInv(net.minecraft.world.level.block.Blocks.COBBLESTONE.asItem());
+         com.coderyo.jason.ops.OpState pst = null;
+         guard = 0;
+         while (guard++ < 200) {
+            pst = com.coderyo.jason.ops.VillagerWorldOps.pickupTick(v, source);
+            if (pst == com.coderyo.jason.ops.OpState.COMPLETE) {
+               break;
+            }
+            // Nudge the villager onto the nearest drop so the distance-gated collect fires in the headless harness
+            // (no real pathing tick between our calls here).
+            if (!drops.isEmpty()) {
+               var d = level.getEntitiesOfClass(net.minecraft.world.entity.item.ItemEntity.class, new AABB(source).inflate(5.0));
+               if (!d.isEmpty()) {
+                  v.setPos(d.get(0).getX(), d.get(0).getY(), d.get(0).getZ());
+               }
+            }
+         }
+         int afterCobble = v.countInv(net.minecraft.world.level.block.Blocks.COBBLESTONE.asItem());
+         log("H2 MINECYCLE pickup state=" + pst + " cobblestoneInInv " + beforeCobble + " -> " + afterCobble);
+
+         // --- REGROW: schedule on the point, then force it due and tick it back. ---
+         long now = level.getGameTime();
+         com.coderyo.jason.ops.TaskPointStore.get().scheduleRegrow(level, source, sourceState, now, 0);
+         int regrown = com.coderyo.jason.ops.TaskPointStore.get().tickRegrow(level, now);
+         boolean back = level.getBlockState(source).getBlock() == sourceState.getBlock();
+         log("H2 MINECYCLE regrow scheduled+ticked: regrown=" + regrown + " sourceRestored=" + back);
+
+         mineCycleOk = toolOk && st == com.coderyo.jason.ops.OpState.COMPLETE && afterCobble > beforeCobble && back;
+         log("H2 MINECYCLE " + (mineCycleOk ? "OK" : "PARTIAL")
+            + ": tool=" + toolOk + " broke=" + (st == com.coderyo.jason.ops.OpState.COMPLETE)
+            + " collected=" + (afterCobble > beforeCobble) + " regrew=" + back);
+
+         // Clean up the test pad.
+         level.removeBlock(source, false);
+         level.removeBlock(source.below(), false);
+      } catch (Throwable t) {
+         mineCycleOk = false;
+         recordException("H2:minecycle", t);
+         log("H2 MINECYCLE FAIL: " + t);
+      }
+   }
+
    // ============================ STEP I: summary + stop ============================
 
    private void stepSummary() {
@@ -1020,6 +1123,7 @@ public final class MillSelfTest {
       log("blocks tested: " + blocksTested + " / failed: " + blocksFailed);
       log("trade: " + (tradeOk == null ? "not run" : (tradeOk ? "OK" : "FAIL")) + " (" + tradeDetail + ")");
       log("interaction: " + (interactOk == null ? "not run" : (interactOk ? "OK" : "FAIL")) + " (" + interactDetail + ")");
+      log("mine cycle (O1 break+pickup+regrow): " + (mineCycleOk == null ? "not run" : (mineCycleOk ? "OK" : "PARTIAL/FAIL")));
       log("distinct exception types seen: " + distinctExceptions.size());
       for (Map.Entry<String, Integer> e : distinctExceptions.entrySet()) {
          log("  exception x" + e.getValue() + ": " + e.getKey());

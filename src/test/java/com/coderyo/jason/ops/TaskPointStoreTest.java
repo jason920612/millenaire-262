@@ -12,6 +12,8 @@ import static org.mockito.Mockito.when;
 
 import net.minecraft.core.BlockPos;
 import net.minecraft.world.level.Level;
+import net.minecraft.world.level.block.Blocks;
+import net.minecraft.world.level.block.state.BlockState;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.millenaire.MillHeadlessTest;
@@ -100,6 +102,53 @@ class TaskPointStoreTest extends MillHeadlessTest {
       assertEquals(9, p.crackStage());
       p.advance(0.50f); // total 1.45 — clamped at 9
       assertEquals(9, p.crackStage());
+   }
+
+   // ---- ore regrow (point-owned, renewable mine as 1.12) ------------------------------------------
+
+   @Test
+   void regrowIsScheduledOnThePointAndNotDueEarly() {
+      BlockPos pos = new BlockPos(3, 64, 7);
+      BlockState stone = Blocks.STONE.defaultBlockState();
+
+      // Mine broke the source at game tick 1000; schedule its return with the default delay.
+      TaskPointStore.get().scheduleRegrow(overworld, pos, stone, 1000L);
+      assertEquals(1, TaskPointStore.get().regrowCount());
+
+      TaskPointStore.Regrow r = TaskPointStore.get().peekRegrow(overworld, pos);
+      assertNotNull(r);
+      assertSame(stone, r.state(), "regrow restores the exact source state (renewable mine)");
+      assertEquals(1000L + TaskPointStore.DEFAULT_REGROW_DELAY_TICKS, r.dueTick());
+
+      // Before the due tick, ticking does nothing (block stays broken) and the schedule remains.
+      // (No real Level set on the block here; we only assert the schedule is untouched pre-due.)
+      // The actual setBlock is exercised by the harness; here we verify the timing contract.
+      assertEquals(1, TaskPointStore.get().regrowCount());
+   }
+
+   @Test
+   void regrowKeyedByPointNotVillager() {
+      BlockPos a = new BlockPos(0, 64, 0);
+      BlockPos b = new BlockPos(0, 64, 1);
+      TaskPointStore.get().scheduleRegrow(overworld, a, Blocks.SAND.defaultBlockState(), 0L);
+      TaskPointStore.get().scheduleRegrow(overworld, b, Blocks.GRAVEL.defaultBlockState(), 0L);
+      assertEquals(2, TaskPointStore.get().regrowCount());
+      assertNotSame(
+         TaskPointStore.get().peekRegrow(overworld, a).state(),
+         TaskPointStore.get().peekRegrow(overworld, b).state());
+
+      // Rescheduling the same point replaces (not duplicates) its entry.
+      TaskPointStore.get().scheduleRegrow(overworld, a, Blocks.STONE.defaultBlockState(), 5L);
+      assertEquals(2, TaskPointStore.get().regrowCount());
+      assertSame(Blocks.STONE.defaultBlockState(), TaskPointStore.get().peekRegrow(overworld, a).state());
+   }
+
+   @Test
+   void clearAllDropsRegrows() {
+      TaskPointStore.get().scheduleRegrow(overworld, new BlockPos(1, 1, 1), Blocks.STONE.defaultBlockState(), 0L);
+      assertTrue(TaskPointStore.get().regrowCount() > 0);
+      TaskPointStore.get().clearAll();
+      assertEquals(0, TaskPointStore.get().regrowCount());
    }
 
    @Test

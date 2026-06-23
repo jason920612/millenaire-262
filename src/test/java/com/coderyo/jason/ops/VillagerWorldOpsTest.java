@@ -131,6 +131,62 @@ class VillagerWorldOpsTest extends MillHeadlessTest {
 
    // ---- withinReach: 4.5-block player reach (pure Vec3 overload) -----------------------------------
 
+   // ---- ToolKind selection + strict isToolOfKind (O1) ---------------------------------------------
+
+   @Test
+   void miningToolForMatches112Choice() {
+      // 1.12 GoalMinerMineResource: shovel for sand/clay/gravel, pickaxe for stone/sandstone (and the rest).
+      assertEquals(VillagerWorldOps.ToolKind.SHOVEL, VillagerWorldOps.miningToolFor(Blocks.SAND));
+      assertEquals(VillagerWorldOps.ToolKind.SHOVEL, VillagerWorldOps.miningToolFor(Blocks.CLAY));
+      assertEquals(VillagerWorldOps.ToolKind.SHOVEL, VillagerWorldOps.miningToolFor(Blocks.GRAVEL));
+      assertEquals(VillagerWorldOps.ToolKind.PICKAXE, VillagerWorldOps.miningToolFor(Blocks.STONE));
+      assertEquals(VillagerWorldOps.ToolKind.PICKAXE, VillagerWorldOps.miningToolFor(Blocks.SANDSTONE));
+   }
+
+   @Test
+   void isToolOfKindEmptyIsNeverATool() {
+      // Bare hand satisfies no tool kind (strict policy).
+      for (VillagerWorldOps.ToolKind k : VillagerWorldOps.ToolKind.values()) {
+         assertFalse(VillagerWorldOps.isToolOfKind(ItemStack.EMPTY, k), "empty hand is not a " + k);
+         assertFalse(VillagerWorldOps.isToolOfKind(null, k), "null is not a " + k);
+      }
+   }
+
+   @Test
+   void isToolOfKindPickaxeVsShovel() {
+      ItemStack pick = stackOrAssume(Items.IRON_PICKAXE);
+      ItemStack shovel = stackOrAssume(Items.IRON_SHOVEL);
+      // gate on data-components being bound (pickaxe detection uses isCorrectToolForDrops(stone)).
+      assumeTrue(pick.isCorrectToolForDrops(Blocks.STONE.defaultBlockState()),
+         "ItemStack tool components unavailable headlessly");
+
+      // Pickaxe is a PICKAXE, not a SHOVEL; shovel is a SHOVEL, not a PICKAXE — strict, mutually exclusive.
+      assertTrue(VillagerWorldOps.isToolOfKind(pick, VillagerWorldOps.ToolKind.PICKAXE));
+      assertFalse(VillagerWorldOps.isToolOfKind(pick, VillagerWorldOps.ToolKind.SHOVEL));
+      assertTrue(VillagerWorldOps.isToolOfKind(shovel, VillagerWorldOps.ToolKind.SHOVEL));
+      assertFalse(VillagerWorldOps.isToolOfKind(shovel, VillagerWorldOps.ToolKind.PICKAXE));
+   }
+
+   @Test
+   void isToolOfKindAxeHoeShearsRod() {
+      ItemStack axe = stackOrAssume(Items.IRON_AXE);
+      ItemStack hoe = stackOrAssume(Items.IRON_HOE);
+      ItemStack shears = stackOrAssume(Items.SHEARS);
+      ItemStack rod = stackOrAssume(Items.FISHING_ROD);
+
+      assertTrue(VillagerWorldOps.isToolOfKind(axe, VillagerWorldOps.ToolKind.AXE));
+      assertTrue(VillagerWorldOps.isToolOfKind(hoe, VillagerWorldOps.ToolKind.HOE));
+      assertTrue(VillagerWorldOps.isToolOfKind(shears, VillagerWorldOps.ToolKind.SHEARS));
+      assertTrue(VillagerWorldOps.isToolOfKind(rod, VillagerWorldOps.ToolKind.ROD));
+
+      // Cross-kind negatives: an axe is not a hoe/shears/rod.
+      assertFalse(VillagerWorldOps.isToolOfKind(axe, VillagerWorldOps.ToolKind.HOE));
+      assertFalse(VillagerWorldOps.isToolOfKind(axe, VillagerWorldOps.ToolKind.SHEARS));
+      assertFalse(VillagerWorldOps.isToolOfKind(hoe, VillagerWorldOps.ToolKind.ROD));
+      // ...and an axe is not a PICKAXE even though it is a digger (class-exclusion in the pickaxe rule).
+      assertFalse(VillagerWorldOps.isToolOfKind(axe, VillagerWorldOps.ToolKind.PICKAXE));
+   }
+
    @Test
    void withinReachBoundary() {
       // Eye just above a block; the target block AABB occupies [pos, pos+1].

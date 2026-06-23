@@ -7,6 +7,7 @@ import net.minecraft.core.BlockPos;
 import net.minecraft.resources.Identifier;
 import net.minecraft.resources.ResourceKey;
 import net.minecraft.world.level.Level;
+import net.minecraft.world.level.block.state.BlockState;
 
 /**
  * Server-side progress store for player-like world operations, keyed by the WORKSITE POINT — NOT by the villager.
@@ -30,9 +31,21 @@ public final class TaskPointStore {
    /** Default staleness threshold for {@link #decay}: a record untouched for this many ms is dropped. */
    public static final long DEFAULT_STALE_MS = 60_000L;
 
+   /**
+    * Default ore-regrow delay in ticks. 1.12 Millénaire never actually removed a mine source block — the miner
+    * faked the break (sound + {@code addToInv}) and the source stayed in place, so the village always had a
+    * renewable supply. Now that the block is REALLY broken (real reach mining + real drops), we restore that
+    * net effect by regrowing the source after a delay so the mine stays renewable. 600 ticks = 30s, a balance
+    * value: short enough that the village's supply is effectively continuous (matching 1.12), long enough that
+    * the break+regrow reads as a real, deliberate cycle rather than an instant respawn.
+    */
+   public static final int DEFAULT_REGROW_DELAY_TICKS = 600;
+
    private static final TaskPointStore INSTANCE = new TaskPointStore();
 
    private final Map<Key, Progress> records = new ConcurrentHashMap<>();
+   /** Point-owned regrow schedule: a broken mine source's target state + the game tick it is due to return. */
+   private final Map<Key, Regrow> regrows = new ConcurrentHashMap<>();
 
    private TaskPointStore() {
    }
@@ -93,6 +106,67 @@ public final class TaskPointStore {
    /** Test/diagnostic: drop everything (e.g. between unit tests, or on server stop). */
    public void clearAll() {
       records.clear();
+      regrows.clear();
+   }
+
+   // ---- ore regrow (point-owned) ------------------------------------------------------------------
+
+   /**
+    * Schedule the mine source at {@code (level, pos)} to regrow back to {@code sourceState} after
+    * {@link #DEFAULT_REGROW_DELAY_TICKS}. State lives on the POINT (same key space as the break record), so the
+    * schedule survives the breaking villager wandering off — any later tick of the store performs the regrow.
+    *
+    * @param nowGameTime the current game tick ({@code Level#getGameTime}); the due tick is {@code now + delay}.
+    */
+   public void scheduleRegrow(Level level, BlockPos pos, BlockState sourceState, long nowGameTime) {
+      scheduleRegrow(level, pos, sourceState, nowGameTime, DEFAULT_REGROW_DELAY_TICKS);
+   }
+
+   /** {@link #scheduleRegrow(Level, BlockPos, BlockState, long)} with an explicit delay (ticks). */
+   public void scheduleRegrow(Level level, BlockPos pos, BlockState sourceState, long nowGameTime, int delayTicks) {
+      regrows.put(keyOf(level, pos), new Regrow(sourceState, nowGameTime + delayTicks));
+   }
+
+   /** The scheduled regrow for a point, or {@code null} if none is pending. Test/diagnostic. */
+   public Regrow peekRegrow(Level level, BlockPos pos) {
+      return regrows.get(keyOf(level, pos));
+   }
+
+   /** Test/diagnostic: number of pending regrows. */
+   public int regrowCount() {
+      return regrows.size();
+   }
+
+   /**
+    * Performs every regrow for {@code level} whose due tick has passed at {@code nowGameTime}: sets the source
+    * block back to its stored state (only if the spot is currently air/replaceable, so we never clobber a player
+    * build there) and drops the schedule entry. Called once per server tick per world. Returns the number regrown.
+    */
+   public int tickRegrow(Level level, long nowGameTime) {
+      ResourceKey<Level> dim = level.dimension();
+      Identifier dimId = dim != null ? dim.identifier() : Identifier.withDefaultNamespace("headless");
+      int regrown = 0;
+      Iterator<Map.Entry<Key, Regrow>> it = regrows.entrySet().iterator();
+      while (it.hasNext()) {
+         Map.Entry<Key, Regrow> e = it.next();
+         Key key = e.getKey();
+         if (!key.dimension().equals(dimId)) {
+            continue;
+         }
+         Regrow r = e.getValue();
+         if (nowGameTime < r.dueTick()) {
+            continue;
+         }
+         BlockPos pos = BlockPos.of(key.packedPos());
+         // Only regrow into air/replaceable so a player who built on the broken spot keeps their block.
+         BlockState current = level.getBlockState(pos);
+         if (current.isAir() || current.canBeReplaced()) {
+            level.setBlockAndUpdate(pos, r.state());
+            regrown++;
+         }
+         it.remove();
+      }
+      return regrown;
    }
 
    private static Key keyOf(Level level, BlockPos pos) {
@@ -152,5 +226,9 @@ public final class TaskPointStore {
 
    /** Composite key: dimension id + packed BlockPos long. */
    private record Key(Identifier dimension, long packedPos) {
+   }
+
+   /** A pending ore regrow: the source block state to restore and the game tick it becomes due. */
+   public record Regrow(BlockState state, long dueTick) {
    }
 }

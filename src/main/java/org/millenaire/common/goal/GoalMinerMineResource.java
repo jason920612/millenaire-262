@@ -3,11 +3,15 @@ package org.millenaire.common.goal;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.concurrent.CopyOnWriteArrayList;
+import net.minecraft.core.BlockPos;
 import net.minecraft.world.level.block.Block;
 import net.minecraft.world.level.block.state.BlockState;
 import net.minecraft.world.level.block.Blocks;
 import net.minecraft.world.item.Items;
 import net.minecraft.world.item.ItemStack;
+import com.coderyo.jason.ops.OpState;
+import com.coderyo.jason.ops.TaskPointStore;
+import com.coderyo.jason.ops.VillagerWorldOps;
 import org.millenaire.common.block.MillBlocks;
 import org.millenaire.common.config.DocumentedElement;
 import org.millenaire.common.config.MillConfigValues;
@@ -41,16 +45,10 @@ public class GoalMinerMineResource extends Goal {
 
    @Override
    public int actionDuration(MillVillager villager) {
-      Block block = villager.getBlock(villager.getGoalDestPoint());
-      if (block == Blocks.STONE || block == Blocks.SANDSTONE) {
-         int toolEfficiency = (int)villager.getBestPickaxe().getDestroySpeed(new ItemStack(villager.getBestPickaxe(), 1), Blocks.SANDSTONE.defaultBlockState());
-         return 140 - 4 * toolEfficiency;
-      } else if (block != Blocks.SAND && block != Blocks.CLAY && block != Blocks.GRAVEL) {
-         return 70;
-      } else {
-         int toolEfficiency = (int)villager.getBestShovel().getDestroySpeed(new ItemStack(villager.getBestShovel(), 1), Blocks.SAND.defaultBlockState());
-         return 140 - 4 * toolEfficiency;
-      }
+      // Player-like mining is now driven per-tick by performAction (reach → break-over-time → pickup): the real
+      // duration emerges from the break math + walk-to-each-drop, so the action is re-entered every tick (1) rather
+      // than waiting a fixed 1.12 countdown then teleporting the yield into the inventory.
+      return 1;
    }
 
    public List<Building> getBuildings(MillVillager villager) {
@@ -121,56 +119,130 @@ public class GoalMinerMineResource extends Goal {
       return true;
    }
 
+   /**
+    * Player-like mine cycle, driven one tick at a time (actionDuration == 1). Returns {@code false} while the
+    * cycle is mid-way (goal stays in action), {@code true} when the whole cycle is done (goal advances).
+    *
+    * <p>Cycle: ensureTool (strict pickaxe/shovel; ULU-mined snow/ice are exempt — the goal already holds the ULU)
+    * → {@link VillagerWorldOps#breakTick} until the source block really breaks over time (reach-gated, cracks,
+    * real tool-aware drops) → {@link VillagerWorldOps#pickupTick} walking to each dropped ItemEntity → reconcile
+    * to the 1.12 yield for the Mill-special / balance-affecting blocks → schedule the ore to REGROW on the point.
+    *
+    * <p>1.12 fidelity: 1.12 never removed the source block (it faked the break and {@code addToInv}'d a fixed item),
+    * so the supply was renewable. We restore that net effect by really breaking + regrowing, and we keep the 1.12
+    * NET YIELD per block where the real drop would differ (see {@code grantMillYield}).
+    */
    @Override
    public boolean performAction(MillVillager villager) throws Exception {
-      BlockState blockState = WorldUtilities.getBlockState(villager.level(), villager.getGoalDestPoint());
+      Point dest = villager.getGoalDestPoint();
+      if (dest == null) {
+         return true; // no target left — let the goal re-pick.
+      }
+      BlockPos pos = dest.getBlockPos();
+      BlockState blockState = WorldUtilities.getBlockState(villager.level(), dest);
       Block block = blockState.getBlock();
-      if (block == Blocks.SAND) {
-         villager.addToInv(Blocks.SAND, 1);
-         WorldUtilities.playSoundBlockBreaking(villager.level(), villager.getGoalDestPoint(), Blocks.SAND, 1.0F);
-         if (MillConfigValues.LogMiner >= 3 && villager.extraLog) {
-            MillLog.debug(this, "Gathered sand at: " + villager.getGoalDestPoint());
-         }
-      } else if (block == Blocks.STONE) {
-         // 26.2: BlockStone.VARIANT is gone; granite/diorite/etc. are distinct blocks now, so plain STONE always yields cobblestone
-         villager.addToInv(Blocks.COBBLESTONE, 1);
-         WorldUtilities.playSoundBlockBreaking(villager.level(), villager.getGoalDestPoint(), Blocks.STONE, 1.0F);
-         if (MillConfigValues.LogMiner >= 3 && villager.extraLog) {
-            MillLog.debug(this, "Gather cobblestone at: " + villager.getGoalDestPoint());
-         }
-      } else if (block == Blocks.SANDSTONE) {
-         villager.addToInv(Blocks.SANDSTONE, 1);
-         WorldUtilities.playSoundBlockBreaking(villager.level(), villager.getGoalDestPoint(), Blocks.SANDSTONE, 1.0F);
-         if (MillConfigValues.LogMiner >= 3 && villager.extraLog) {
-            MillLog.debug(this, "Gather sand stone at: " + villager.getGoalDestPoint());
-         }
-      } else if (block == Blocks.CLAY) {
-         villager.addToInv(Items.CLAY_BALL, 1);
-         WorldUtilities.playSoundBlockBreaking(villager.level(), villager.getGoalDestPoint(), Blocks.CLAY, 1.0F);
-         if (MillConfigValues.LogMiner >= 3 && villager.extraLog) {
-            MillLog.debug(this, "Gather clay at: " + villager.getGoalDestPoint());
-         }
-      } else if (block == Blocks.GRAVEL) {
-         villager.addToInv(Blocks.GRAVEL, 1);
-         WorldUtilities.playSoundBlockBreaking(villager.level(), villager.getGoalDestPoint(), Blocks.GRAVEL, 1.0F);
-         if (MillConfigValues.LogMiner >= 3 && villager.extraLog) {
-            MillLog.debug(this, "Gather gravel at: " + villager.getGoalDestPoint());
-         }
-      } else if (block == Blocks.SNOW) {
-         villager.addToInv(MillBlocks.SNOW_BRICK, 1);
-         WorldUtilities.playSoundBlockBreaking(villager.level(), villager.getGoalDestPoint(), Blocks.SNOW_BLOCK, 1.0F);
-         if (MillConfigValues.LogMiner >= 3) {
-            MillLog.debug(this, "Gather snow at: " + villager.getGoalDestPoint());
-         }
-      } else if (block == Blocks.ICE) {
-         villager.addToInv(MillBlocks.ICE_BRICK, 1);
-         WorldUtilities.playSoundBlockBreaking(villager.level(), villager.getGoalDestPoint(), Blocks.ICE, 1.0F);
-         if (MillConfigValues.LogMiner >= 3) {
-            MillLog.debug(this, "Gather ice at: " + villager.getGoalDestPoint());
+
+      // Air already (mid-cycle, after the break): move straight to the pickup phase against the worksite.
+      if (blockState.isAir()) {
+         return runPickupAndFinish(villager, pos, block);
+      }
+
+      // Strict tool: snow/ice are knife(ULU)-mined in 1.12, not pickaxe/shovel — exempt them from the strict
+      // pickaxe/shovel gate (the goal's getHeldItemsTravelling already equips the ULU for those).
+      boolean uluMined = block == Blocks.SNOW || block == Blocks.ICE;
+      if (!uluMined) {
+         VillagerWorldOps.ToolKind kind = VillagerWorldOps.miningToolFor(block);
+         if (!VillagerWorldOps.ensureTool(villager, kind)) {
+            // No correct tool: do NOT break (no drop). Stay in-goal; GoalGetTool (priority 500) will pre-empt and
+            // fetch one. Returning false keeps this goal active without faking a yield.
+            if (MillConfigValues.LogMiner >= 2 && villager.extraLog) {
+               MillLog.debug(this, "No " + kind + " to mine " + block + " at " + dest + "; waiting for tool.");
+            }
+            return false;
          }
       }
 
+      // Remember the exact source state so the regrow restores the same block (renewable mine, as 1.12).
+      BlockState sourceState = blockState;
+
+      OpState st = VillagerWorldOps.breakTick(villager, pos);
+      switch (st) {
+         case APPROACHING:
+         case EXTENDING_REACH:
+         case IN_PROGRESS:
+            return false; // keep breaking / walking closer next tick.
+         case BLOCKED:
+            // Unbreakable (shouldn't happen for mine sources) — abandon so the goal re-picks rather than spinning.
+            if (MillConfigValues.LogMiner >= 1) {
+               MillLog.debug(this, "Blocked mining " + block + " at " + dest + "; abandoning.");
+            }
+            return true;
+         case COMPLETE:
+            // Block just broke this tick. Schedule the regrow on the point and proceed to pickup.
+            scheduleRegrow(villager, pos, sourceState);
+            return runPickupAndFinish(villager, pos, block);
+         default:
+            return false;
+      }
+   }
+
+   /** Walk-to-each-drop pickup; on COMPLETE reconcile to the 1.12 yield and finish the goal. */
+   private boolean runPickupAndFinish(MillVillager villager, BlockPos pos, Block block) {
+      OpState pst = VillagerWorldOps.pickupTick(villager, pos);
+      if (pst != OpState.COMPLETE) {
+         return false; // still walking to / collecting drops.
+      }
+      // The block at pos is now air (we broke it), so `block` may be AIR on a later-tick re-entry. The broken
+      // block's identity persists on the POINT via the regrow schedule — recover it from there for the yield
+      // reconciliation so a multi-tick pickup still grants the correct 1.12 Mill yield (snow/ice/clay).
+      Block brokenBlock = block;
+      if (brokenBlock.defaultBlockState().isAir()) {
+         TaskPointStore.Regrow regrow = TaskPointStore.get().peekRegrow(villager.level(), pos);
+         if (regrow != null) {
+            brokenBlock = regrow.state().getBlock();
+         }
+      }
+      grantMillYield(villager, brokenBlock);
+      if (MillConfigValues.LogMiner >= 3 && villager.extraLog) {
+         MillLog.debug(this, "Mined + collected " + block + " at " + pos);
+      }
       return true;
+   }
+
+   /** Schedule the broken source to regrow on the point, back to its source state, after the default delay. */
+   private void scheduleRegrow(MillVillager villager, BlockPos pos, BlockState sourceState) {
+      TaskPointStore.get().scheduleRegrow(villager.level(), pos, sourceState, villager.level().getGameTime());
+      if (MillConfigValues.LogMiner >= 2 && villager.extraLog) {
+         MillLog.debug(this, "Scheduled regrow of " + sourceState.getBlock() + " at " + pos);
+      }
+   }
+
+   /**
+    * Reconcile the picked-up real drops to the 1.12 NET YIELD where it matters (balance preservation):
+    *
+    * <ul>
+    *   <li>SAND / SANDSTONE / GRAVEL / STONE(→cobblestone): real drop == 1.12 item, nothing to do — the pickup
+    *       already put the right item in the inventory.</li>
+    *   <li>CLAY: real break drops 4 clay balls; 1.12 granted exactly 1 → trim to 1 (kept as the 1.12 balance).</li>
+    *   <li>SNOW (layer): real break drops snowballs; 1.12 converted it to a Mill {@code SNOW_BRICK} → grant 1
+    *       SNOW_BRICK (the picked-up snowballs are the worksite by-product; the economy item is the brick).</li>
+    *   <li>ICE: real break drops nothing (no silk-touch); 1.12 converted it to a Mill {@code ICE_BRICK} → grant 1
+    *       ICE_BRICK.</li>
+    * </ul>
+    *
+    * These are the explicit "kept as 1.12" yield cases for the mine.
+    */
+   private void grantMillYield(MillVillager villager, Block block) {
+      if (block == Blocks.CLAY) {
+         // 1.12 net yield was 1 clay ball; the real break dropped 4. Remove the 3 extra so balance is unchanged.
+         int extra = 3;
+         villager.takeFromInv(Items.CLAY_BALL, 0, extra);
+      } else if (block == Blocks.SNOW) {
+         villager.addToInv(MillBlocks.SNOW_BRICK, 1);
+      } else if (block == Blocks.ICE) {
+         villager.addToInv(MillBlocks.ICE_BRICK, 1);
+      }
+      // SAND, GRAVEL, SANDSTONE, STONE(→COBBLESTONE): real drop already equals the 1.12 item; no adjustment.
    }
 
    @Override

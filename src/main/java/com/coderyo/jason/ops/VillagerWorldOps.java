@@ -2,11 +2,18 @@ package com.coderyo.jason.ops;
 
 import net.minecraft.core.BlockPos;
 import net.minecraft.world.InteractionHand;
+import net.minecraft.world.entity.Entity;
 import net.minecraft.world.entity.item.ItemEntity;
 import net.minecraft.world.item.Item;
 import net.minecraft.world.item.ItemStack;
+import net.minecraft.world.item.AxeItem;
+import net.minecraft.world.item.FishingRodItem;
+import net.minecraft.world.item.HoeItem;
+import net.minecraft.world.item.ShearsItem;
+import net.minecraft.world.item.ShovelItem;
 import net.minecraft.world.level.Level;
 import net.minecraft.world.level.block.Block;
+import net.minecraft.world.level.block.Blocks;
 import net.minecraft.world.level.block.state.BlockState;
 import net.minecraft.world.phys.AABB;
 import net.minecraft.world.phys.Vec3;
@@ -246,24 +253,168 @@ public final class VillagerWorldOps {
       throw new UnsupportedOperationException("fishTick is O4 (AW + FishingHook mixin); not implemented in O0");
    }
 
+   // ================================================================================================
+   // PICKUP — "walk to each drop" (O1). Shared by every break/harvest op.
+   // ================================================================================================
+
+   /** Horizontal+vertical radius (blocks) around the worksite in which a drop is considered "owed" by the op. */
+   public static final double PICKUP_SCAN_RADIUS = 5.0;
+   /** Distance (blocks, centre-to-centre) at which the villager is close enough to collect a drop into its inv. */
+   public static final double PICKUP_COLLECT_DIST = 1.4;
+   private static final double PICKUP_COLLECT_DIST_SQR = PICKUP_COLLECT_DIST * PICKUP_COLLECT_DIST;
+   /** Navigation speed while walking to a drop (matches the villager's general work pace). */
+   private static final double PICKUP_WALK_SPEED = 0.5;
+
    /**
-    * Walk the villager to the nearest {@link ItemEntity} owed by the just-finished op and collect it into its Mill
-    * inventory; repeat until none remain.
+    * Walk the villager to the nearest {@link ItemEntity} near {@code around} (the just-finished worksite) and, once
+    * within {@link #PICKUP_COLLECT_DIST}, collect it into the villager's Mill inventory and discard the entity;
+    * otherwise step the navigation toward it. This is the user's "walk to each drop" step — it deliberately moves
+    * to ONE drop at a time and does NOT vacuum from afar.
     *
-    * <p>// O1+: NOT IMPLEMENTED. This is the "walk to each drop" step that turns real drops into inventory.
+    * <p>{@link MillVillager} is a {@code Mob}, not a {@code Player}: vanilla item-magnet pickup ({@code touch}) is
+    * Player-gated, so a Mill villager never auto-collects ground items. We therefore collect explicitly here:
+    * {@code addToInv} the stack's item+count, then {@code discard} the entity (mirroring what a player pickup would
+    * do — remove the ground entity, gain the items).
+    *
+    * @return {@link OpState#PICKING_UP} while drops remain (walking to / collecting them), {@link OpState#COMPLETE}
+    *     when none are left near the worksite.
     */
    public static OpState pickupTick(MillVillager v, BlockPos around) {
-      throw new UnsupportedOperationException("pickupTick is O1+ (drop walk-and-collect); not implemented in O0");
+      ItemEntity target = nearestDrop(v, around);
+      if (target == null) {
+         return OpState.COMPLETE;
+      }
+
+      double distSqr = v.distanceToSqr(target);
+      if (distSqr <= PICKUP_COLLECT_DIST_SQR) {
+         collectDrop(v, target);
+         // If that was the last one, report COMPLETE this very tick so the goal can advance promptly.
+         return nearestDrop(v, around) == null ? OpState.COMPLETE : OpState.PICKING_UP;
+      }
+
+      // Walk to this one drop. Re-issued each tick; the navigation no-ops if already en route to the same spot.
+      v.getNavigation().moveTo(target.getX(), target.getY(), target.getZ(), PICKUP_WALK_SPEED);
+      v.getLookControl().setLookAt(target.getX(), target.getY(), target.getZ());
+      return OpState.PICKING_UP;
+   }
+
+   /** The nearest live, non-removed {@link ItemEntity} within {@link #PICKUP_SCAN_RADIUS} of {@code around}, or null. */
+   private static ItemEntity nearestDrop(MillVillager v, BlockPos around) {
+      Level level = v.level();
+      AABB box = new AABB(around).inflate(PICKUP_SCAN_RADIUS);
+      ItemEntity best = null;
+      double bestSqr = Double.MAX_VALUE;
+      // getEntities (NOT getEntitiesOfClass) — the class-cache path is not reentrancy-safe during the tick loop
+      // (see MillVillager's hostile scan); we filter for ItemEntity ourselves.
+      for (Entity e : level.getEntities(v, box, e -> e instanceof ItemEntity ie && ie.isAlive() && !ie.getItem().isEmpty())) {
+         double d = v.distanceToSqr(e);
+         if (d < bestSqr) {
+            bestSqr = d;
+            best = (ItemEntity) e;
+         }
+      }
+      return best;
+   }
+
+   /** Collect a drop into the villager's Mill inventory (whole stack) and remove the ground entity. */
+   private static void collectDrop(MillVillager v, ItemEntity drop) {
+      ItemStack stack = drop.getItem();
+      if (!stack.isEmpty()) {
+         v.addToInv(stack.getItem(), stack.getCount());
+      }
+      v.take(drop, stack.getCount()); // plays the pickup animation/sound, like a player collecting it
+      drop.discard();
+   }
+
+   // ================================================================================================
+   // TOOL — strict (O1). The op makes no drops without the correct tool, so the goal must equip one.
+   // ================================================================================================
+
+   /**
+    * Strict tool check: is the villager's main hand holding the right tool for {@code kind}? If yes → {@code true}.
+    * If not, try to equip the matching best tool from the villager's Mill stock into the main hand; return
+    * {@code true} only if the main hand now holds the correct tool. Returns {@code false} when the villager has no
+    * such tool — the caller (goal) must then go fetch one (the existing {@code GoalGetTool} path) and must NOT
+    * proceed to break, since a wrong/empty tool yields no drops for tool-requiring blocks.
+    *
+    * <p>Mill villagers hold their tool in {@code heldItem} (== {@code getMainHandItem}), set by the goal's
+    * {@code getHeldItemsDestination}; for the mine goal that is already {@code getBestPickaxeStack()}/
+    * {@code getBestShovelStack()}. So in the normal flow this returns {@code true} on the first check; the
+    * stock-equip branch is the strict fallback for goals that have not pre-set the hand.
+    */
+   public static boolean ensureTool(MillVillager v, ToolKind kind) {
+      if (isToolOfKind(v.getMainHandItem(), kind)) {
+         return true;
+      }
+      ItemStack fromStock = bestToolFromStock(v, kind);
+      if (fromStock != null && isToolOfKind(fromStock, kind)) {
+         v.heldItem = fromStock;
+         return true;
+      }
+      return false; // villager lacks the tool — goal must fetch via GoalGetTool; do NOT proceed.
+   }
+
+   /** The villager's best stock tool for {@code kind} as a stack, or {@code null} if none is appropriate. */
+   private static ItemStack bestToolFromStock(MillVillager v, ToolKind kind) {
+      switch (kind) {
+         case PICKAXE: {
+            ItemStack[] s = v.getBestPickaxeStack();
+            return s != null && s.length > 0 ? s[0] : null;
+         }
+         case SHOVEL: {
+            ItemStack[] s = v.getBestShovelStack();
+            return s != null && s.length > 0 ? s[0] : null;
+         }
+         default:
+            // Axe/hoe/shears/rod stock selection is owned by their own goals (chop/farm/shear/fish, O2+); the
+            // strict check above still applies to whatever the goal placed in the hand.
+            return null;
+      }
    }
 
    /**
-    * Ensure the villager holds the correct tool for {@code kind} (axe/pickaxe/shovel/hoe/shears/rod); strict — if
-    * missing, trigger {@code GoalGetTool} to fetch one.
-    *
-    * <p>// O1+: NOT IMPLEMENTED. Strict tool policy + GoalGetTool integration.
+    * True if {@code stack} is a tool of {@code kind}. PICKAXE has no dedicated class in 26.2 (pickaxes are plain
+    * data-component {@code Item}s), so it is detected behaviourally — the stack is the correct tool for stone (a
+    * pickaxe-requiring block) — while the other kinds keep their concrete item classes.
     */
-   public static boolean ensureTool(MillVillager v, ToolKind kind) {
-      throw new UnsupportedOperationException("ensureTool is O1+ (strict tool + GoalGetTool); not implemented in O0");
+   public static boolean isToolOfKind(ItemStack stack, ToolKind kind) {
+      if (stack == null || stack.isEmpty()) {
+         return false;
+      }
+      Item item = stack.getItem();
+      switch (kind) {
+         case PICKAXE:
+            // 26.2: no PickaxeItem class. A pickaxe is exactly an item that is the correct tool for stone
+            // (which requires a pickaxe) and not one of the other concrete tool classes.
+            return !(item instanceof ShovelItem) && !(item instanceof AxeItem) && !(item instanceof HoeItem)
+               && !(item instanceof ShearsItem) && !(item instanceof FishingRodItem)
+               && stack.isCorrectToolForDrops(Blocks.STONE.defaultBlockState());
+         case SHOVEL:
+            return item instanceof ShovelItem;
+         case AXE:
+            return item instanceof AxeItem;
+         case HOE:
+            return item instanceof HoeItem;
+         case SHEARS:
+            return item instanceof ShearsItem;
+         case ROD:
+            return item instanceof FishingRodItem;
+         default:
+            return false;
+      }
+   }
+
+   /**
+    * The {@link ToolKind} appropriate for mining {@code block}, faithful to 1.12 {@code GoalMinerMineResource}'s
+    * tool choice: shovel for sand/clay/gravel, pickaxe for stone/sandstone (and everything else stony). Snow/ice
+    * are mined with the Inuit ULU in 1.12 (a knife, not a digger) — those are handled by their own held-item path,
+    * not this strict pickaxe/shovel gate, so callers should skip {@link #ensureTool} for them.
+    */
+   public static ToolKind miningToolFor(Block block) {
+      if (block == Blocks.SAND || block == Blocks.CLAY || block == Blocks.GRAVEL) {
+         return ToolKind.SHOVEL;
+      }
+      return ToolKind.PICKAXE;
    }
 
    /**

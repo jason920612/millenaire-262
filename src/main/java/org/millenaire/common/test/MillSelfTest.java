@@ -2683,18 +2683,33 @@ public final class MillSelfTest {
          level.setBlock(orePos, net.minecraft.world.level.block.Blocks.IRON_ORE.defaultBlockState(), 3);
          net.minecraft.world.level.block.state.BlockState oreState = level.getBlockState(orePos);
 
-         v.heldItem = new ItemStack(net.minecraft.world.item.Items.IRON_PICKAXE);
+         net.minecraft.world.item.ItemStack pick = new ItemStack(net.minecraft.world.item.Items.IRON_PICKAXE);
+         v.heldItem = pick;
          int rawIronBefore = v.countInv(net.minecraft.world.item.Items.RAW_IRON, 0);
          org.millenaire.common.goal.generic.GoalGenericMining goal = new org.millenaire.common.goal.generic.GoalGenericMining();
          goal.sourceBlockState = oreState; // used by actionDuration/held-item; performAction breaks the dest directly.
 
          // PHASE 1 — BREAK via the REAL migrated goal: drive navigation toward the ore, pin adjacent (the last nav step
          // headless nav can't reliably make), then run performAction → VillagerActions.harvestBlock until the ore→air.
+         //
+         // DETERMINISM (was the flake): v.tick() runs the picked villager's OWN goal each tick, and its
+         // checkGoalHeldItems() periodically (every ~21 ticks, when heldItemCount>20) OVERWRITES v.heldItem with the
+         // held item dictated by that unrelated goal (MillVillager.checkGoalHeldItems → heldItem = heldItems[...]).
+         // breakTick reads effectiveTool(v) == v.heldItem for BOTH the per-tick destroy speed AND the canHarvest
+         // (drops) gate. When the clobber happened mid-break the pickaxe was replaced by a non-pickaxe, so:
+         //   (a) IRON_ORE (requiresCorrectToolForDrops) broke at the wrong-tool/bare-hand rate → break stretched from
+         //       ~15 to ~150+ ticks (the 14↔152 variance), and worse
+         //   (b) if the FINAL breaking tick landed while the wrong tool was held, canHarvest==false → the ore broke to
+         //       AIR with NO raw_iron drop at all → PHASE 2 could never collect (oreBrokeToAir=true, collected=false).
+         // Fix: re-assert the correct pickaxe in v.heldItem every tick AFTER v.tick(), so the real-AI clobber can never
+         // win — the break is consistently ~15 ticks and the drop is guaranteed to spawn. Faithful: the villager still
+         // navigates + breaks + drops through the real goal; we only pin the tool the test handed it.
          int ticks = 0;
          boolean oreGone = false;
          for (; ticks < 2000; ticks++) {
             v.setGoalDestPoint(new Point(orePos));
-            v.tick();                  // REAL AI navigation toward the ore
+            v.tick();                  // REAL AI navigation toward the ore (may clobber heldItem — re-pinned below)
+            v.heldItem = pick;         // re-pin the pickaxe so breakTick's tool-speed + canHarvest gate stay correct
             if (!com.coderyo.jason.ops.VillagerWorldOps.withinReach(v, orePos)) {
                v.setPos(orePos.getX() - 1.2, base.getY(), orePos.getZ() + 0.5);
             }
@@ -2707,8 +2722,11 @@ public final class MillSelfTest {
 
          // PHASE 2 — collect the real raw_iron drop via the goal's own pickup path (its air-branch keeps driving the
          // facade's pickup), nudging the villager onto the drop first (the last navigation step) so the collect fires.
+         // Separate budget that begins ONLY after the break above, so a slow break can never starve pickup; we don't
+         // call v.tick() here (no nav clobber), but keep the pickaxe pinned for good measure.
          int pg = 0;
          while (pg++ < 400) {
+            v.heldItem = pick;
             var d = level.getEntitiesOfClass(net.minecraft.world.entity.item.ItemEntity.class,
                new AABB(orePos).inflate(8.0), e -> e.isAlive() && e.getItem().is(net.minecraft.world.item.Items.RAW_IRON));
             if (d.isEmpty()) {

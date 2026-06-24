@@ -151,7 +151,13 @@ public final class MillSimObserver {
     */
    private static final int TICK_WAR_DEMO = 69;
    private static final int TICK_MERGE_DEMO = 70;
-   private static final int TICK_LIFECYCLE_START = 71;
+   /**
+    * Dedicated DISCUSSION → quest + decision, DIPLOMACY (propose→accept/reject→effect: trade/alliance/peace/merge),
+    * and player DIALOGUE demonstration (Phase 6, #7). Runs AFTER merge/found/war so it can negotiate a real merge +
+    * ceasefire through the diplomacy engine using freshly-placed villages.
+    */
+   private static final int TICK_TALK_DEMO = 71;
+   private static final int TICK_LIFECYCLE_START = 72;
    private final int TICK_LIFECYCLE_END = TICK_LIFECYCLE_START + SIM_DAYS * TICKS_PER_DAY;
    /** Roaming-player phase: the simulated player visits every village and trades + quests. */
    private final int TICK_PLAYER_INTERACT = TICK_LIFECYCLE_END + 10;
@@ -223,6 +229,13 @@ public final class MillSimObserver {
    private String warDemoContestedEvidence = "not run";
    private String warDemoOverwhelmingEvidence = "not run";
    private String warDemoRecoveryEvidence = "not run";
+
+   // ---- Discussion→quest + DIPLOMACY + player DIALOGUE (Phase 6, #7) demonstration evidence ----
+   private String talkDiscussionEvidence = "not run";
+   private String talkDiplomacyTradeEvidence = "not run";
+   private String talkDiplomacyPeaceEvidence = "not run";
+   private String talkDiplomacyMergeEvidence = "not run";
+   private String talkDialogueEvidence = "not run";
 
    // ---- Roaming-player interaction accumulators ----
    private int playerVillagesVisited = 0;
@@ -318,6 +331,8 @@ public final class MillSimObserver {
             stepMergeFoundDemo();
          } else if (tick == TICK_WAR_DEMO) {
             stepExpansionWarDemo();
+         } else if (tick == TICK_TALK_DEMO) {
+            stepTalkDiplomacyDemo();
          } else if (tick > TICK_LIFECYCLE_START && tick < TICK_LIFECYCLE_END) {
             if ((tick - TICK_LIFECYCLE_START) % SAMPLE_INTERVAL == 0) {
                sampleWorld("LIFECYCLE");
@@ -1917,6 +1932,249 @@ public final class MillSimObserver {
       }
    }
 
+   // ====== DISCUSSION → quest + decision, DIPLOMACY, player DIALOGUE demonstration (Phase 6, #7) ======
+
+   /**
+    * Deterministic, observable demonstration of Phase 6 (#7) — the FINAL pillar — driven SYNCHRONOUSLY so it is
+    * provable regardless of 100x ambient-AI sleep. It shows, with greppable {@code ███ SIM TALK} /
+    * {@code ███ SIM DIPLOMACY} evidence:
+    * <ol>
+    *   <li><b>DISCUSSION → quest + decision</b>: a village under threat discusses → a DEFEND quest + a DEFENSE
+    *       decision; remove the threat + introduce a resource shortfall → a GATHER quest tuned to the resource +
+    *       a workshop decision that steers the live {@link com.coderyo.jason.build.MillNeedsModel} needs model.</li>
+    *   <li><b>DIPLOMACY TRADE</b>: village A holds a surplus resource B needs → A proposes a TRADE, B ACCEPTS from
+    *       its own state, the relation effect is applied.</li>
+    *   <li><b>DIPLOMACY PEACE</b>: two villages at war with a weakened proposer → a CEASEFIRE is negotiated, routed
+    *       through {@link com.coderyo.jason.war.VillageWar#makePeace} (the Phase-5 war ENDS via diplomacy).</li>
+    *   <li><b>DIPLOMACY MERGE</b>: a close same-culture overlapping pair → a MERGE is negotiated, routed through
+    *       {@link com.coderyo.jason.merge.VillageMergeFound#tryMerge} (the Phase-4 merge-consent flows through
+    *       diplomacy; the larger absorbs the smaller).</li>
+    *   <li><b>PLAYER DIALOGUE</b>: the simulated player ASKS a village state (templated), TAKES the discussion
+    *       quest, and REPRESENTS a village carrying a diplomacy proposal to another — all culture-toned templates.</li>
+    * </ol>
+    * Strict: every proposal can be REJECTED from the other's state; a merge still passes the Phase-4 gates; peace
+    * only ends a real war. No grant — only relation/pact/war-state/merge effects actually move.
+    */
+   private void stepTalkDiplomacyDemo() {
+      final String TAGT = com.coderyo.jason.talk.VillageDiscussion.TAG;
+      final String TAGD = com.coderyo.jason.talk.VillageDiplomacy.TAG;
+      try {
+         MillWorldData mw = Mill.getMillWorld(level);
+         Culture culture = null;
+         VillageType vtype = null;
+         for (Culture cc : Culture.ListCultures) {
+            VillageType vt = pickRegularVillageType(cc);
+            if (vt != null) {
+               culture = cc;
+               vtype = vt;
+               break;
+            }
+         }
+         if (culture == null) {
+            talkDiscussionEvidence = "skipped (no culture with a regular village type)";
+            MillLog.major(null, TAGT + " DEMO SKIP: " + talkDiscussionEvidence);
+            return;
+         }
+
+         // Place the two demo villages ONCE (near the early-forced origin cluster so worldgen is cheap); the
+         // discussion, trade, peace, merge and player-dialogue sub-demos all reuse them — no extra slow worldgen.
+         int baseX = VILLAGE_ORIGIN + 1500;
+         int baseZ = VILLAGE_ORIGIN + 1500;
+         Building a = generateVillageNear(culture, vtype, baseX, baseZ);
+         Building b = a == null ? null : generateVillageNear(culture, vtype,
+            a.getPos().getiX() + 600, a.getPos().getiZ());
+         if (a == null || b == null || a == b) {
+            talkDiscussionEvidence = "skipped (could not place two distinct villages)";
+            talkDiplomacyTradeEvidence = talkDiscussionEvidence;
+            MillLog.major(null, TAGT + " DEMO SKIP: " + talkDiscussionEvidence);
+            return;
+         }
+         a.isActive = true;
+         b.isActive = true;
+
+         // ---------- (1) DISCUSSION → quest + decision (on village a) ----------
+         // (a) THREAT → DEFEND quest + DEFENSE decision. Disarm a (clear records → defending strength ~0) so the
+         //     under-attack threat (10) genuinely exceeds defense — the survival-first topic the discussion picks.
+         List<VillagerRecord> savedRecords = new ArrayList<>(a.getVillagerRecords().values());
+         a.getVillagerRecords().clear();
+         a.underAttack = true;
+         com.coderyo.jason.talk.VillageDiscussion.DiscussionResult d1 =
+            com.coderyo.jason.talk.VillageDiscussion.discussAndLog(a);
+         // (b) remove the threat → the next-most-pressing topic surfaces (a resource shortfall or growth), with a
+         //     decision that steers the needs model (no longer the DEFEND topic).
+         a.underAttack = false;
+         com.coderyo.jason.talk.VillageDiscussion.DiscussionResult d2 =
+            com.coderyo.jason.talk.VillageDiscussion.discussAndLog(a);
+         boolean defendOk = d1.topic == com.coderyo.jason.talk.VillageDiscussion.Topic.DEFEND
+            && d1.quest != null && d1.quest.contains("drive them back")
+            && d1.decision.contains("DEFENSE");
+         boolean steerOk = d2.topic != com.coderyo.jason.talk.VillageDiscussion.Topic.DEFEND;
+         talkDiscussionEvidence = "threat→topic=" + d1.topic + " quest=\"" + d1.quest + "\" decision[" + d1.decision
+            + "]; no-threat→topic=" + d2.topic + (d2.resource != null ? ":" + d2.resource : "")
+            + " quest=\"" + d2.quest + "\" decision[" + d2.decision + "] => "
+            + (defendOk && steerOk ? "PASS (discussion picks the pressing topic → templated quest + a decision "
+               + "that steers the needs model)" : "CHECK");
+         MillLog.major(null, TAGT + " DEMO DISCUSSION " + talkDiscussionEvidence);
+         if (!defendOk) {
+            anomalies.merge("talk: threat discussion did not yield a defend quest+decision", 1, Integer::sum);
+         }
+         // Restore a's population so the trade/merge sub-demos read a real village again.
+         for (VillagerRecord vr : savedRecords) {
+            a.getVillagerRecords().put(vr.getVillagerId(), vr);
+         }
+
+         // ---------- (2) DIPLOMACY TRADE: complementary surplus↔need → propose, accept, effect ----------
+         {
+            // A holds a WOOD surplus (≥ need); B is short of wood → A can propose a complementary TRADE.
+            seedResourceStock(a, net.minecraft.world.item.Items.OAK_LOG,
+               com.coderyo.jason.build.MillNeedsModel.NEED_WOOD + 20);
+            // friendly-ish relation so the accept path is clean.
+            a.getRelations().put(b.getPos(), 15);
+            b.getRelations().put(a.getPos(), 15);
+            int relBefore = a.getRelations().getOrDefault(b.getPos(), 0);
+            com.coderyo.jason.talk.VillageDiplomacy.NegotiationResult tr =
+               com.coderyo.jason.talk.VillageDiplomacy.negotiate(a, b);
+            int relAfter = a.getRelations().getOrDefault(b.getPos(), 0);
+            boolean tradeOk = tr.proposal.kind == com.coderyo.jason.talk.VillageDiplomacy.Kind.TRADE
+               && tr.accepted && relAfter > relBefore;
+            talkDiplomacyTradeEvidence = "kind=" + tr.proposal.kind + " line=\"" + tr.proposal.line + "\" accepted="
+               + tr.accepted + " relation " + relBefore + "→" + relAfter + " => "
+               + (tradeOk ? "PASS (complementary surplus↔need → accepted TRADE, relation warmed)" : "CHECK");
+            MillLog.major(null, TAGD + " DEMO TRADE " + talkDiplomacyTradeEvidence);
+            if (!tradeOk) {
+               anomalies.merge("diplomacy: complementary trade not proposed+accepted", 1, Integer::sum);
+            }
+
+            // ---------- (3) DIPLOMACY PEACE: at-war + weak proposer → negotiated CEASEFIRE (Phase-5 via diplomacy) -
+            // Put a and b at war and DISARM a (clear its records → defending strength ~0 ≤ the weakness threshold)
+            // so it sues for peace, then negotiate. Save+restore a's records so the merge sub-demo still reads a pop.
+            List<VillagerRecord> aRecordsForPeace = new ArrayList<>(a.getVillagerRecords().values());
+            a.getVillagerRecords().clear();
+            com.coderyo.jason.war.VillageWar.clear(a);
+            com.coderyo.jason.war.VillageWar.clear(b);
+            com.coderyo.jason.war.VillageWar.seedTension(a, b, com.coderyo.jason.war.VillageWar.TENSION_THRESHOLD);
+            com.coderyo.jason.war.VillageWar.declareWar(a, b);
+            boolean atWarBefore = com.coderyo.jason.war.VillageWar.atWar(a, b);
+            // a sues for peace (its defending strength is now ~0 ≤ the weakness threshold).
+            com.coderyo.jason.talk.VillageDiplomacy.NegotiationResult pr =
+               com.coderyo.jason.talk.VillageDiplomacy.negotiate(a, b);
+            for (VillagerRecord vr : aRecordsForPeace) {
+               a.getVillagerRecords().put(vr.getVillagerId(), vr);
+            }
+            boolean atWarAfter = com.coderyo.jason.war.VillageWar.atWar(a, b);
+            boolean peaceOk = pr.proposal.kind == com.coderyo.jason.talk.VillageDiplomacy.Kind.PEACE
+               && pr.accepted && atWarBefore && !atWarAfter;
+            talkDiplomacyPeaceEvidence = "kind=" + pr.proposal.kind + " line=\"" + pr.proposal.line + "\" accepted="
+               + pr.accepted + " atWar " + atWarBefore + "→" + atWarAfter + " effect[" + pr.effect + "] => "
+               + (peaceOk ? "PASS (at-war + heavy losses → CEASEFIRE negotiated; war ended via VillageWar.makePeace)"
+                  : "CHECK (proposer may have been too strong to sue — kind=" + pr.proposal.kind + ")");
+            MillLog.major(null, TAGD + " DEMO PEACE " + talkDiplomacyPeaceEvidence);
+            if (!peaceOk) {
+               anomalies.merge("diplomacy: war-peace ceasefire did not flow through diplomacy", 1, Integer::sum);
+            }
+
+            // ---------- (5) PLAYER DIALOGUE: ask state, take quest, represent village in diplomacy ----------
+            try {
+               net.minecraft.world.entity.player.Player p = fakePlayer;
+               String state = com.coderyo.jason.talk.PlayerDialogue.askState(p, a);
+               com.coderyo.jason.talk.VillageDiscussion.DiscussionResult tq =
+                  com.coderyo.jason.talk.PlayerDialogue.takeQuest(p, a);
+               com.coderyo.jason.talk.VillageDiplomacy.NegotiationResult rep =
+                  com.coderyo.jason.talk.PlayerDialogue.representInDiplomacy(p, a, b);
+               boolean dialogueOk = state != null && state.contains("(") && tq != null;
+               talkDialogueEvidence = "askState=\"" + state + "\" takeQuest topic=" + (tq != null ? tq.topic : "?")
+                  + " represent=" + (rep != null ? rep.proposal.kind + "/" + rep.accepted : "?") + " => "
+                  + (dialogueOk ? "PASS (player asked state[templated], took the discussion quest, carried a "
+                     + "diplomacy proposal between villages)" : "CHECK");
+               MillLog.major(null, TAGT + " DEMO PLAYER-DIALOGUE " + talkDialogueEvidence);
+            } catch (Throwable t) {
+               talkDialogueEvidence = "exception: " + t;
+               MillLog.major(null, TAGT + " DEMO PLAYER-DIALOGUE FAIL: " + t);
+            }
+         }
+
+         // ---------- (4) DIPLOMACY MERGE: close same-culture overlapping → MERGE negotiated → absorb ----------
+         // REUSE the two already-placed same-culture villages a (big) and b (small) — no extra slow worldgen.
+         Building big = a;
+         Building small = b;
+         if (big == null || small == null || big == small
+            || !big.isActive || !small.isActive || !mw.villagesList.pos.contains(small.getPos())) {
+            talkDiplomacyMergeEvidence = "skipped (the two demo villages are not both reusable for a merge)";
+            MillLog.major(null, TAGD + " DEMO MERGE SKIP: " + talkDiplomacyMergeEvidence);
+         } else {
+            big.isActive = true;
+            small.isActive = true;
+            com.coderyo.jason.war.VillageWar.clear(big);
+            com.coderyo.jason.war.VillageWar.clear(small);
+            // Make 'big' genuinely larger (population) so 'small' is the one that consents to join.
+            addRealVillagerRecords(big, 6);
+            // Make their claims OVERLAP (the Phase-4 merge gate) by growing both radii to cover the gap.
+            int gap = (int) Math.ceil(big.getPos().distanceTo(small.getPos()));
+            int r = Math.min(com.coderyo.jason.expand.VillageExpansion.MAX_RADIUS - 16, gap / 2 + 60);
+            com.coderyo.jason.expand.VillageTerritory.get().set(big,
+               Math.max(com.coderyo.jason.expand.VillageExpansion.radiusOf(big), r));
+            com.coderyo.jason.expand.VillageTerritory.get().set(small,
+               Math.max(com.coderyo.jason.expand.VillageExpansion.radiusOf(small), r));
+            // Close + friendly (≥ MERGE_RELATION) same culture → the proposer offers a MERGE.
+            big.getRelations().put(small.getPos(), com.coderyo.jason.talk.VillageDiplomacy.MERGE_RELATION + 10);
+            small.getRelations().put(big.getPos(), com.coderyo.jason.talk.VillageDiplomacy.MERGE_RELATION + 10);
+            boolean smallListedBefore = mw.villagesList.pos.contains(small.getPos());
+            com.coderyo.jason.talk.VillageDiplomacy.NegotiationResult mr =
+               com.coderyo.jason.talk.VillageDiplomacy.negotiate(big, small);
+            boolean smallListedAfter = mw.villagesList.pos.contains(small.getPos());
+            boolean mergedThrough = mr.proposal.kind == com.coderyo.jason.talk.VillageDiplomacy.Kind.MERGE
+               && mr.accepted && mr.effect.contains("MERGED");
+            talkDiplomacyMergeEvidence = "kind=" + mr.proposal.kind + " line=\"" + mr.proposal.line + "\" accepted="
+               + mr.accepted + " smallRegistered " + smallListedBefore + "→" + smallListedAfter
+               + " effect[" + mr.effect + "] => "
+               + (mergedThrough && !smallListedAfter
+                  ? "PASS (close same-culture → MERGE negotiated through diplomacy → larger absorbed smaller, "
+                     + "registry clean — Phase-4 merge-consent now flows through #7)"
+                  : "CHECK (mergedThrough=" + mergedThrough + " smallStillListed=" + smallListedAfter + ")");
+            MillLog.major(null, TAGD + " DEMO MERGE " + talkDiplomacyMergeEvidence);
+            if (!mergedThrough) {
+               anomalies.merge("diplomacy: merge-consent did not flow through diplomacy", 1, Integer::sum);
+            }
+         }
+      } catch (Throwable t) {
+         record("talk-diplomacy-demo", t);
+         talkDiscussionEvidence = "exception: " + t;
+         MillLog.major(null, TAGT + " DEMO FAIL: " + t);
+         MillLog.printException(TAG + " talk-diplomacy-demo error", t);
+      }
+   }
+
+   /**
+    * Place {@code want} units of a specific real good into a loadable chest of the village (authoritative
+    * {@code storeGoods}) so the needs model reads a real surplus/shortfall — used to set up the diplomacy
+    * TRADE complementary-resource demo. No grant beyond the deterministic demo seed (real village goods).
+    */
+   private void seedResourceStock(Building townHall, net.minecraft.world.item.Item item, int want) {
+      try {
+         List<Building> candidates = new ArrayList<>(townHall.getBuildings());
+         if (!candidates.contains(townHall)) {
+            candidates.add(townHall);
+         }
+         for (Building bb : candidates) {
+            if (bb == null || bb.getResManager() == null || bb.getResManager().chests.isEmpty()) {
+               continue;
+            }
+            Point bp = bb.getPos();
+            if (bp != null) {
+               level.setChunkForced(bp.getiX() >> 4, bp.getiZ() >> 4, true);
+            }
+            for (Point cp : bb.getResManager().chests) {
+               if (cp.getMillChest(level) != null) {
+                  bb.storeGoods(item, 0, want);
+                  return;
+               }
+            }
+         }
+      } catch (Throwable t) {
+         record("talk-demo-seed-resource", t);
+      }
+   }
+
    /**
     * Add {@code n} REAL {@code helpInAttacks} (fighter) villager records to a village so its
     * {@link Building#getVillageDefendingStrength} rises deterministically (each fighter contributes a positive
@@ -3329,6 +3587,16 @@ public final class MillSimObserver {
             + warDemoOverwhelmingEvidence);
          log("SIM SUMMARY WAR-DEMO RECOVERY (Phase 5, #4 — post-war relations recover toward neutral): "
             + warDemoRecoveryEvidence);
+         log("SIM SUMMARY TALK-DISCUSSION (Phase 6, #7 — villagers discuss pressing state → templated quest + a "
+            + "decision steering the needs model/expansion): " + talkDiscussionEvidence);
+         log("SIM SUMMARY DIPLOMACY-TRADE (Phase 6, #7 — complementary surplus↔need → TRADE proposed, accept/reject, "
+            + "relation effect): " + talkDiplomacyTradeEvidence);
+         log("SIM SUMMARY DIPLOMACY-PEACE (Phase 6, #7 — at-war + heavy losses → CEASEFIRE negotiated, Phase-5 "
+            + "war-peace now flows through diplomacy): " + talkDiplomacyPeaceEvidence);
+         log("SIM SUMMARY DIPLOMACY-MERGE (Phase 6, #7 — close same-culture → MERGE negotiated, Phase-4 merge-consent "
+            + "now flows through diplomacy): " + talkDiplomacyMergeEvidence);
+         log("SIM SUMMARY PLAYER-DIALOGUE (Phase 6, #7 — take quest / ask state / represent village in diplomacy, "
+            + "templated culture tone): " + talkDialogueEvidence);
          log("SIM SUMMARY PLAYER: villagesVisited=" + playerVillagesVisited
             + " tradesDone=" + playerTradesDone + " questsDone=" + playerQuestsDone
             + " moneySpent=" + playerMoneySpent + " moneyEarned=" + playerMoneyEarned

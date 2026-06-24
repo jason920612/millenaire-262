@@ -589,6 +589,32 @@ public final class VillageWar {
    // ===============================================================================================
 
    /**
+    * Phase-6 (#7) CEASEFIRE entry point: the diplomacy engine negotiates PEACE between two warring villages and
+    * calls this to make the ceasefire REAL. It clears the at-war flag + accrued tension for the pair, ends the
+    * in-world hostilities (drops both villages' {@code underAttack} raid flags), and sets a post-war "uneasy
+    * truce" relation (mirrors talksim.py {@code apply_diplomacy} peace: war ended, relation eased to -20 rather
+    * than left at full hostility). This is what replaces the Phase-5 proxy of war ending only via the
+    * strength-resolved outcome — a negotiated ceasefire now flows through {@code VillageDiplomacy}. Returns true if
+    * the pair really was at war (so a no-op peace isn't reported as a ceasefire).
+    */
+   public static boolean makePeace(Building a, Building b) {
+      if (a == null || b == null || a.getPos() == null || b.getPos() == null) {
+         return false;
+      }
+      String key = pairKey(a, b);
+      boolean wasAtWar = AT_WAR.remove(key);
+      TENSION.put(key, 0.0);
+      endHostilities(a, b);
+      // Eased truce relation on both sides (the talksim apply_diplomacy peace effect): war over, not friends yet.
+      setRelation(a, b, -20);
+      setRelation(b, a, -20);
+      MillLog.major(null, TAG + " CEASEFIRE '" + safeName(a) + "' x '" + safeName(b)
+         + "' — negotiated PEACE (diplomacy): war " + (wasAtWar ? "ended" : "was not active")
+         + ", tension cleared, relations eased to -20 (uneasy truce)");
+      return wasAtWar;
+   }
+
+   /**
     * Recover the pair's relations toward NEUTRAL (mirrors warsim.py recover_relations): each recovery tick adds
     * {@link #RELATION_RECOVERY} to each side, capped at 0 (never past neutral). Sets up #7 diplomacy. Returns the
     * recovered a→b relation.

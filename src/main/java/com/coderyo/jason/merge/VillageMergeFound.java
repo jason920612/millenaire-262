@@ -178,11 +178,26 @@ public final class VillageMergeFound {
          if (other == townHall || other.getPos() == null) {
             continue;
          }
-         MergeOutcome m = tryMerge(townHall, other);
-         if (m.result == Result.MERGED) {
-            logMerge(m, townHall, other);
-            return true;
+         // Phase-6 (#7): a viable, friendly, same-culture overlap is now decided by a real DIPLOMACY NEGOTIATION
+         // (the proposer offers a MERGE, the other consents from its own state) instead of the old direct-consent
+         // proxy. VillageDiplomacy.apply(MERGE) routes back through tryMerge() (which still enforces the Phase-4
+         // gates), so the absorb is identical — but the "both consent" decision now flows through the diplomacy
+         // engine, as the plan requires. A hostile overlap still feeds the Phase-5 war path.
+         if (overlap(townHall, other) && compatible(townHall, other)
+            && relation(townHall, other) >= 0 && relation(other, townHall) >= 0) {
+            com.coderyo.jason.talk.VillageDiplomacy.NegotiationResult nr =
+               com.coderyo.jason.talk.VillageDiplomacy.negotiate(townHall, other);
+            if (nr.proposal.kind == com.coderyo.jason.talk.VillageDiplomacy.Kind.MERGE && nr.accepted
+               && !townHall.isActive) {
+               // The merge absorbed THIS town hall into the other (it was the smaller) — we're gone; stop.
+               return true;
+            }
+            if (nr.proposal.kind == com.coderyo.jason.talk.VillageDiplomacy.Kind.MERGE && nr.accepted) {
+               return true;
+            }
+            continue;
          }
+         MergeOutcome m = tryMerge(townHall, other);
          if (m.result == Result.WAR) {
             // Don't merge a hostile overlap — feed it into the Phase-5 expansion-war path (seed tension to the
             // threshold so the war tick declares + resolves it) and leave the villages intact for now.

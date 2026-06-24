@@ -1,0 +1,20 @@
+# Phase 6 (#7) — villager DISCUSSION / DIPLOMACY / player DIALOGUE templates.
+# Format: one entry per line, "key=template" (template) or "greet.<culture>=<greeting>" (culture tone).
+# {slots} are filled from live village state/culture/needs/relations by com.coderyo.jason.talk.TalkTemplates.
+# Keep this minimal + templated (NOT a big static corpus): new villages/resources/neighbours reuse the grammar.
+
+# --- templated lines ---
+quest.gather={culture_greet} Our {village} lacks {resource}. Bring us {amount} {resource} and be rewarded.
+quest.defend={culture_greet} {enemy} threatens {village}! Help us drive them back.
+quest.build={culture_greet} {village} grows — help raise a new {building}.
+state={village} ({culture}): pop {pop}, {mood}. We most need {top_need}.
+dipl.alliance={village} proposes an ALLIANCE with {other} — friends share strength.
+dipl.trade={village} offers {other} a TRADE pact: our {surplus_res} for your {need_res}.
+dipl.peace={village} sues {other} for PEACE — this war has cost us dearly.
+dipl.merge={village} proposes to MERGE with {other} into one people.
+
+# --- culture-specific greeting / tone ---
+greet.norman=Bonjour.
+greet.japanese=Konnichiwa.
+greet.mayan=Greetings, traveler.
+greet.byzantines=Khaire.

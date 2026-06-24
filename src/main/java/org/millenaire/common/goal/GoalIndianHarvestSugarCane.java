@@ -7,7 +7,7 @@ import net.minecraft.world.level.block.Blocks;
 import net.minecraft.world.item.Items;
 import net.minecraft.world.item.ItemStack;
 import com.coderyo.jason.ops.OpState;
-import com.coderyo.jason.ops.VillagerWorldOps;
+import com.coderyo.jason.ops.VillagerActions;
 import org.millenaire.common.config.DocumentedElement;
 import org.millenaire.common.entity.MillVillager;
 import org.millenaire.common.item.InvItem;
@@ -146,36 +146,33 @@ public class GoalIndianHarvestSugarCane extends Goal {
 
       if (segment != null) {
          BlockPos pos = segment.getBlockPos();
-         // Reach-gate (the upper segment sits ~3 blocks up; scaffold-extend if out of reach).
-         if (!VillagerWorldOps.withinReach(villager, pos)) {
-            OpState reach = VillagerWorldOps.ensureReach(villager, pos);
-            if (reach == OpState.BLOCKED) {
-               return true;
-            }
-            return false;
-         }
-         OpState st = VillagerWorldOps.breakTick(villager, pos); // cane is 0-hardness → breaks this tick, drops 1 cane.
+         // HARVEST this upper segment via the AI-invokable facade: reach-gate (scaffold-extend if the upper segment
+         // is out of reach, tracked on the column's worksite so the whole column shares ONE scaffold), break the
+         // 0-hardness cane (drops 1 cane this tick), then walk to + collect the real dropped cane. tool == null skips
+         // the strict tool gate (cane needs no tool). The reach anchor is the soil (dest) so the climb column is
+         // shared across both upper segments and reclaimed once when the column is done.
+         OpState st = VillagerActions.harvestBlock(villager, pos, null, dest.getBlockPos());
          switch (st) {
             case APPROACHING:
             case EXTENDING_REACH:
             case IN_PROGRESS:
-               return false;
+            case PICKING_UP:
+               return false; // walking into reach / breaking / collecting this segment's cane — keep going.
             case BLOCKED:
-               return true;
+               return true; // unreachable even with a column (not expected) — abandon so the goal re-picks.
             case COMPLETE:
-               // KEPT-1.12 irrigation bonus: chance of +1 cane on top of the real dropped cane for this segment.
+               // KEPT-1.12 irrigation bonus: chance of +1 cane on top of the real dropped cane for this segment,
+               // granted once per segment as it finishes (broken + collected).
                grantIrrigationBonus(villager);
-               return false; // next tick: break the next-lower standing segment, or move to pickup when none remain.
+               return false; // next tick: harvest the next-lower standing segment, or finish when none remain.
             default:
                return false;
          }
       }
 
-      // No upper segment left standing (bottom kept) — WALK to + collect the real dropped cane around the column.
-      OpState pst = VillagerWorldOps.pickupTick(villager, dest.getRelative(0.0, 2.0, 0.0).getBlockPos());
-      if (pst != OpState.COMPLETE) {
-         return false;
-      }
+      // No upper segment left standing (bottom KEPT so the column regrows). Reclaim the shared climb column (if any
+      // was built to reach a high segment) so no scaffolding is left behind, then finish.
+      VillagerActions.finishHarvest(villager, dest.getBlockPos());
       return true;
    }
 

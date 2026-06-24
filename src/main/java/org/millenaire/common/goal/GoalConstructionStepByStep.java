@@ -194,14 +194,15 @@ public class GoalConstructionStepByStep extends Goal {
       BlockPos target = bblock.p.getBlockPos();
       BlockPos anchor = constructionAnchor(cip, target);
 
-      // Reach-extend (scaffold up for high rows). Reclaim is tracked on the building anchor and cleared below.
-      VillagerWorldOps.ensureReach(villager, target, anchor);
-
-      VillagerWorldOps.PlaceResult result = VillagerWorldOps.place(
-         villager, target, bblock.getPlacementState(), bblock.getMaterialItem(), bblock.getMeta()
+      // Lay the planned block via the AI-invokable place ACTION: it climbs a temporary scaffold column (tracked on the
+      // BUILDING anchor so high rows come into reach), STRICTLY consumes the matching building material, and sets the
+      // EXACT rotation-correct placement state with a real swing + place sound — the same facade the other player-like
+      // ops use, so construction goes through one uniform place seam.
+      com.coderyo.jason.ops.OpState result = com.coderyo.jason.ops.VillagerActions.placeBlock(
+         villager, target, bblock.getPlacementState(), bblock.getMaterialItem(), bblock.getMeta(), anchor
       );
 
-      if (result == VillagerWorldOps.PlaceResult.PLACED) {
+      if (result == com.coderyo.jason.ops.OpState.COMPLETE) {
          // The reachable block is laid; tear down any temporary climb column so towers never leave scaffold behind.
          VillagerWorldOps.reclaimReach(villager, anchor);
          return true;

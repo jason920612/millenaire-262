@@ -7,7 +7,7 @@ import net.minecraft.world.level.block.state.BlockState;
 import net.minecraft.world.item.Items;
 import net.minecraft.world.item.ItemStack;
 import com.coderyo.jason.ops.OpState;
-import com.coderyo.jason.ops.VillagerWorldOps;
+import com.coderyo.jason.ops.VillagerActions;
 import org.millenaire.common.config.DocumentedElement;
 import org.millenaire.common.entity.MillVillager;
 import org.millenaire.common.item.InvItem;
@@ -79,45 +79,35 @@ public class GoalHarvestWarts extends Goal {
       Point cropPoint = dest.getAbove();
       BlockPos pos = cropPoint.getBlockPos();
 
-      // Phase 1 — mature wart standing: reach-gate, then REALLY break it (0-hardness → this tick).
-      if (villager.getBlock(cropPoint) == Blocks.NETHER_WART) {
-         BlockState wartState = cropPoint.getBlockActualState(villager.level());
-         if (wartState.getValue(NetherWartBlock.AGE) == 3) {
-            if (!VillagerWorldOps.withinReach(villager, pos)) {
-               OpState reach = VillagerWorldOps.ensureReach(villager, pos);
-               if (reach == OpState.BLOCKED) {
-                  return true;
-               }
-               return false;
-            }
-            OpState st = VillagerWorldOps.breakTick(villager, pos);
-            switch (st) {
-               case APPROACHING:
-               case EXTENDING_REACH:
-               case IN_PROGRESS:
-                  return false;
-               case BLOCKED:
-                  return true;
-               case COMPLETE:
-                  // The wart just broke; the kept-1.12 yield is credited to the house exactly once, here at the break
-                  // (not per pickup tick), so it stays exactly 1 per harvest regardless of how many ticks pickup takes.
-                  villager.getHouse().storeGoods(Items.NETHER_WART, 1);
-                  return false; // next tick the point is air → walk-to-pickup the real by-product warts.
-               default:
-                  return false;
-            }
-         }
-         return true; // not mature — leave to grow.
-      }
+      boolean matureWart = villager.getBlock(cropPoint) == Blocks.NETHER_WART
+         && cropPoint.getBlockActualState(villager.level()).getValue(NetherWartBlock.AGE) == 3;
+      // After the break the wart is AIR (so the maturity test flips false the next tick) — keep driving the facade's
+      // PICKUP phase while real wart drops remain near the worksite, so the 2-4 by-product warts aren't abandoned.
+      boolean dropsPending = villager.level().getBlockState(pos).isAir()
+         && VillagerActions.hasNearbyDrop(villager, pos);
 
-      // Phase 2 — broken (point air): WALK to + collect the real warts (worksite by-product) into villager inventory.
-      if (villager.level().getBlockState(pos).isAir()) {
-         OpState pst = VillagerWorldOps.pickupTick(villager, pos);
-         if (pst != OpState.COMPLETE) {
-            return false;
+      if (matureWart || dropsPending) {
+         // HARVEST via the AI-invokable facade: reach-gate → break the 0-hardness wart → walk to + collect the real
+         // 2-4 by-product warts. tool == null skips the strict tool gate (a 0-hardness wart yields with any/no tool).
+         OpState st = VillagerActions.harvestBlock(villager, pos, null);
+         switch (st) {
+            case APPROACHING:
+            case EXTENDING_REACH:
+            case IN_PROGRESS:
+            case PICKING_UP:
+               return false; // walking into reach / breaking / collecting the real by-product warts — keep going.
+            case BLOCKED:
+               return true; // unreachable (not expected) — abandon so the goal re-picks.
+            case COMPLETE:
+               // The wart is broken AND the by-product warts collected. Credit the kept-1.12 economy yield (exactly
+               // 1 nether wart to the HOUSE) ONCE, here at completion, then finish.
+               villager.getHouse().storeGoods(Items.NETHER_WART, 1);
+               return true;
+            default:
+               return false;
          }
       }
-      return true;
+      return true; // not mature / already harvested — leave to grow or let the goal re-pick.
    }
 
    @Override

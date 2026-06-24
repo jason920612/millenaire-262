@@ -118,7 +118,10 @@ public class GoalFish extends Goal {
       }
       BlockPos water = spot.getBlockPos();
 
-      OpState state = VillagerWorldOps.fishTick(villager, water);
+      // Drive the COMPLETE villager-fishing FSM through the action facade (uniform with the other player-like ops):
+      // cast a real villager-owned bobber → full vanilla bobbing + bite animation → roll BuiltInLootTables.FISHING on
+      // the catch → walk to + collect the catch.
+      OpState state = com.coderyo.jason.ops.VillagerActions.fish(villager, water);
       switch (state) {
          case COMPLETE:
             // The real FISHING loot has been rolled + picked up; add any culture-specific bonus, then end the goal.

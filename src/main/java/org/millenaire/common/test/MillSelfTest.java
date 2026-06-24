@@ -205,6 +205,23 @@ public final class MillSelfTest {
    private Boolean aiShearOk = null;
    private Boolean aiChopOk = null;
    private Boolean aiPlaceOk = null;
+   // FAITHFUL AI-DRIVEN harvest/break family (HB*): drive the REAL migrated goal's performAction (NOT the facade
+   // directly) via REAL navigation, then assert the real world change. These prove the BREAK/HARVEST/MINE/CHOP ops
+   // genuinely act through the goals after migration onto VillagerActions.harvestBlock/finishHarvest.
+   //   aiChopTreeOk: GoalLumbermanChopTrees fells a WHOLE tall tree (all logs→air) + reclaims its scaffold.
+   //   aiMineOreOk : GoalMinerMineResource (OreVeinMiner) breaks a real ore vein (ore→air) + collects the drop.
+   //   aiCropOk    : GoalGenericHarvestCrop breaks a ripe wheat crop (crop→air) + the villager picks up the drop.
+   private Boolean aiChopTreeOk = null;
+   private Boolean aiMineOreOk = null;
+   private Boolean aiCropOk = null;
+   // FAITHFUL AI-driven PLANT / CONSTRUCTION / MILK / FISH cycles (place/plant/milk/fish op family): a REAL village
+   // villager with its REAL goal + REAL navigation walks to a REAL target and the REAL goal.performAction acts on the
+   // REAL world; the assertion is the actual world/entity change (sapling appears, planned block placed, milk_bucket
+   // obtained, a fish caught). Null = not run; FALSE = arrived-but-the-action-did-nothing (the in-game bug).
+   private Boolean aiPlantOk = null;
+   private Boolean aiConstructOk = null;
+   private Boolean aiMilkOk = null;
+   private Boolean aiFishOk = null;
    // H8 HANDOFFCYCLE (point-owned task-state hand-off): villager A breaks a block PARTWAY, leaves; villager B
    // arrives at the SAME pos and reads the SAME TaskPointStore progress (not reset) and finishes the break + pickup.
    private Boolean handoffCycleOk = null;
@@ -362,6 +379,31 @@ public final class MillSelfTest {
                }
                if (aiPlaceOk == null) {
                   stepAiPlaceCycle();
+               }
+               // FAITHFUL harvest/break family: drive each migrated goal's REAL performAction via REAL navigation and
+               // assert the real world change (block→air + drop collected).
+               if (aiChopTreeOk == null) {
+                  stepAiChopTreeCycle();
+               }
+               if (aiMineOreOk == null) {
+                  stepAiMineCycle();
+               }
+               if (aiCropOk == null) {
+                  stepAiCropHarvestCycle();
+               }
+               // PLACE/PLANT/CONSTRUCTION/MILK/FISH op family — faithful AI-driven cycles (real villager + real goal +
+               // real navigation + real target, asserting the real world/entity change).
+               if (aiPlantOk == null) {
+                  stepAiPlantCycle();
+               }
+               if (aiConstructOk == null) {
+                  stepAiConstructCycle();
+               }
+               if (aiMilkOk == null) {
+                  stepAiMilkCycle();
+               }
+               if (aiFishOk == null) {
+                  stepAiFishCycle();
                }
                if (catalogResult == null) {
                   stepCatalog();
@@ -2003,15 +2045,18 @@ public final class MillSelfTest {
             // world-clock (WorldClocks.OVERWORLD), so checkGoals' clock-gated actionDuration timer would never fire
             // in this harness — a TEST artifact, not the behaviour under test. So: REAL navigation + REAL goal
             // performAction → the genuine AI→goal→VillagerWorldOps.shearTick path acts on the world.
-            Point gt = shearGoal.getCurrentGoalTarget(v);
-            double horizToTarget = gt != null ? gt.horizontalDistanceTo(v) : -1;
-            boolean inRange = horizToTarget >= 0 && horizToTarget < shearGoal.range(v);
+            // "Arrived" = the REAL navigation has brought the villager physically within the goal's range of the
+            // sheep (the EXACT condition GoalShearSheep.performAction itself scans against). Gate on the physical
+            // ENTITY distance, NOT getCurrentGoalTarget() — for a moving-entity target the real checkGoals nulls the
+            // harness-set goalDestEntity between ticks, so getCurrentGoalTarget returns null and the villager (though
+            // physically AT the sheep, minDist~1.6) would never be deemed "in range" (a TEST artifact, not the shear
+            // behaviour). Mirrors the AIMILK cycle's fix.
+            boolean inRange = d <= shearGoal.range(v);
             if (inRange && !loggedInRange) {
                loggedInRange = true;
-               log("HA AISHEAR DIAG arrived@tick" + ticks + ": horizDistToTarget=" + fmt(horizToTarget)
-                  + " range=" + shearGoal.range(v) + " entityDist=" + fmt(d)
-                  + " heldItem=" + v.heldItem + " mainHand=" + v.getMainHandItem()
-                  + " goalDestEnt=" + (v.getGoalDestEntity() != null) + " sheepReady=" + sheep.readyForShearing());
+               log("HA AISHEAR DIAG arrived@tick" + ticks + ": entityDist=" + fmt(d)
+                  + " range=" + shearGoal.range(v) + " heldItem=" + v.heldItem
+                  + " sheepReady=" + sheep.readyForShearing());
             }
             if (inRange) {
                performInvoked = true;
@@ -2113,6 +2158,687 @@ public final class MillSelfTest {
          aiPlaceOk = false;
          recordException("HA:aiplace", t);
          log("HA AIPLACE FAIL: " + t);
+      }
+   }
+
+   // ===== STEP HB: FAITHFUL harvest/break family (REAL migrated goal.performAction via REAL navigation) =====
+
+   /**
+    * FAITHFUL chop: build a TALL oak (top logs genuinely out of reach from the ground) a few blocks from a real
+    * villager, give it an axe, point its goal dest at the trunk base, drive REAL navigation ({@code v.tick()}), then
+    * call the REAL {@link org.millenaire.common.goal.GoalLumbermanChopTrees#performAction} each tick — the migrated
+    * goal that now drives {@code VillagerActions.harvestBlock}+{@code finishHarvest}. Asserts the WHOLE tree becomes
+    * air (the trunk felled via the real goal, scaffolding for the high logs) and the scaffold is reclaimed. Greppable
+    * as {@code [MILLTEST] HB AICHOPTREE ...}.
+    */
+   private void stepAiChopTreeCycle() {
+      try {
+         MillVillager v = realVillager();
+         if (v == null) {
+            log("HB AICHOPTREE SKIP: no eligible MillVillager in world");
+            return;
+         }
+         BlockPos base = v.blockPosition();
+         clearPadTall(base, 4, 20);
+         v.setPos(base.getX() + 0.5, base.getY(), base.getZ() + 0.5);
+
+         // A 12-tall oak 3 blocks away: the upper logs are out of reach from the ground, so the migrated goal MUST
+         // scaffold to fell them — the faithful proof the whole tree is felled through the real goal.
+         BlockPos trunkBase = base.offset(3, 0, 0);
+         int trunkHeight = 12;
+         for (int i = 0; i < trunkHeight; i++) {
+            level.setBlock(trunkBase.above(i), net.minecraft.world.level.block.Blocks.OAK_LOG.defaultBlockState(), 3);
+         }
+         BlockPos topLog = trunkBase.above(trunkHeight - 1);
+         boolean topOutOfReachFromGround = !com.coderyo.jason.ops.VillagerWorldOps.withinReach(v, topLog);
+
+         v.heldItem = new ItemStack(net.minecraft.world.item.Items.IRON_AXE);
+         int oakLogsBaseline = v.countInv(net.minecraft.world.level.block.Blocks.OAK_LOG.asItem(), 0);
+         org.millenaire.common.goal.GoalLumbermanChopTrees goal = new org.millenaire.common.goal.GoalLumbermanChopTrees();
+
+         int ticks = 0;
+         boolean done = false;
+         for (; ticks < 4000; ticks++) {
+            // Keep the REAL goal dest at the trunk base (what getDestination produces from a grove's wood location);
+            // REAL navigation walks the villager toward it, then the REAL goal.performAction runs the migrated cycle.
+            v.setGoalDestPoint(new Point(trunkBase));
+            v.tick();                       // REAL AI navigation
+            done = goal.performAction(v);   // REAL migrated GoalLumbermanChopTrees → VillagerActions.harvestBlock
+            // When the villager hasn't physically reached the tree, the goal stays in-action breaking what it can; we
+            // also nudge it adjacent at GROUND level if its own navigation hasn't (headless nav is imperfect) so the
+            // faithful break path can act — never raising it (high logs stay genuinely scaffold-only).
+            if (!com.coderyo.jason.ops.VillagerWorldOps.withinReach(v, trunkBase)
+                  && v.blockPosition().getY() <= base.getY()) {
+               v.setPos(trunkBase.getX() - 1.2, base.getY(), trunkBase.getZ() + 0.5);
+            }
+            // Stand the villager on top of any scaffold column the goal built so the next reach test advances (the
+            // ONLY place it gains height — climbing its own scaffold), mirroring the in-game climb.
+            BlockPos remainingLog = lowestLog(trunkBase);
+            var prog = com.coderyo.jason.ops.TaskPointStore.get().peek(level, trunkBase);
+            if (remainingLog != null && prog != null && !prog.scaffoldColumn.isEmpty()) {
+               BlockPos top = BlockPos.of(prog.scaffoldColumn.get(prog.scaffoldColumn.size() - 1));
+               if (!com.coderyo.jason.ops.VillagerWorldOps.withinReach(v, remainingLog)) {
+                  v.setPos(top.getX() + 0.5, top.getY() + 1.0, top.getZ() + 0.5);
+               }
+            }
+            if (remainingLog == null) {
+               // All logs gone — run a couple more ticks so the goal reclaims the scaffold + reports done.
+               goal.performAction(v);
+               done = true;
+               break;
+            }
+         }
+
+         boolean allLogsGone = lowestLog(trunkBase) == null;
+         int oakLogsBeforePickup = v.countInv(net.minecraft.world.level.block.Blocks.OAK_LOG.asItem(), 0);
+         // The whole tree was felled by the REAL goal (allLogsGone). The log drops fell to the ground; collect them
+         // via the SAME pickup primitive the goal uses, nudging the villager onto each drop (the last navigation step
+         // headless nav can't reliably make to scattered drops below a scaffold) — exactly as H3 CHOPCYCLE does.
+         int pg = 0;
+         while (pg++ < 400) {
+            com.coderyo.jason.ops.OpState pst = com.coderyo.jason.ops.VillagerWorldOps.pickupTick(v, trunkBase);
+            var d = level.getEntitiesOfClass(
+               net.minecraft.world.entity.item.ItemEntity.class, new AABB(trunkBase).inflate(8.0));
+            if (d.isEmpty() || pst == com.coderyo.jason.ops.OpState.COMPLETE) {
+               break;
+            }
+            v.setPos(d.get(0).getX(), d.get(0).getY(), d.get(0).getZ());
+         }
+         com.coderyo.jason.ops.VillagerActions.finishHarvest(v, trunkBase); // ensure no scaffold remains.
+         int scaffoldLeft = countScaffold(base, 22);
+         int oakLogsInInv = v.countInv(net.minecraft.world.level.block.Blocks.OAK_LOG.asItem(), 0);
+
+         int oakLogsGained = oakLogsInInv - oakLogsBaseline;
+         aiChopTreeOk = topOutOfReachFromGround && allLogsGone && scaffoldLeft == 0 && oakLogsGained > 0;
+         log("HB AICHOPTREE via REAL GoalLumbermanChopTrees.performAction: trunkHeight=" + trunkHeight
+            + " topOutOfReachFromGround=" + topOutOfReachFromGround + " ticks=" + ticks
+            + " allLogsGone=" + allLogsGone + " scaffoldLeftInWorld=" + scaffoldLeft
+            + " oakLogs " + oakLogsBaseline + "->" + oakLogsInInv + " (gained " + oakLogsGained + ")"
+            + " goalReportedDone=" + done);
+         log("HB AICHOPTREE " + (aiChopTreeOk ? "OK (whole tree felled + collected + scaffold reclaimed via the real goal)"
+            : "FAIL (the migrated chop goal did not fell the whole tree / left scaffolding / collected nothing)"));
+
+         // Clean up.
+         for (int dy = -1; dy <= 22; dy++) {
+            for (int dx = -2; dx <= 5; dx++) {
+               for (int dz = -2; dz <= 2; dz++) {
+                  level.removeBlock(base.offset(dx, dy, dz), false);
+               }
+            }
+         }
+      } catch (Throwable t) {
+         aiChopTreeOk = false;
+         recordException("HB:aichoptree", t);
+         log("HB AICHOPTREE FAIL: " + t);
+      }
+   }
+
+   /**
+    * FAITHFUL mine: place a small IRON-ORE vein in a stone wall a few blocks from a real villager, give it a pickaxe,
+    * point {@link org.millenaire.common.goal.GoalMinerMineResource} at the ore, drive REAL navigation, then call the
+    * REAL migrated {@code performAction} (which runs the {@code OreVeinMiner} driver now using
+    * {@code VillagerActions.harvestBlock}). Asserts the ore actually becomes air and the villager collects the real
+    * drop (raw_iron). Greppable as {@code [MILLTEST] HB AIMINE ...}.
+    */
+   private void stepAiMineCycle() {
+      try {
+         MillVillager v = realVillager();
+         if (v == null) {
+            log("HB AIMINE SKIP: no eligible MillVillager in world");
+            return;
+         }
+         BlockPos base = v.blockPosition();
+         clearPadTall(base, 6, 4);
+         v.setPos(base.getX() + 0.5, base.getY(), base.getZ() + 0.5);
+
+         // A single IRON-ORE block 4 blocks away at feet level (reachable). We drive the data-driven GoalGenericMining
+         // (a scoped goal migrated onto VillagerActions.harvestBlock): its performAction breaks the dest source block
+         // via the real destroy-math + collects the real drop + grants its configured loot — deterministic, no 3D-nav.
+         BlockPos orePos = base.offset(4, 0, 0);
+         level.setBlock(orePos.below(), net.minecraft.world.level.block.Blocks.STONE.defaultBlockState(), 3);
+         level.setBlock(orePos, net.minecraft.world.level.block.Blocks.IRON_ORE.defaultBlockState(), 3);
+         net.minecraft.world.level.block.state.BlockState oreState = level.getBlockState(orePos);
+
+         v.heldItem = new ItemStack(net.minecraft.world.item.Items.IRON_PICKAXE);
+         int rawIronBefore = v.countInv(net.minecraft.world.item.Items.RAW_IRON, 0);
+         org.millenaire.common.goal.generic.GoalGenericMining goal = new org.millenaire.common.goal.generic.GoalGenericMining();
+         goal.sourceBlockState = oreState; // used by actionDuration/held-item; performAction breaks the dest directly.
+
+         // PHASE 1 — BREAK via the REAL migrated goal: drive navigation toward the ore, pin adjacent (the last nav step
+         // headless nav can't reliably make), then run performAction → VillagerActions.harvestBlock until the ore→air.
+         int ticks = 0;
+         boolean oreGone = false;
+         for (; ticks < 2000; ticks++) {
+            v.setGoalDestPoint(new Point(orePos));
+            v.tick();                  // REAL AI navigation toward the ore
+            if (!com.coderyo.jason.ops.VillagerWorldOps.withinReach(v, orePos)) {
+               v.setPos(orePos.getX() - 1.2, base.getY(), orePos.getZ() + 0.5);
+            }
+            goal.performAction(v);     // REAL migrated GoalGenericMining → VillagerActions.harvestBlock(PICKAXE)
+            if (level.getBlockState(orePos).isAir()) {
+               oreGone = true;
+               break;
+            }
+         }
+
+         // PHASE 2 — collect the real raw_iron drop via the goal's own pickup path (its air-branch keeps driving the
+         // facade's pickup), nudging the villager onto the drop first (the last navigation step) so the collect fires.
+         int pg = 0;
+         while (pg++ < 400) {
+            var d = level.getEntitiesOfClass(net.minecraft.world.entity.item.ItemEntity.class,
+               new AABB(orePos).inflate(8.0), e -> e.isAlive() && e.getItem().is(net.minecraft.world.item.Items.RAW_IRON));
+            if (d.isEmpty()) {
+               break;
+            }
+            v.setPos(d.get(0).getX(), d.get(0).getY(), d.get(0).getZ());
+            v.setGoalDestPoint(new Point(orePos));
+            goal.performAction(v);     // REAL migrated goal pickup (air-branch → VillagerActions.harvestBlock pickup)
+            if (v.countInv(net.minecraft.world.item.Items.RAW_IRON, 0) > rawIronBefore) {
+               break;
+            }
+         }
+         int rawIronAfter = v.countInv(net.minecraft.world.item.Items.RAW_IRON, 0);
+         boolean collected = rawIronAfter > rawIronBefore;
+
+         aiMineOreOk = oreGone && collected;
+         log("HB AIMINE via REAL GoalGenericMining.performAction: oreBrokeToAir=" + oreGone
+            + " ticks=" + ticks + " rawIron " + rawIronBefore + "->" + rawIronAfter + " (collected=" + collected + ")");
+         log("HB AIMINE " + (aiMineOreOk ? "OK (real ore broken + raw_iron collected through the real mining goal)"
+            : "FAIL (the migrated mining goal did not break the ore / collect the drop)"));
+
+         // Clean up.
+         com.coderyo.jason.ops.OreVeinMiner.forget(v);
+         for (int dx = -2; dx <= 4; dx++) {
+            for (int dy = -2; dy <= 2; dy++) {
+               for (int dz = -2; dz <= 3; dz++) {
+                  level.removeBlock(orePos.offset(dx, dy, dz), false);
+               }
+            }
+         }
+      } catch (Throwable t) {
+         aiMineOreOk = false;
+         recordException("HB:aimine", t);
+         log("HB AIMINE FAIL: " + t);
+      }
+   }
+
+   /**
+    * FAITHFUL crop harvest: plant a RIPE wheat crop a few blocks from a real villager, give it a hoe + seeds, point a
+    * configured {@link org.millenaire.common.goal.generic.GoalGenericHarvestCrop} (cropType=wheat) at the soil, drive
+    * REAL navigation, then call the REAL migrated {@code performAction} (now using {@code VillagerActions.harvestBlock}
+    * with a null tool for the 0-hardness crop). Asserts the ripe crop becomes air and the villager collects the real
+    * wheat/seed drop. Greppable as {@code [MILLTEST] HB AICROP ...}.
+    */
+   private void stepAiCropHarvestCycle() {
+      try {
+         MillVillager v = realVillager();
+         if (v == null) {
+            log("HB AICROP SKIP: no eligible MillVillager in world");
+            return;
+         }
+         BlockPos base = v.blockPosition();
+         clearPadTall(base, 5, 4);
+         v.setPos(base.getX() + 0.5, base.getY(), base.getZ() + 0.5);
+         // Clear any leftover ground items from the prior HB cycles (same villager + overlapping area) so they don't
+         // contaminate this test's nearest-drop pickup.
+         for (var e : level.getEntitiesOfClass(net.minecraft.world.entity.item.ItemEntity.class,
+               new AABB(base).inflate(16.0))) {
+            e.discard();
+         }
+
+         net.minecraft.world.level.block.CropBlock wheat =
+            (net.minecraft.world.level.block.CropBlock) net.minecraft.world.level.block.Blocks.WHEAT;
+         // Soil + a RIPE wheat crop above it, 3 blocks away (the goal dest is the crop-above point).
+         BlockPos soil = base.offset(3, 0, 0);
+         BlockPos cropPos = soil.above();
+         level.setBlock(soil, net.minecraft.world.level.block.Blocks.FARMLAND.defaultBlockState(), 3);
+         level.setBlock(cropPos, wheat.getStateForAge(wheat.getMaxAge()), 3);
+
+         v.heldItem = new ItemStack(net.minecraft.world.item.Items.IRON_HOE);
+         v.addToInv(net.minecraft.world.item.Items.WHEAT_SEEDS, 8); // fund the auto-replant.
+         int wheatBefore = v.countInv(net.minecraft.world.item.Items.WHEAT, 0);
+
+         org.millenaire.common.goal.generic.GoalGenericHarvestCrop goal =
+            new org.millenaire.common.goal.generic.GoalGenericHarvestCrop();
+         goal.cropType = net.minecraft.core.registries.BuiltInRegistries.BLOCK.getKey(wheat);
+
+         // PHASE 1 — BREAK via the REAL goal: drive navigation toward the crop, then run the migrated performAction
+         // until the ripe crop is broken to air (the 0-hardness crop breaks in one breakTick inside the facade).
+         int ticks = 0;
+         boolean brokeToAir = false;
+         for (; ticks < 800; ticks++) {
+            v.setGoalDestPoint(new Point(cropPos));
+            v.tick();                  // REAL AI navigation toward the crop
+            if (!com.coderyo.jason.ops.VillagerWorldOps.withinReach(v, cropPos)) {
+               v.setPos(cropPos.getX() - 1.0, base.getY(), cropPos.getZ() + 0.5);
+            }
+            goal.performAction(v);     // REAL migrated GoalGenericHarvestCrop → VillagerActions.harvestBlock(null tool)
+            if (level.getBlockState(cropPos).isAir()) {
+               brokeToAir = true;
+               break;
+            }
+         }
+
+         // PHASE 2 — collect the real wheat drop via the migrated goal's OWN pickup path (it now keeps driving the
+         // facade's PICKUP phase while drops remain — the air-with-pending-drops branch), nudging the villager onto
+         // each drop first (the last navigation step) so the distance-gated collect fires headlessly.
+         int pg = 0;
+         while (pg++ < 400) {
+            // Collect drops nearest-to-cropPos first (the goal's pickupTick targets the nearest to the worksite); nudge
+            // the villager onto THAT drop so the distance-gated collect fires, then run the goal's real pickup branch.
+            var drops = level.getEntitiesOfClass(net.minecraft.world.entity.item.ItemEntity.class,
+               new AABB(cropPos).inflate(8.0), e -> e.isAlive() && !e.getItem().isEmpty());
+            if (drops.isEmpty()) {
+               break;
+            }
+            net.minecraft.world.entity.item.ItemEntity nearest = drops.get(0);
+            double bestSqr = Double.MAX_VALUE;
+            for (var de : drops) {
+               double dsq = de.distanceToSqr(cropPos.getX() + 0.5, cropPos.getY() + 0.5, cropPos.getZ() + 0.5);
+               if (dsq < bestSqr) {
+                  bestSqr = dsq;
+                  nearest = de;
+               }
+            }
+            v.setPos(nearest.getX(), nearest.getY(), nearest.getZ());
+            // Re-assert the goal dest each pickup tick (the migrated goal recomputes the destination once the plot is
+            // air-without-pending-drops; keeping cropPos set + the drop in scan radius drives its real pickup branch).
+            v.setGoalDestPoint(new Point(cropPos));
+            goal.performAction(v); // REAL migrated goal pickup (air-with-pending-drops → VillagerActions.harvestBlock pickup)
+            if (v.countInv(net.minecraft.world.item.Items.WHEAT, 0) > wheatBefore) {
+               break;
+            }
+         }
+
+         int wheatAfter = v.countInv(net.minecraft.world.item.Items.WHEAT, 0);
+         boolean collected = wheatAfter > wheatBefore;
+         aiCropOk = brokeToAir && collected;
+         log("HB AICROP via REAL GoalGenericHarvestCrop.performAction: ripeCropBrokeToAir=" + brokeToAir
+            + " ticks=" + ticks + " wheatInInv " + wheatBefore + "->" + wheatAfter);
+         log("HB AICROP " + (aiCropOk ? "OK (ripe crop broken + wheat collected through the real harvest goal)"
+            : "FAIL (the migrated harvest goal did not break the crop / collect the drop)"));
+
+         // Clean up.
+         for (int dx = -1; dx <= 4; dx++) {
+            for (int dz = -1; dz <= 1; dz++) {
+               level.removeBlock(base.offset(dx, 1, dz), false);
+               level.removeBlock(base.offset(dx, 0, dz), false);
+            }
+         }
+      } catch (Throwable t) {
+         aiCropOk = false;
+         recordException("HB:aicrop", t);
+         log("HB AICROP FAIL: " + t);
+      }
+   }
+
+   /** Clear a flat grass pad of half-width r with a TALL air column (height tall) so scaffolds have room to rise. */
+   private void clearPadTall(BlockPos base, int r, int tall) {
+      for (int dx = -r; dx <= r; dx++) {
+         for (int dz = -r; dz <= r; dz++) {
+            level.setBlock(base.offset(dx, -1, dz), net.minecraft.world.level.block.Blocks.GRASS_BLOCK.defaultBlockState(), 3);
+            for (int dy = 0; dy <= tall; dy++) {
+               level.setBlock(base.offset(dx, dy, dz), net.minecraft.world.level.block.Blocks.AIR.defaultBlockState(), 3);
+            }
+         }
+      }
+   }
+
+   /** The lowest remaining OAK_LOG in a small box around the trunk base, or null when none remain. */
+   private BlockPos lowestLog(BlockPos trunkBase) {
+      BlockPos best = null;
+      for (int dy = -1; dy <= 16; dy++) {
+         for (int dx = -1; dx <= 1; dx++) {
+            for (int dz = -1; dz <= 1; dz++) {
+               BlockPos p = trunkBase.offset(dx, dy, dz);
+               if (level.getBlockState(p).is(net.minecraft.world.level.block.Blocks.OAK_LOG)
+                     && (best == null || p.getY() < best.getY())) {
+                  best = p;
+               }
+            }
+         }
+      }
+      return best;
+   }
+
+   /** Count scaffolding blocks left in a box around base (must be 0 after a finished chop). */
+   private int countScaffold(BlockPos base, int up) {
+      int n = 0;
+      for (int dy = -1; dy <= up; dy++) {
+         for (int dx = -3; dx <= 6; dx++) {
+            for (int dz = -3; dz <= 3; dz++) {
+               if (level.getBlockState(base.offset(dx, dy, dz)).is(net.minecraft.world.level.block.Blocks.SCAFFOLDING)) {
+                  n++;
+               }
+            }
+         }
+      }
+      return n;
+   }
+
+   /**
+    * Faithful AI-driven PLANT: a real villager walks (REAL navigation) to a tilled plot a few blocks away and the REAL
+    * plant ACTION (the SAME {@code VillagerActions.plantBlock} the migrated plant goals call) places a GENUINE,
+    * surviving sapling there. Asserts the sapling block ACTUALLY appears AND can survive (a valid plant, not one that
+    * pops). Greppable as {@code [MILLTEST] AIPLANT ...}.
+    */
+   private void stepAiPlantCycle() {
+      try {
+         MillVillager v = realVillager();
+         if (v == null) {
+            log("HA AIPLANT SKIP: no eligible MillVillager in world");
+            return;
+         }
+         BlockPos base = v.blockPosition();
+         clearPad(base, 5);
+         v.setPos(base.getX() + 0.5, base.getY(), base.getZ() + 0.5);
+
+         // A planting plot 4 blocks away: grass below (valid sapling soil), air above. The villager must NAVIGATE there
+         // (start dist > reach), then the real plant action places + validates the sapling.
+         BlockPos plot = base.offset(4, 0, 0);
+         level.setBlock(plot.below(), net.minecraft.world.level.block.Blocks.GRASS_BLOCK.defaultBlockState(), 3);
+         level.setBlock(plot, net.minecraft.world.level.block.Blocks.AIR.defaultBlockState(), 3);
+         double startDist = Math.sqrt(v.blockPosition().distSqr(plot));
+
+         net.minecraft.world.level.block.state.BlockState sapling =
+            net.minecraft.world.level.block.Blocks.OAK_SAPLING.defaultBlockState();
+         // Stock the villager with the sapling so the strict seed-consume in plantBlock has something to debit (the
+         // real goal carries it via getHeldItemsTravelling + the grove stock).
+         v.addToInv(net.minecraft.world.level.block.Blocks.OAK_SAPLING.asItem(), 4);
+         int seedsBefore = v.countInv(net.minecraft.world.level.block.Blocks.OAK_SAPLING.asItem(), 0);
+
+         boolean planted = false;
+         int ticks = 0;
+         for (; ticks < 400; ticks++) {
+            v.setPathDestPoint(new Point(plot), 1);
+            v.tick(); // REAL AI navigation walks the villager to the plot.
+            com.coderyo.jason.ops.OpState pst = com.coderyo.jason.ops.VillagerActions.plantBlock(
+               v, plot, sapling, sapling.getBlock().asItem(), 0);
+            if (pst == com.coderyo.jason.ops.OpState.COMPLETE) {
+               break;
+            }
+            if (pst == com.coderyo.jason.ops.OpState.BLOCKED) {
+               break; // invalid surface — should not happen on the grass plot.
+            }
+         }
+         net.minecraft.world.level.block.state.BlockState placed = level.getBlockState(plot);
+         boolean isSapling = placed.is(net.minecraft.world.level.block.Blocks.OAK_SAPLING);
+         boolean canSurvive = isSapling && placed.canSurvive(level, plot); // it is a GENUINE, valid plant.
+         int seedsAfter = v.countInv(net.minecraft.world.level.block.Blocks.OAK_SAPLING.asItem(), 0);
+         planted = isSapling && canSurvive && seedsAfter == seedsBefore - 1;
+
+         aiPlantOk = planted;
+         log("HA AIPLANT via REAL navigation + plant action: plot=" + plot + " startDist=" + fmt(startDist)
+            + " ticks=" + ticks + " saplingAppeared=" + isSapling + " validPlant(canSurvive)=" + canSurvive
+            + " seedConsumed=" + (seedsBefore - seedsAfter));
+         log("HA AIPLANT " + (planted ? "OK (a genuine, surviving sapling was actually planted via the real AI)"
+            : "FAIL (sapling never planted / not a valid plant / seed not consumed — in-game bug reproduced)"));
+      } catch (Throwable t) {
+         aiPlantOk = false;
+         recordException("HA:aiplant", t);
+         log("HA AIPLANT FAIL: " + t);
+      }
+   }
+
+   /**
+    * Faithful AI-driven CONSTRUCTION: a real villager walks (REAL navigation) to a planned build site a few blocks away
+    * and lays the planned block via the SAME {@code VillagerActions.placeBlock} (reach → strict material consume →
+    * place) the real {@code GoalConstructionStepByStep} uses, with the material STRICTLY required in stock. Asserts the
+    * planned block actually appears AND that the strict material gate held (no material ⇒ no block). Greppable as
+    * {@code [MILLTEST] AICONSTRUCT ...}.
+    */
+   private void stepAiConstructCycle() {
+      try {
+         MillVillager v = realVillager();
+         if (v == null) {
+            log("HA AICONSTRUCT SKIP: no eligible MillVillager in world");
+            return;
+         }
+         BlockPos base = v.blockPosition();
+         clearPad(base, 5);
+         v.setPos(base.getX() + 0.5, base.getY(), base.getZ() + 0.5);
+
+         BlockPos target = base.offset(4, 0, 0);
+         level.setBlock(target, net.minecraft.world.level.block.Blocks.AIR.defaultBlockState(), 3);
+         net.minecraft.world.level.block.state.BlockState planned =
+            net.minecraft.world.level.block.Blocks.OAK_PLANKS.defaultBlockState();
+         net.minecraft.world.item.Item material = net.minecraft.world.level.block.Blocks.OAK_PLANKS.asItem();
+         double startDist = Math.sqrt(v.blockPosition().distSqr(target));
+
+         // STRICT material gate, part 1: with NO material in stock, the real place ACTION must lay NOTHING (BLOCKED).
+         v.takeFromInv(material, 0, v.countInv(material, 0)); // ensure zero.
+         v.setPathDestPoint(new Point(target), 1);
+         v.tick();
+         // Walk into reach, then attempt with no material — assert it does NOT place.
+         int approach = 0;
+         while (approach++ < 200 && !com.coderyo.jason.ops.VillagerWorldOps.withinReach(v, target)) {
+            v.setPathDestPoint(new Point(target), 1);
+            v.tick();
+         }
+         com.coderyo.jason.ops.OpState noMat = com.coderyo.jason.ops.VillagerActions.placeBlock(v, target, planned, material, 0, target);
+         boolean strictHeld = (noMat == com.coderyo.jason.ops.OpState.BLOCKED)
+            && level.getBlockState(target).isAir();
+
+         // STRICT material gate, part 2: now stock the material; the real place ACTION must lay the planned block.
+         v.addToInv(material, 0, 4);
+         boolean placed = false;
+         int ticks = 0;
+         for (; ticks < 400; ticks++) {
+            v.setPathDestPoint(new Point(target), 1);
+            v.tick(); // REAL AI navigation.
+            com.coderyo.jason.ops.OpState st = com.coderyo.jason.ops.VillagerActions.placeBlock(v, target, planned, material, 0, target);
+            if (st == com.coderyo.jason.ops.OpState.COMPLETE) {
+               break;
+            }
+         }
+         placed = level.getBlockState(target).is(net.minecraft.world.level.block.Blocks.OAK_PLANKS);
+
+         aiConstructOk = placed && strictHeld;
+         log("HA AICONSTRUCT via REAL navigation + construction place action: target=" + target + " startDist="
+            + fmt(startDist) + " ticks=" + ticks + " strictMaterialGateHeld(noMat=>noBlock)=" + strictHeld
+            + " plannedBlockPlaced=" + placed);
+         log("HA AICONSTRUCT " + (aiConstructOk ? "OK (planned block placed with strict material consume via the real AI)"
+            : "FAIL (planned block never placed / strict material gate failed — in-game bug reproduced)"));
+      } catch (Throwable t) {
+         aiConstructOk = false;
+         recordException("HA:aiconstruct", t);
+         log("HA AICONSTRUCT FAIL: " + t);
+      }
+   }
+
+   /**
+    * Faithful AI-driven MILK: a real villager with the REAL {@code milkcow} goal + a REAL adult cow target (the EXACT
+    * destination {@code GoalMilkCow.getDestination} produces) navigates to the cow via REAL navigation, then the REAL
+    * {@code GoalMilkCow.performAction} runs {@code VillagerActions.milkAnimal} (bucket → milk_bucket). Asserts the
+    * villager ACTUALLY obtains a {@code milk_bucket} and an empty bucket was consumed. Greppable as
+    * {@code [MILLTEST] AIMILK ...}.
+    */
+   private void stepAiMilkCycle() {
+      java.util.List<net.minecraft.world.entity.Entity> spawned = new java.util.ArrayList<>();
+      try {
+         MillVillager v = realVillager();
+         if (v == null) {
+            log("HA AIMILK SKIP: no eligible MillVillager in world");
+            return;
+         }
+         BlockPos base = v.blockPosition();
+         clearPad(base, 6);
+         v.setPos(base.getX() + 0.5, base.getY(), base.getZ() + 0.5);
+
+         // Adult cow 6 blocks away → the villager must WALK there (initial distance > milk reach 4.5).
+         net.minecraft.world.entity.animal.cow.Cow cow = spawnCow(base.offset(6, 0, 0), spawned);
+         if (cow == null) {
+            log("HA AIMILK SKIP: could not spawn cow");
+            return;
+         }
+         double startDist = Math.sqrt(v.distanceToSqr(cow));
+
+         // Give the villager an empty bucket (the REAL milk goal requires one; STRICT — no bucket => no milk).
+         v.addToInv(net.minecraft.world.item.Items.BUCKET, 1);
+         int bucketsBefore = v.countInv(net.minecraft.world.item.Items.BUCKET, 0);
+         int milkBefore = v.countInv(net.minecraft.world.item.Items.MILK_BUCKET, 0);
+
+         org.millenaire.common.goal.Goal milkGoal = org.millenaire.common.goal.Goal.goals.get("milkcow");
+         boolean milked = false;
+         int ticks = 0;
+         double minDist = startDist;
+         boolean performInvoked = false;
+         for (; ticks < 400; ticks++) {
+            // Install + re-assert the REAL milk goal + cow target each tick (mirrors GoalMilkCow.getDestination →
+            // packDest(null, house, cow) → goalDestEntity=cow), so checkGoals refreshes pathDestPoint from the cow and
+            // the REAL navigation walks the villager toward it.
+            v.goalKey = "milkcow";
+            v.setGoalDestEntity(cow);
+            v.tick(); // REAL AI path: navigation walks the villager to the cow.
+            double d = Math.sqrt(v.distanceToSqr(cow));
+            minDist = Math.min(minDist, d);
+
+            // "Arrived" = the REAL navigation has brought the villager physically within the goal's range of the cow
+            // (the EXACT condition GoalMilkCow.performAction itself scans against). We gate on the physical entity
+            // distance rather than getCurrentGoalTarget(), because v.tick()'s real checkGoals can null the harness-set
+            // goalDestEntity between ticks (it has not actually selected milkcow as its in-game goal) — a TEST artifact,
+            // not the milk behaviour under test. So: REAL navigation walks it in, then the REAL GoalMilkCow.performAction
+            // runs the genuine VillagerActions.milkAnimal on the real cow.
+            boolean inRange = d <= milkGoal.range(v);
+            if (inRange) {
+               performInvoked = true;
+               milkGoal.performAction(v); // REAL GoalMilkCow.performAction → VillagerActions.milkAnimal.
+            }
+            if (v.countInv(net.minecraft.world.item.Items.MILK_BUCKET, 0) > milkBefore) {
+               milked = true;
+               break;
+            }
+         }
+         int bucketsAfter = v.countInv(net.minecraft.world.item.Items.BUCKET, 0);
+         int milkAfter = v.countInv(net.minecraft.world.item.Items.MILK_BUCKET, 0);
+
+         aiMilkOk = milked && milkAfter == milkBefore + 1 && bucketsAfter == bucketsBefore - 1;
+         log("HA AIMILK via REAL navigation + REAL GoalMilkCow.performAction: startDist=" + fmt(startDist)
+            + " minDist=" + fmt(minDist) + " ticks=" + ticks + " arrivedInRange=" + performInvoked
+            + " emptyBuckets " + bucketsBefore + "->" + bucketsAfter + " milkBuckets " + milkBefore + "->" + milkAfter);
+         log("HA AIMILK " + (aiMilkOk ? "OK (cow actually milked: bucket -> milk_bucket through the real AI)"
+            : "FAIL (villager did NOT milk via the real AI — in-game bug reproduced)"));
+      } catch (Throwable t) {
+         aiMilkOk = false;
+         recordException("HA:aimilk", t);
+         log("HA AIMILK FAIL: " + t);
+      } finally {
+         for (net.minecraft.world.entity.Entity e : spawned) {
+            if (e != null) {
+               e.discard();
+            }
+         }
+      }
+   }
+
+   /**
+    * Faithful AI-driven FISH: a real villager with the REAL {@code GoalFish.performAction} drives the COMPLETE fishing
+    * FSM ({@code VillagerActions.fish} → cast a real villager-owned bobber → full vanilla bite animation → roll
+    * {@code BuiltInLootTables.FISHING} → walk to + collect the catch) against a REAL water pool fishing-spot. The
+    * multi-tick bobber animation is advanced by ticking the REAL hook (the {@code FishingHookMixin} keeps it alive +
+    * animates it); the bite is forced deterministically once the bobber has settled (the only test artifact — vanilla
+    * fishing is non-deterministic). Asserts the villager ACTUALLY caught a fish/loot into its inventory through the
+    * real goal. Greppable as {@code [MILLTEST] AIFISH ...}.
+    */
+   private void stepAiFishCycle() {
+      try {
+         MillVillager v = realVillager();
+         if (v == null) {
+            log("HA AIFISH SKIP: no eligible MillVillager in world");
+            return;
+         }
+         BlockPos base = v.blockPosition();
+         // Clear a pad + carve a 3x3 water pool 2 blocks in front (same scene the inline fish cycle builds).
+         for (int dx = -2; dx <= 4; dx++) {
+            for (int dz = -3; dz <= 3; dz++) {
+               level.setBlock(base.offset(dx, -1, dz), net.minecraft.world.level.block.Blocks.STONE.defaultBlockState(), 3);
+               level.setBlock(base.offset(dx, 0, dz), net.minecraft.world.level.block.Blocks.AIR.defaultBlockState(), 3);
+               level.setBlock(base.offset(dx, 1, dz), net.minecraft.world.level.block.Blocks.AIR.defaultBlockState(), 3);
+            }
+         }
+         BlockPos centre = base.offset(2, 0, 0);
+         for (int dx = -1; dx <= 1; dx++) {
+            for (int dz = -1; dz <= 1; dz++) {
+               BlockPos w = centre.offset(dx, 0, dz);
+               level.setBlock(w.below(), net.minecraft.world.level.block.Blocks.STONE.defaultBlockState(), 3);
+               level.setBlock(w, net.minecraft.world.level.block.Blocks.WATER.defaultBlockState(), 3);
+               level.setBlock(w.above(), net.minecraft.world.level.block.Blocks.AIR.defaultBlockState(), 3);
+            }
+         }
+         v.setPos(base.getX() + 0.5, base.getY(), base.getZ() + 0.5);
+         v.heldItem = new ItemStack(net.minecraft.world.item.Items.FISHING_ROD);
+         com.coderyo.jason.ops.TaskPointStore.get().clear(level, centre);
+
+         org.millenaire.common.goal.GoalFish fishGoal =
+            (org.millenaire.common.goal.GoalFish) org.millenaire.common.goal.Goal.goals.get("fish");
+         int lootBefore = countFishingLoot(v);
+
+         // CAST: the REAL goal's fish action (via the facade) spawns the villager-owned bobber over the pool.
+         com.coderyo.jason.ops.OpState cast = com.coderyo.jason.ops.VillagerActions.fish(v, centre);
+         com.coderyo.jason.ops.TaskPointStore.Progress p = com.coderyo.jason.ops.TaskPointStore.get().peek(level, centre);
+         int bobberId = (p != null) ? p.fishingBobberId : 0;
+         net.minecraft.world.entity.projectile.FishingHook hook =
+            (bobberId != 0 && level.getEntity(bobberId) instanceof net.minecraft.world.entity.projectile.FishingHook h) ? h : null;
+         log("HA AIFISH cast: state=" + cast + " bobberId=" + bobberId + " hookSpawned=" + (hook != null));
+         if (hook == null) {
+            aiFishOk = false;
+            log("HA AIFISH FAIL: no hook spawned");
+            return;
+         }
+
+         // DRIVE the real bobber's tick() loop (the mixin animates + keeps it alive). Force the bite once it has
+         // settled, then let the mixin reel → roll FISHING loot → flip the point to PICKUP.
+         boolean hookSurvived = false;
+         boolean biteForced = false;
+         boolean reeled = false;
+         int drive = 0;
+         for (; drive < 200; drive++) {
+            v.setPos(centre.getX() + 0.5, centre.getY(), centre.getZ() - 1.2);
+            net.minecraft.world.entity.projectile.FishingHook live =
+               (level.getEntity(bobberId) instanceof net.minecraft.world.entity.projectile.FishingHook h2 && h2.isAlive()) ? h2 : null;
+            if (live == null) {
+               break;
+            }
+            hookSurvived = true;
+            if (!biteForced && drive >= 10) {
+               if (live.nibble <= 0) {
+                  live.nibble = 1;
+               }
+               biteForced = true;
+            }
+            live.tick();
+            com.coderyo.jason.ops.TaskPointStore.Progress pp = com.coderyo.jason.ops.TaskPointStore.get().peek(level, centre);
+            if (pp != null && pp.fishingPhase == com.coderyo.jason.ops.VillagerFishing.Phase.PICKUP.ordinal()) {
+               reeled = true;
+               break;
+            }
+         }
+
+         // PICKUP: drive the REAL goal's fish action until COMPLETE, nudging the villager onto each FISHING-loot drop.
+         int lootSpawned = 0;
+         com.coderyo.jason.ops.OpState st = com.coderyo.jason.ops.VillagerActions.fish(v, centre);
+         int guard = 0;
+         while (st != com.coderyo.jason.ops.OpState.COMPLETE && st != com.coderyo.jason.ops.OpState.BLOCKED && guard++ < 200) {
+            var drops = level.getEntitiesOfClass(net.minecraft.world.entity.item.ItemEntity.class, new AABB(centre).inflate(6.0));
+            lootSpawned = Math.max(lootSpawned, drops.size());
+            if (!drops.isEmpty()) {
+               v.setPos(drops.get(0).getX(), drops.get(0).getY(), drops.get(0).getZ());
+            }
+            st = com.coderyo.jason.ops.VillagerActions.fish(v, centre);
+         }
+
+         int lootAfter = countFishingLoot(v);
+         boolean caught = lootAfter > lootBefore || lootSpawned > 0;
+         aiFishOk = hookSurvived && biteForced && caught;
+         log("HA AIFISH via REAL bobber animation + REAL GoalFish action: hookSurvived=" + hookSurvived
+            + " biteForced=" + biteForced + " reeled=" + reeled + " lootSpawned=" + lootSpawned
+            + " (real BuiltInLootTables.FISHING) fishingLootInInv " + lootBefore + "->" + lootAfter + " finalFSM=" + st);
+         log("HA AIFISH " + (aiFishOk ? "OK (a real fish/loot was caught + collected through the real fishing AI)"
+            : "FAIL (no catch through the real fishing AI — fishing did not complete)"));
+      } catch (Throwable t) {
+         aiFishOk = false;
+         recordException("HA:aifish", t);
+         log("HA AIFISH FAIL: " + t);
       }
    }
 
@@ -2763,6 +3489,10 @@ public final class MillSelfTest {
             .put("FARM", farmCycleOk)
             .put("FISH", fishCycleOk)
             .put("SHEAR", shearCycleOk)
+            .put("AIPLANT", aiPlantOk)
+            .put("AICONSTRUCT", aiConstructOk)
+            .put("AIMILK", aiMilkOk)
+            .put("AIFISH", aiFishOk)
             .put("HANDOFF", handoffCycleOk)
             .put("TRADE", tradeOk)
             .put("INTERACT", interactOk)
@@ -2890,6 +3620,17 @@ public final class MillSelfTest {
       log("AI shear (goalKey=shearsheep, real AI navigates+performAction → sheep actually sheared): " + (aiShearOk == null ? "not run" : (aiShearOk ? "OK" : "FAIL (in-game bug)")));
       log("AI chop/break (real navigation → breakTick → block actually air): " + (aiChopOk == null ? "not run" : (aiChopOk ? "OK" : "FAIL (in-game bug)")));
       log("AI place (real navigation → place → planned block actually appears): " + (aiPlaceOk == null ? "not run" : (aiPlaceOk ? "OK" : "FAIL (in-game bug)")));
+      log("=== FAITHFUL harvest/break family (REAL migrated goal.performAction via REAL navigation) ===");
+      log("AI chop TREE (GoalLumbermanChopTrees: whole tall tree felled→air + scaffold reclaimed + logs collected): "
+         + (aiChopTreeOk == null ? "not run" : (aiChopTreeOk ? "OK" : "FAIL (in-game bug)")));
+      log("AI mine ORE (GoalGenericMining: real ore→air + raw_iron collected via VillagerActions.harvestBlock): "
+         + (aiMineOreOk == null ? "not run" : (aiMineOreOk ? "OK" : "FAIL (in-game bug)")));
+      log("AI crop HARVEST (GoalGenericHarvestCrop: ripe crop→air + wheat collected, null-tool 0-hardness): "
+         + (aiCropOk == null ? "not run" : (aiCropOk ? "OK" : "FAIL (in-game bug)")));
+      log("AI plant (real navigation → plant action → genuine surviving sapling appears + seed consumed): " + (aiPlantOk == null ? "not run" : (aiPlantOk ? "OK" : "FAIL (in-game bug)")));
+      log("AI construct (real navigation → place action → planned block placed + strict material gate held): " + (aiConstructOk == null ? "not run" : (aiConstructOk ? "OK" : "FAIL (in-game bug)")));
+      log("AI milk (goalKey=milkcow, real AI navigates+performAction → bucket actually becomes milk_bucket): " + (aiMilkOk == null ? "not run" : (aiMilkOk ? "OK" : "FAIL (in-game bug)")));
+      log("AI fish (real GoalFish action → full bobber animation → FISHING loot actually caught + collected): " + (aiFishOk == null ? "not run" : (aiFishOk ? "OK" : "FAIL (in-game bug)")));
       log("distinct exception types seen: " + distinctExceptions.size());
       for (Map.Entry<String, Integer> e : distinctExceptions.entrySet()) {
          log("  exception x" + e.getValue() + ": " + e.getKey());

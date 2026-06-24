@@ -111,18 +111,21 @@ public class GoalGenericPlantSapling extends GoalGeneric {
             saplingBS = MillBlocks.SAPLING_SAKURA.defaultBlockState();
          }
 
-         // Reach-gate (ground-level plot; normally already in reach). Scaffold-extend if needed; keep approaching
-         // until in reach. STATELESS — phase is the WORLD block state above, no per-goal field.
+         // Plant via the AI-invokable plant ACTION: reach-gate (scaffold-extend if needed; keep approaching until in
+         // reach), STRICTLY verify the sapling can actually survive at the spot (a GENUINE plant, not one that pops
+         // next tick), debit ONE matching sapling from stock, then place it with a real swing + place sound. STATELESS
+         // — phase is the WORLD block state above, no per-goal field.
          net.minecraft.core.BlockPos pos = villager.getGoalDestPoint().getBlockPos();
-         if (!com.coderyo.jason.ops.VillagerWorldOps.withinReach(villager, pos)) {
-            com.coderyo.jason.ops.OpState reach = com.coderyo.jason.ops.VillagerWorldOps.ensureReach(villager, pos);
-            return reach == com.coderyo.jason.ops.OpState.BLOCKED; // BLOCKED → finish (re-pick); else keep approaching.
+         com.coderyo.jason.ops.OpState pst =
+            com.coderyo.jason.ops.VillagerActions.plantBlock(villager, pos, saplingBS, saplingBS.getBlock().asItem(), 0);
+         if (pst == com.coderyo.jason.ops.OpState.APPROACHING
+            || pst == com.coderyo.jason.ops.OpState.EXTENDING_REACH) {
+            return false; // still walking / scaffolding into reach — keep the goal and retry next tick.
          }
-         // Real player-like place: consume the sapling from stock, then place it (swing + place sound).
-         villager.takeFromInv(saplingBS, 1);
-         com.coderyo.jason.ops.VillagerWorldOps.place(villager, pos, saplingBS);
-         if (MillConfigValues.LogLumberman >= 3 && villager.extraLog) {
+         if (pst == com.coderyo.jason.ops.OpState.COMPLETE && MillConfigValues.LogLumberman >= 3 && villager.extraLog) {
             MillLog.debug(this, "Planted at: " + villager.getGoalDestPoint());
+         } else if (pst == com.coderyo.jason.ops.OpState.BLOCKED && MillConfigValues.LogLumberman >= 3 && villager.extraLog) {
+            MillLog.debug(this, "Plant BLOCKED (sapling cannot survive) at: " + villager.getGoalDestPoint());
          }
       } else if (MillConfigValues.LogLumberman >= 3 && villager.extraLog) {
          MillLog.debug(this, "Failed to plant at: " + villager.getGoalDestPoint());

@@ -7,7 +7,7 @@ import net.minecraft.world.level.block.Blocks;
 import net.minecraft.world.item.Items;
 import net.minecraft.world.item.ItemStack;
 import com.coderyo.jason.ops.OpState;
-import com.coderyo.jason.ops.VillagerWorldOps;
+import com.coderyo.jason.ops.VillagerActions;
 import org.millenaire.common.config.DocumentedElement;
 import org.millenaire.common.entity.MillVillager;
 import org.millenaire.common.item.InvItem;
@@ -77,43 +77,35 @@ public class GoalHarvestCacao extends Goal {
       }
       BlockPos pos = cropPoint.getBlockPos();
 
-      // Phase 1 — ripe cocoa still standing: reach-gate, then REALLY break it (0-hardness → this tick).
-      if (cropPoint.getBlock(villager.level()) == Blocks.COCOA) {
-         BlockState bs = cropPoint.getBlockActualState(villager.level());
-         if ((Integer) bs.getValue(CocoaBlock.AGE) >= 2) {
-            if (!VillagerWorldOps.withinReach(villager, pos)) {
-               OpState reach = VillagerWorldOps.ensureReach(villager, pos);
-               if (reach == OpState.BLOCKED) {
-                  return true;
-               }
-               return false;
-            }
-            OpState st = VillagerWorldOps.breakTick(villager, pos);
-            switch (st) {
-               case APPROACHING:
-               case EXTENDING_REACH:
-               case IN_PROGRESS:
-                  return false;
-               case BLOCKED:
-                  return true;
-               case COMPLETE:
-                  return false; // broke this tick; next tick the point is air → pickup + reconcile.
-               default:
-                  return false;
-            }
-         }
-         return true; // not ripe — leave it to grow.
-      }
+      boolean ripeCocoa = cropPoint.getBlock(villager.level()) == Blocks.COCOA
+         && (Integer) cropPoint.getBlockActualState(villager.level()).getValue(CocoaBlock.AGE) >= 2;
+      // After the break the pod is AIR (so the ripeness test flips false the next tick) — keep driving the facade's
+      // PICKUP phase while real bean drops remain near the worksite, so the beans aren't abandoned.
+      boolean dropsPending = villager.level().getBlockState(pos).isAir()
+         && VillagerActions.hasNearbyDrop(villager, pos);
 
-      // Phase 2 — broken (point air): WALK to + collect the real beans, then reconcile to the 1.12 net yield.
-      if (villager.level().getBlockState(pos).isAir()) {
-         OpState pst = VillagerWorldOps.pickupTick(villager, pos);
-         if (pst != OpState.COMPLETE) {
-            return false;
+      if (ripeCocoa || dropsPending) {
+         // HARVEST via the AI-invokable facade: reach-gate → break the 0-hardness pod → walk to + collect the real
+         // beans. tool == null skips the strict tool gate (a 0-hardness pod yields its beans with any/no tool).
+         OpState st = VillagerActions.harvestBlock(villager, pos, null);
+         switch (st) {
+            case APPROACHING:
+            case EXTENDING_REACH:
+            case IN_PROGRESS:
+            case PICKING_UP:
+               return false; // walking into reach / breaking / collecting the real beans — keep going.
+            case BLOCKED:
+               return true; // unreachable (not expected) — abandon so the goal re-picks.
+            case COMPLETE:
+               // The pod is broken AND the real beans collected. Reconcile to the 1.12 net yield (trim 3→2 + the
+               // irrigation bonus) ONCE, here at completion, then finish.
+               reconcileMillYield(villager);
+               return true;
+            default:
+               return false;
          }
-         reconcileMillYield(villager);
       }
-      return true;
+      return true; // not ripe / already harvested — leave it to grow or let the goal re-pick.
    }
 
    /**

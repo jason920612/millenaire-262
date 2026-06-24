@@ -191,28 +191,33 @@ public class GoalGenericPlantCrop extends GoalGeneric {
          }
       }
 
-      // Till the soil below to the configured soil block via the real place primitive (consume/place + sound).
+      // Till the soil below to the configured soil block via the real place primitive (consume/place + sound) BEFORE
+      // the crop place, so the crop's canSurvive check in VillagerActions.plantBlock sees the right soil under it.
       Block soilBlock = BuiltInRegistries.BLOCK.getValue(this.soilType);
       if (soil.getBlock(villager.level()) != soilBlock) {
          VillagerWorldOps.place(villager, soil.getBlockPos(), soilBlock.defaultBlockState());
       }
 
-      // Place the crop (age 0) on top — real player-like placement.
+      // Place the crop (age 0) on top via the AI-invokable plant ACTION: it STRICTLY verifies the crop can actually
+      // survive on the just-tilled soil (a GENUINE plant, not one that pops next tick) then places it with a real
+      // swing + place sound. Seed is already debited above (1.12 stock/building economy), so pass null here — the
+      // action does not double-debit. The DoublePlant/grapevine UPPER half is the second block of a single validated
+      // plant, laid via the raw place after the lower half is confirmed placed.
       if (!this.plantBlockState.isEmpty()) {
          BlockState cropState = this.plantBlockState.get(MillRandom.randomInt(this.plantBlockState.size()));
-         VillagerWorldOps.place(villager, above.getBlockPos(), cropState);
-         if (cropState.getBlock() instanceof DoublePlantBlock) {
+         com.coderyo.jason.ops.OpState pst = com.coderyo.jason.ops.VillagerActions.plantBlock(villager, above.getBlockPos(), cropState);
+         if (pst == com.coderyo.jason.ops.OpState.COMPLETE && cropState.getBlock() instanceof DoublePlantBlock) {
             VillagerWorldOps.place(villager, above.getAbove().getBlockPos(),
                cropState.setValue(DoublePlantBlock.HALF, DoubleBlockHalf.UPPER));
          }
       } else {
          Block cropBlock = BuiltInRegistries.BLOCK.getValue(this.cropType);
-         VillagerWorldOps.place(villager, above.getBlockPos(), cropBlock.defaultBlockState());
-         if (cropBlock instanceof DoublePlantBlock) {
+         com.coderyo.jason.ops.OpState pst = com.coderyo.jason.ops.VillagerActions.plantBlock(villager, above.getBlockPos(), cropBlock.defaultBlockState());
+         if (pst == com.coderyo.jason.ops.OpState.COMPLETE && cropBlock instanceof DoublePlantBlock) {
             // 26.2: the 1.12 upper-half meta (cropMeta | 8) is now the DoublePlantBlock.HALF=UPPER blockstate.
             VillagerWorldOps.place(villager, above.getAbove().getBlockPos(),
                cropBlock.defaultBlockState().setValue(DoublePlantBlock.HALF, DoubleBlockHalf.UPPER));
-         } else if (cropBlock instanceof BlockGrapeVine) {
+         } else if (pst == com.coderyo.jason.ops.OpState.COMPLETE && cropBlock instanceof BlockGrapeVine) {
             // Grapevine upper half (1.12 meta | 8); place its default upper state.
             villager.setBlockAndMetadata(above.getAbove(), cropBlock, getCropBlockMeta(this.cropType) | 8);
          }

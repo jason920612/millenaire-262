@@ -165,18 +165,30 @@ public final class OreVeinMiner {
             continue; // already mined this cell — move to the next ore in the vein.
          }
 
-         // Navigate toward the cell if out of reach (the 3D navigator routes around obstacles for us).
+         // Navigate toward the cell if out of reach (the 3D navigator routes around obstacles for us, rather than the
+         // facade's vertical scaffold — a mine tunnels horizontally, so we keep the 3D-nav approach here).
          if (!VillagerWorldOps.withinReach(villager, cell)) {
             navTo(villager, cell);
             return MineResult.WORKING;
          }
 
-         OpState st = VillagerWorldOps.breakTick(villager, cell);
+         boolean wasOre = view.isOreBlock(state);
+         // HARVEST via the AI-invokable facade: now in reach, it breaks the cell over the real player destroy-math
+         // (tool-aware drops) and walks to + collects them. The climb column is anchored on the mine anchor (shared
+         // across the whole excavation) — but a horizontal tunnel rarely needs one (we already 3D-navved into reach).
+         OpState st = VillagerActions.harvestBlock(villager, cell, VillagerWorldOps.ToolKind.PICKAXE, mine.anchor);
+         // Count the ore + light the tunnel on the exact tick the block goes air (the break completed this tick).
+         if (wasOre && level.getBlockState(cell).isAir() && mine.lastBrokenCell != cell.asLong()) {
+            mine.lastBrokenCell = cell.asLong();
+            mine.oreMined++;
+            maybeLightTunnel(villager, mine, cell);
+         }
          switch (st) {
             case APPROACHING:
             case EXTENDING_REACH:
             case IN_PROGRESS:
-               return MineResult.WORKING; // keep breaking / closing in next tick.
+            case PICKING_UP:
+               return MineResult.WORKING; // breaking / closing in / collecting the drops next tick.
             case BLOCKED:
                // Unbreakable (bedrock) — permanent hazard, route around it (never stop dead / seal to stone).
                mine.markHazard(cell);
@@ -184,18 +196,15 @@ public final class OreVeinMiner {
                   + state.getBlock() + ") — routing around");
                continue;
             case COMPLETE:
-               // Ore really broke this tick: count it, light the tunnel, then walk to its drops.
-               if (view.isOreBlock(state)) {
-                  mine.oreMined++;
-               }
-               maybeLightTunnel(villager, mine, cell);
-               OpState pst = VillagerWorldOps.pickupTick(villager, cell);
-               return pst == OpState.COMPLETE ? MineResult.WORKING : MineResult.WORKING;
+               // This cell is fully mined + its drops collected; loop on to the next vein cell this same call.
+               continue;
             default:
                return MineResult.WORKING;
          }
       }
-      // Every cell in this vein/cave is air now — it is fully mined.
+      // Every cell in this vein/cave is air now — it is fully mined. Reclaim any climb column the facade built while
+      // reaching a cell (anchored on the mine anchor) so no temporary scaffolding is left in the tunnel.
+      VillagerActions.finishHarvest(villager, mine.anchor);
       logMine(villager, mine.anchor, (cave ? "CAVE" : "VEIN") + " cleared — total ore mined by this mine = "
          + mine.oreMined + "; advancing frontier next cycle");
       return MineResult.CYCLE_DONE;

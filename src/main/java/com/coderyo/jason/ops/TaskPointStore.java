@@ -336,6 +336,12 @@ public final class TaskPointStore {
       public long lastTickTouched;
       /** Packed pos of the last vein-start logged, so the "VEIN found" line isn't spammed every tick. */
       public long lastVeinStartLogged = Long.MIN_VALUE;
+      /**
+       * Packed pos of the last cell counted as broken ore, so the ore-mined tally + tunnel-light fire EXACTLY ONCE per
+       * cell even though the bundled break+pickup facade ({@link VillagerActions#harvestBlock}) leaves the cell air
+       * across the multi-tick pickup that follows the break.
+       */
+      public long lastBrokenCell = Long.MIN_VALUE;
 
       MineState(BlockPos anchor) {
          this.anchor = anchor;

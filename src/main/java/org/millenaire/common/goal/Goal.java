@@ -191,6 +191,7 @@ public abstract class Goal {
       goals.put("hide", hide);
       goals.put("becomeadult", new GoalChildBecomeAdult());
       goals.put("shearsheep", new GoalShearSheep());
+      goals.put("milkcow", new GoalMilkCow());
       goals.put("breed", new GoalBreedAnimals());
       goals.put("mining", new GoalMinerMineResource());
       goals.put("visitinn", new GoalMerchantVisitInn());

@@ -138,6 +138,73 @@ public final class VillagerActions {
    }
 
    // ================================================================================================
+   // PLANT — reach-gate → strict plant-validity → (optional seed consume) → place a real sapling/crop
+   // ================================================================================================
+
+   /**
+    * Advance "plant {@code plantState} at {@code pos}" by one tick, player-like: climb into reach if needed (scaffold
+    * tracked on {@code pos}), STRICTLY verify {@code plantState} can actually survive there (the sapling/crop's own
+    * vanilla {@code canSurvive}), consume one {@code seed} (item+meta) from the villager's Mill stock when a seed is
+    * named, then place the plant block with a real swing + place sound. This is the single seam the crop / sapling
+    * planting goals call instead of an instant silent {@code setBlock}: it guarantees the planted block is a GENUINE,
+    * VALID plant (never laid on a surface where it would pop the next tick — the very "arrives but the action does
+    * nothing real" failure mode this family had) and that the seed economy is paid.
+    *
+    * <p>{@code seed == null} (or {@code Items.AIR}) means "no separate seed debit" — the grove/lumberman sapling case
+    * where the variant is decided by the planting-location type and only the sapling block itself is the resource. Pass
+    * the seed item + meta to debit a distinct seed.
+    *
+    * @return {@link OpState#EXTENDING_REACH}/{@link OpState#APPROACHING} while moving into reach;
+    *     {@link OpState#BLOCKED} if the plant cannot survive at {@code pos} (invalid surface) — the caller must replan;
+    *     {@link OpState#COMPLETE} once the valid plant is placed (and the seed, if any, consumed).
+    */
+   public static OpState plantBlock(MillVillager v, BlockPos pos, BlockState plantState, Item seed, int seedMeta) {
+      if (!VillagerWorldOps.withinReach(v, pos)) {
+         OpState reach = VillagerWorldOps.ensureReach(v, pos, pos);
+         if (reach != OpState.COMPLETE) {
+            return reach;
+         }
+      }
+      // STRICT plant-validity: the block must actually be able to LIVE here (vanilla canSurvive — the soil/light/space
+      // a sapling or crop requires). We never lay a "plant" that would instantly pop: a valid, surviving plant is the
+      // whole point of the action. An invalid surface ⇒ BLOCKED so the goal replans rather than fake-planting.
+      if (!plantState.canSurvive(v.level(), pos)) {
+         return OpState.BLOCKED;
+      }
+      // Seed economy: consume one matching seed from stock when a distinct seed is named (sapling callers pass null).
+      if (seed != null && seed != net.minecraft.world.item.Items.AIR && v.countInv(seed, seedMeta) > 0) {
+         v.takeFromInv(seed, seedMeta, 1);
+      }
+      // Real player-like place (swing + place sound) of the validated plant block.
+      VillagerWorldOps.place(v, pos, plantState);
+      return OpState.COMPLETE;
+   }
+
+   /** Convenience: plant {@code plantState} with no separate seed debit (sapling / grove planting). */
+   public static OpState plantBlock(MillVillager v, BlockPos pos, BlockState plantState) {
+      return plantBlock(v, pos, plantState, null, 0);
+   }
+
+   // ================================================================================================
+   // FISH — full vanilla bobber bite FSM + BuiltInLootTables.FISHING, surfaced through the facade
+   // ================================================================================================
+
+   /**
+    * Advance "fish from the spot marker {@code water}" by one tick. Delegates to the COMPLETE villager-fishing FSM
+    * ({@link VillagerWorldOps#fishTick} → {@link VillagerFishing}): cast a real villager-owned {@link
+    * net.minecraft.world.entity.projectile.FishingHook}, run the FULL vanilla bobbing + bite animation (via the
+    * {@code FishingHookMixin} + access-widener relaxing the bobber's Player-gating), roll {@code
+    * BuiltInLootTables.FISHING} on the catch, and walk the villager to + collect the dropped catch. Surfaced on the
+    * facade so the fishing goal drives the action family uniformly with the other player-like ops.
+    *
+    * @return {@link OpState#BLOCKED} (no rod / no open water — replan), {@link OpState#IN_PROGRESS} (bobber in
+    *     flight / biting), {@link OpState#PICKING_UP} (collecting the catch), {@link OpState#COMPLETE} (catch in inv).
+    */
+   public static OpState fish(MillVillager v, BlockPos water) {
+      return VillagerWorldOps.fishTick(v, water);
+   }
+
+   // ================================================================================================
    // ENTITY GATHER — approach → shear / milk → pickup
    // ================================================================================================
 
@@ -167,5 +234,19 @@ public final class VillagerActions {
    /** The {@link VillagerWorldOps.ToolKind} for mining {@code block} (shovel for soft, pickaxe otherwise). */
    public static VillagerWorldOps.ToolKind miningToolFor(Block block) {
       return VillagerWorldOps.miningToolFor(block);
+   }
+
+   /**
+    * True if there is at least one ground {@link net.minecraft.world.entity.item.ItemEntity} (a real drop still to be
+    * collected) near {@code worksite}, within the op's pickup scan radius. A harvest goal that folds break+pickup into
+    * {@link #harvestBlock} uses this to keep driving the PICKUP phase after the harvested block is already AIR — i.e.
+    * once the block-presence test that selected the worksite has flipped false — so the real drops are never abandoned.
+    */
+   public static boolean hasNearbyDrop(MillVillager v, BlockPos worksite) {
+      net.minecraft.world.phys.AABB box =
+         new net.minecraft.world.phys.AABB(worksite).inflate(VillagerWorldOps.PICKUP_SCAN_RADIUS);
+      return !v.level().getEntitiesOfClass(
+         net.minecraft.world.entity.item.ItemEntity.class, box,
+         e -> e.isAlive() && !e.getItem().isEmpty()).isEmpty();
    }
 }

@@ -14,6 +14,7 @@ import net.minecraft.world.level.block.state.BlockState;
 import net.minecraft.world.item.Items;
 import net.minecraft.world.item.ItemStack;
 import com.coderyo.jason.ops.OpState;
+import com.coderyo.jason.ops.VillagerActions;
 import com.coderyo.jason.ops.VillagerWorldOps;
 import org.millenaire.common.config.DocumentedElement;
 import org.millenaire.common.config.MillConfigValues;
@@ -155,7 +156,7 @@ public class GoalLumbermanChopTrees extends Goal {
             return chopOne(villager, dest, nearest(villager, tree.leaves), false);
          }
          // Whole tree (logs + leaves) gone: reclaim the climb column and let the goal advance.
-         VillagerWorldOps.reclaimReach(villager, dest);
+         VillagerActions.finishHarvest(villager, dest);
          if (MillConfigValues.LogLumberman >= 3) {
             MillLog.debug(this, "Tree felled + leaves cleared around " + dest + "; scaffold reclaimed.");
          }
@@ -168,57 +169,33 @@ public class GoalLumbermanChopTrees extends Goal {
    }
 
    /**
-    * Drive one block (log or leaf) through the player-like sub-cycle this tick: reach-extend (scaffold for high
-    * logs) → break-over-time → pickup. Returns {@code false} (stay in action) until this block is fully broken and
-    * its drops collected, since the surrounding {@link #performAction} loop re-selects the next block next tick.
+    * Drive one block (log or leaf) through the player-like sub-cycle this tick via the AI-invokable
+    * {@link VillagerActions#harvestBlock} facade: ensureTool(AXE) → reach-extend (scaffold for high logs, the shared
+    * column tracked on {@code reachAnchor}) → break-over-time → walk-to-each-drop pickup, all bundled in one call.
+    * Returns {@code false} (stay in action) until this block is fully broken and its drops collected, since the
+    * surrounding {@link #performAction} loop re-selects the next block next tick. The single climb column is
+    * reclaimed ONCE via {@link VillagerActions#finishHarvest} when the whole tree is gone (see {@link #performAction}).
+    *
+    * <p>1.12-fidelity arrive-but-not-act guard: the facade's reach step builds a scaffold for the upper trunk
+    * (which the 1.12 goal never did — it faked the break in place), so a tall tree's high logs are GENUINELY reached
+    * and broken instead of the villager standing at the base never acting on the out-of-reach logs.
     */
    private boolean chopOne(MillVillager villager, BlockPos reachAnchor, BlockPos target, boolean isLog) {
       if (target == null) {
          return false;
       }
-      // Reach-extend against the LOG/leaf itself (high trunk needs a scaffold column). Anchor the point-owned
-      // scaffold tracking on the goal's dest so the whole tree shares (and reclaims) one column.
-      if (!VillagerWorldOps.withinReach(villager, target)) {
-         // Track the climb column on the goal's dest (reachAnchor) so the whole tree shares ONE column that is
-         // reclaimed once at the end — not a separate column per log.
-         OpState reach = VillagerWorldOps.ensureReach(villager, target, reachAnchor);
-         switch (reach) {
-            case COMPLETE:
-               break; // now in reach — fall through to break.
-            case EXTENDING_REACH:
-               return false; // building/climbing the column; keep going next tick.
-            case BLOCKED:
-            default:
-               // Can't reach even with a column (shouldn't happen for a tree) — skip via approach so the goal can
-               // re-path; returning false keeps the goal active without spinning on an impossible block.
-               if (MillConfigValues.LogLumberman >= 2) {
-                  MillLog.debug(this, "Cannot reach " + (isLog ? "log" : "leaf") + " at " + target + "; approaching.");
-               }
-               return false;
-         }
+      // AXE for both logs and leaves: leaves are 0-hardness so the strict-tool gate is permissive for them, but
+      // passing AXE is correct (an axe is the fastest tool for both) and keeps the held-item path consistent. The
+      // facade handles reach (scaffold up for high logs, anchored on the shared reachAnchor so ONE column serves the
+      // whole tree), the real break-over-time, and walking to + collecting each real drop.
+      OpState st = VillagerActions.harvestBlock(villager, target, VillagerWorldOps.ToolKind.AXE, reachAnchor);
+      if (st == OpState.BLOCKED && MillConfigValues.LogLumberman >= 2) {
+         // BLOCKED = no axe (defer to GoalGetTool) or genuinely unreachable (not expected for a tree).
+         MillLog.debug(this, "Cannot harvest " + (isLog ? "log" : "leaf") + " at " + target + " (" + st + ").");
       }
-
-      OpState st = VillagerWorldOps.breakTick(villager, target);
-      switch (st) {
-         case APPROACHING:
-         case EXTENDING_REACH:
-         case IN_PROGRESS:
-            return false; // keep breaking / walking closer next tick.
-         case BLOCKED:
-            return false; // unbreakable (not expected for logs/leaves) — skip without faking a yield.
-         case COMPLETE:
-            // Block just broke; walk to + collect its real drops before moving on.
-            return runPickup(villager, target);
-         default:
-            return false;
-      }
-   }
-
-   /** Walk-to-each-drop pickup at {@code pos}; {@code false} while collecting, {@code false}→loop continues. */
-   private boolean runPickup(MillVillager villager, BlockPos pos) {
-      OpState pst = VillagerWorldOps.pickupTick(villager, pos);
-      // Whether still picking up or done, we return false so performAction re-enters and re-selects the next
-      // log/leaf next tick (the just-broken block is now air and drops out of the flood automatically).
+      // Whether APPROACHING / EXTENDING_REACH / IN_PROGRESS / PICKING_UP / COMPLETE / BLOCKED, we return false so
+      // performAction re-enters next tick and re-selects the next log/leaf (the just-broken block is now air and
+      // drops out of the flood automatically; a COMPLETE here means this block + its drops are fully done).
       return false;
    }
 

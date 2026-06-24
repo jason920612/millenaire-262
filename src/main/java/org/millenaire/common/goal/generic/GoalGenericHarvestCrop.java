@@ -12,6 +12,7 @@ import net.minecraft.world.item.ItemStack;
 import net.minecraft.resources.Identifier;
 import net.minecraft.world.level.Level;
 import com.coderyo.jason.ops.OpState;
+import com.coderyo.jason.ops.VillagerActions;
 import com.coderyo.jason.ops.VillagerWorldOps;
 import org.millenaire.common.annotedparameters.AnnotedParameter;
 import org.millenaire.common.annotedparameters.ConfigAnnotations;
@@ -185,46 +186,41 @@ public class GoalGenericHarvestCrop extends GoalGeneric {
       //   - anything else       → already replanted / no longer ripe → recompute the next destination.
       boolean ripe = this.isValidHarvestSoil(villager.level(), soil);
 
-      if (ripe) {
-         // BREAK: ensureReach (crops are ground-level; normally already in reach) then break the ripe crop. A
-         // 0-hardness crop breaks in a single breakTick (the op's 0-hardness guard) spawning the real drops.
-         if (!VillagerWorldOps.withinReach(villager, cropPos)) {
-            OpState reach = VillagerWorldOps.ensureReach(villager, cropPos);
-            if (reach != OpState.COMPLETE) {
-               return false; // approaching / extending reach — keep going next tick.
-            }
+      // BREAK + PICKUP via the AI-invokable facade, driven across ticks. The dest was selected because it held a RIPE
+      // crop; the facade breaks the 0-hardness crop in a single tick (its 0-hardness guard) spawning the real drops,
+      // then over the following ticks WALKS to + collects them. Because the crop is AIR after the break (so {@code
+      // ripe} flips false on the very next tick), we must keep driving the facade in the AIR-with-pending-drops phase
+      // too — otherwise the pickup would stall and the real wheat/seeds would be abandoned. tool == null skips the
+      // strict tool gate (a 0-hardness crop yields its drops with any/no tool).
+      boolean dropsPending = villager.level().getBlockState(cropPos).isAir()
+         && VillagerActions.hasNearbyDrop(villager, cropPos);
+      if (ripe || dropsPending) {
+         if (ripe && villager.getBlock(above.getAbove()) instanceof DoublePlantBlock) {
+            // A DoublePlant crop (e.g. tall flowers) also clears its upper half: break it FIRST, while the lower half
+            // is still the ripe crop, so the facade's pickup collects both halves' drops. (Idempotent once air.)
+            VillagerWorldOps.breakTick(villager, above.getAbove().getBlockPos());
          }
-         OpState st = VillagerWorldOps.breakTick(villager, cropPos);
+         OpState st = VillagerActions.harvestBlock(villager, cropPos, null);
          switch (st) {
             case APPROACHING:
             case EXTENDING_REACH:
             case IN_PROGRESS:
-               return false; // keep breaking / walking closer next tick.
+            case PICKING_UP:
+               return false; // walking into reach / breaking / collecting the real wheat+seeds drops — keep going.
             case BLOCKED:
-               return true; // a crop should never be unbreakable; abandon so the goal re-picks.
+               return true; // a crop should never be unbreakable / unreachable; abandon so the goal re-picks.
             case COMPLETE:
-               // The crop just broke; a DoublePlant crop (e.g. tall flowers) also clears its upper half. Next tick
-               // the point is air → the PICKUP+replant branch below runs.
-               if (villager.getBlock(above.getAbove()) instanceof DoublePlantBlock) {
-                  VillagerWorldOps.breakTick(villager, above.getAbove().getBlockPos());
-               }
-               return false;
+               // The crop is broken AND its real drops are collected. Grant the 1.12 authored economy yield and
+               // auto-replant a fresh age-0 crop, then advance to the next destination below.
+               grantMillYield(villager);
+               replant(villager, above, soil);
+               break;
             default:
                return false;
          }
-      } else if (villager.level().getBlockState(cropPos).isAir()) {
-         // PICKUP + FINISH: we broke the crop (the point is now air). Walk to + collect each real drop; once all are
-         // collected, grant the 1.12 authored yield and auto-replant a fresh age-0 crop, then advance to the next.
-         OpState pst = VillagerWorldOps.pickupTick(villager, cropPos);
-         if (pst != OpState.COMPLETE) {
-            return false; // still walking to / collecting the real wheat+seeds drops.
-         }
-         grantMillYield(villager);
-         replant(villager, above, soil);
-         // fall through to recompute the next destination below.
       }
-      // else: the point is neither a ripe crop nor air-after-harvest (already replanted / never matured) — skip it,
-      // recompute the next destination below. This is the MATURE-only guarantee: immature crops are never touched.
+      // else: the point is neither a ripe crop nor air-with-pending-drops (already replanted / harvested / never
+      // matured) — skip it, recompute the next destination below. This is the MATURE-only guarantee.
 
       if (this.isDestPossibleSpecific(villager, villager.getGoalBuildingDest())) {
          try {

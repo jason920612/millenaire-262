@@ -3,9 +3,13 @@ package com.coderyo.jason.talk;
 import net.minecraft.ChatFormatting;
 import net.minecraft.world.entity.player.Player;
 
+import org.millenaire.common.entity.MillVillager;
 import org.millenaire.common.network.ServerSender;
+import org.millenaire.common.quest.QuestInstance;
 import org.millenaire.common.utilities.MillLog;
 import org.millenaire.common.village.Building;
+import org.millenaire.common.world.MillWorldData;
+import org.millenaire.common.world.UserProfile;
 
 import com.coderyo.jason.build.MillNeedsModel;
 
@@ -64,12 +68,15 @@ public final class PlayerDialogue {
    }
 
    /**
-    * The player TAKES the village's discussion-generated quest. Runs the {@link VillageDiscussion discussion},
-    * shows the templated quest line in chat (or a "nothing needed" note when the village is IDLE), and returns the
-    * discussion result so a caller can register the quest + apply the steering decision. No fabrication: an IDLE
-    * village offers no quest.
+    * The player TAKES the village's discussion-generated quest from the villager they spoke to. Runs the
+    * {@link VillageDiscussion discussion}, shows the templated quest line in chat (or a "nothing needed" note when
+    * the village is IDLE), then SEEDS a REAL {@link QuestInstance} on the player's profile via
+    * {@link DiscussionQuests} — mapped to the discussion topic and preferring the {@code clicked} villager as the
+    * quest's starting villager — so the player can accept / track / complete it through the normal GuiQuest path.
+    * Returns the discussion result. No fabrication: an IDLE village offers no quest, and a real quest is only
+    * seeded when a shipped quest maps to a villager actually present here.
     */
-   public static VillageDiscussion.DiscussionResult takeQuest(Player player, Building townHall) {
+   public static VillageDiscussion.DiscussionResult takeQuest(Player player, Building townHall, MillVillager clicked) {
       VillageDiscussion.DiscussionResult r = VillageDiscussion.discussAndLog(townHall);
       if (r.quest == null) {
          String greet = TalkTemplates.greet(townHall);
@@ -80,6 +87,21 @@ public final class PlayerDialogue {
       sendChat(player, r.quest);
       MillLog.major(null, TAG + " PLAYER takes quest at '" + safeName(townHall) + "' topic=" + r.topic
          + (r.resource != null ? ":" + r.resource : "") + " quest=\"" + r.quest + "\" steers=" + r.decision);
+
+      // Seed a REAL QuestInstance (mapped to the discussion topic) so this is not a templated string only.
+      try {
+         MillWorldData mw = townHall.mw;
+         UserProfile profile = (mw != null && player != null) ? mw.getProfile(player) : null;
+         QuestInstance qi = DiscussionQuests.seedFor(mw, townHall, profile, r, clicked);
+         if (qi != null) {
+            sendChat(player, TalkTemplates.greet(townHall) + " (quest '" + qi.quest.key + "' is now in your journal.)");
+         } else {
+            MillLog.major(null, TAG + " PLAYER take-quest at '" + safeName(townHall)
+               + "': no shipped quest maps to a present villager — templated line shown, no QuestInstance seeded");
+         }
+      } catch (Throwable t) {
+         MillLog.printException(TAG + " takeQuest could not seed a QuestInstance", t);
+      }
       return r;
    }
 

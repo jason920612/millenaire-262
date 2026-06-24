@@ -2927,6 +2927,16 @@ public abstract class MillVillager extends PathfinderMob implements IAStarPathed
                );
             }
 
+            // Phase 7 (#7) PLAYER DIALOGUE: a SNEAK + EMPTY-HAND right-click TALKS to the villager rather than
+            // opening the trade/hire/quest GUI (plain right-click keeps those). The villager speaks its village's
+            // mood + top need (templated, live-state) and offers the discussion-generated quest — which seeds a
+            // REAL QuestInstance via DiscussionQuests against THIS clicked villager. Server-side, town-hall guarded.
+            if (entityplayer.isShiftKeyDown() && entityplayer.getItemInHand(hand).isEmpty() && this.getTownHall() != null) {
+               com.coderyo.jason.talk.PlayerDialogue.askState(entityplayer, this.getTownHall());
+               com.coderyo.jason.talk.PlayerDialogue.takeQuest(entityplayer, this.getTownHall(), this);
+               return true;
+            }
+
             UserProfile profile = this.mw.getProfile(entityplayer);
             if (profile.villagersInQuests.containsKey(this.getVillagerId())) {
                QuestInstance qi = profile.villagersInQuests.get(this.getVillagerId());

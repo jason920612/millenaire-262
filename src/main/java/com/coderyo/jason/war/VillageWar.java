@@ -19,6 +19,7 @@ import org.millenaire.common.world.MillWorldData;
 import com.coderyo.jason.expand.VillageExpansion;
 import com.coderyo.jason.merge.VillageMergeFound;
 import com.coderyo.jason.ops.TaskPointStore;
+import com.coderyo.jason.talk.VillageDiplomacy;
 
 /**
  * Phase 5 (#4) — EXPANSION-DRIVEN WAR (the emergent-civilization conflict driver).
@@ -213,6 +214,23 @@ public final class VillageWar {
          if (tension >= TENSION_THRESHOLD && !AT_WAR.contains(pair)
             && townHall.isActive && other.isActive) {
             declareWar(townHall, other);
+
+            // Phase 7 (#7) DIPLOMACY first: before strength-resolution, give a losing/overmatched side the chance
+            // to sue for PEACE through the diplomacy engine. VillageDiplomacy.propose only offers PEACE when its
+            // real condition holds (the proposer is at war AND its defending strength is at/below the weakness
+            // threshold), the other side always accepts a ceasefire, and apply() routes through makePeace — so an
+            // overmatched village ends the war by NEGOTIATION here instead of pure strength-resolution. Strict:
+            // when neither side is weak enough to sue, no proposal is made and the war resolves by strength as
+            // before. We try BOTH directions so whichever side is the weak one can sue.
+            boolean peaceMade = trySuePeace(townHall, other) || trySuePeace(other, townHall);
+            if (peaceMade) {
+               // The ceasefire ended the war via VillageWar.makePeace (relations eased): reset tension, recover.
+               resolvedAWar = true;
+               TENSION.put(pair, 0.0);
+               AT_WAR.remove(pair);
+               continue;
+            }
+
             WarOutcome o = resolveWar(townHall, other);
             if (o.result != Result.NO_WAR) {
                resolvedAWar = true;
@@ -224,6 +242,32 @@ public final class VillageWar {
          }
       }
       return resolvedAWar;
+   }
+
+   /**
+    * Phase 7 (#7) — let {@code suer} sue {@code other} for PEACE through the diplomacy engine. Returns {@code true}
+    * only if the diplomacy engine actually proposed PEACE (its real weakness condition held), the proposal was
+    * accepted, and the war ended (relayed by {@link VillageDiplomacy#negotiate} → {@link #makePeace}). Strict: when
+    * {@code suer} is not weak enough to sue, propose returns NONE and this returns {@code false} (the war then
+    * resolves by strength as before — no fallback, no fabricated ceasefire).
+    */
+   private static boolean trySuePeace(Building suer, Building other) {
+      try {
+         VillageDiplomacy.Proposal p = VillageDiplomacy.propose(suer, other);
+         if (p.kind != VillageDiplomacy.Kind.PEACE) {
+            return false; // not weak enough (or not at war) → no ceasefire offered.
+         }
+         VillageDiplomacy.NegotiationResult nr = VillageDiplomacy.negotiate(suer, other);
+         boolean ended = nr.accepted && nr.proposal.kind == VillageDiplomacy.Kind.PEACE && !atWar(suer, other);
+         if (ended) {
+            MillLog.major(null, TAG + " PEACE '" + safeName(suer) + "' sued '" + safeName(other)
+               + "' for ceasefire (overmatched) → war ENDED via diplomacy: " + nr.effect);
+         }
+         return ended;
+      } catch (Throwable t) {
+         MillLog.printException(TAG + " trySuePeace failed", t);
+         return false;
+      }
    }
 
    // ===============================================================================================

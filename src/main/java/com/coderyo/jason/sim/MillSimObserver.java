@@ -2078,7 +2078,7 @@ public final class MillSimObserver {
                net.minecraft.world.entity.player.Player p = fakePlayer;
                String state = com.coderyo.jason.talk.PlayerDialogue.askState(p, a);
                com.coderyo.jason.talk.VillageDiscussion.DiscussionResult tq =
-                  com.coderyo.jason.talk.PlayerDialogue.takeQuest(p, a);
+                  com.coderyo.jason.talk.PlayerDialogue.takeQuest(p, a, null);
                com.coderyo.jason.talk.VillageDiplomacy.NegotiationResult rep =
                   com.coderyo.jason.talk.PlayerDialogue.representInDiplomacy(p, a, b);
                boolean dialogueOk = state != null && state.contains("(") && tq != null;

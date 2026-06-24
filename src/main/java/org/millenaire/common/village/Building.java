@@ -5961,6 +5961,12 @@ public class Building {
          if (com.coderyo.jason.war.VillageWar.tick(this)) {
             return true;
          }
+         // Phase 7 (#7) VILLAGER DISCUSSION: on its cooldown the village's villagers DISCUSS their most pressing
+         // topic (defend / gather / build) and the endorsed build type is pushed as a CAUSAL STEER onto the
+         // procedural construction below — so the village's next build genuinely reflects what was discussed (only
+         // when a real needs-model gap supports it; the steer never fabricates a need — strict no-fallback). This
+         // runs every construction tick but self-throttles per village; it does not itself count as a change.
+         com.coderyo.jason.talk.VillageDiscussion.tickDiscuss(this);
          return com.coderyo.jason.build.MillProceduralConstruction.tick(this);
       }
 

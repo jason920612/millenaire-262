@@ -61,7 +61,33 @@ public final class MillProceduralConstruction {
    /** Per-village in-progress procedural building, keyed by the town-hall position. */
    private static final Map<Long, Job> JOBS = new HashMap<>();
 
+   /**
+    * Phase 7 (#7) DISCUSSION STEER: a build type the village's villagers DISCUSSED and endorsed, keyed by the
+    * town-hall position. Applied by {@link #startNewProceduralBuilding} on the NEXT build decision — but ONLY when
+    * a REAL needs-model gap supports it (we promote among genuine needs; we NEVER fabricate a need the gaps don't
+    * have — strict no-fabrication). One-shot: consumed when applied. Set by
+    * {@link com.coderyo.jason.talk.VillageDiscussion#tickDiscuss}.
+    */
+   private static final Map<Long, MillNeedsModel.BuildType> PENDING_STEER = new HashMap<>();
+
    private MillProceduralConstruction() {
+   }
+
+   /**
+    * Record the build type the village DISCUSSED + endorsed (Phase 7). It is applied to the village's next
+    * procedural build decision ONLY if a real gap supports it — see {@link #startNewProceduralBuilding}. Null
+    * clears any pending steer. No-op for a client / null town hall.
+    */
+   public static void steer(Building townHall, MillNeedsModel.BuildType type) {
+      if (townHall == null || townHall.getPos() == null || townHall.world == null || townHall.world.isClientSide()) {
+         return;
+      }
+      long key = townHall.getPos().getBlockPos().asLong();
+      if (type == null) {
+         PENDING_STEER.remove(key);
+      } else {
+         PENDING_STEER.put(key, type);
+      }
    }
 
    /**
@@ -122,6 +148,25 @@ public final class MillProceduralConstruction {
          // No measured gap — the village still develops PROCEDURALLY (housing for growth). NOT a fixed plan.
          decision = new Decision(MillNeedsModel.BuildType.HOUSE, MillNeedsModel.Resource.NONE,
             "growth-default", new java.util.LinkedHashMap<>(), new java.util.LinkedHashMap<>());
+      }
+
+      // Phase 7 (#7) DISCUSSION STEER: if the village's villagers DISCUSSED + endorsed a build type, PROMOTE it —
+      // but only when a real needs-model gap of that type exists (steerToward never fabricates a need). The applied
+      // reason is tagged "+discussed" so the causal link discussion→build is verifiable in the SIM BUILD log. The
+      // steer is one-shot: consumed here whether or not it could be honoured (a stale unsupported steer is dropped).
+      long steerKey = townHall.getPos().getBlockPos().asLong();
+      MillNeedsModel.BuildType steered = PENDING_STEER.remove(steerKey);
+      if (steered != null) {
+         Decision before = decision;
+         decision = MillNeedsModel.steerToward(decision, steered);
+         if (decision != before) {
+            MillBuildEngine.log("AMBIENT village=" + safeName(townHall) + " DISCUSSION STEER honoured: villagers "
+               + "discussed " + steered + " and a real gap supports it → building " + decision.type
+               + " (reason=" + decision.reason + ")");
+         } else {
+            MillBuildEngine.log("AMBIENT village=" + safeName(townHall) + " DISCUSSION STEER " + steered
+               + " dropped: no real gap supports it this tick (no fabrication) — building " + decision.type);
+         }
       }
 
       MillCultureStyle.Style style = MillCultureStyle.extract(townHall.culture);
@@ -420,7 +465,9 @@ public final class MillProceduralConstruction {
    /** Drop any in-progress job for a village (e.g. on unload) so its state doesn't leak. */
    public static void clear(Building townHall) {
       if (townHall != null && townHall.getPos() != null) {
-         JOBS.remove(townHall.getPos().getBlockPos().asLong());
+         long key = townHall.getPos().getBlockPos().asLong();
+         JOBS.remove(key);
+         PENDING_STEER.remove(key);
       }
    }
 }

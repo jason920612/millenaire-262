@@ -231,6 +231,52 @@ public final class MillNeedsModel {
       return new Decision(type, resource, topKey, scores, gaps);
    }
 
+   /**
+    * Phase 7 (#7) DISCUSSION STEER: given the model's own {@code base} decision for a village, return a decision
+    * that PROMOTES the discussion-endorsed {@code preferred} build type — but ONLY if a REAL gap of that type
+    * already exists in {@code base.gaps}. If a matching gap exists we build a decision for it (carrying the same
+    * gaps + scores, with the reason tagged {@code "+discussed"} so the steer is verifiable in the build log).
+    * If no such gap exists we return {@code base} UNCHANGED — we never fabricate a need the gaps don't have
+    * (strict no-fabrication / no-fallback). A {@code null} base (no gaps at all) is also returned unchanged.
+    */
+   public static Decision steerToward(Decision base, BuildType preferred) {
+      if (base == null || preferred == null || base.type == preferred) {
+         return base;
+      }
+      // Find the gap key that corresponds to the preferred type, and only if it is a genuine (present) gap.
+      String matchKey = null;
+      Resource resource = Resource.NONE;
+      for (Map.Entry<String, Integer> e : base.gaps.entrySet()) {
+         String k = e.getKey();
+         if (e.getValue() == null || e.getValue() <= 0) {
+            continue;
+         }
+         BuildType t;
+         Resource r = Resource.NONE;
+         if (k.equals("housing")) {
+            t = BuildType.HOUSE;
+         } else if (k.startsWith("workshop:")) {
+            t = BuildType.WORKSHOP;
+            r = resourceOf(k.substring("workshop:".length()));
+         } else if (k.equals("defense")) {
+            t = BuildType.TOWER;
+         } else if (k.equals("market")) {
+            t = BuildType.MARKET;
+         } else {
+            t = BuildType.GRANARY;
+         }
+         if (t == preferred) {
+            matchKey = k;
+            resource = r;
+            break;
+         }
+      }
+      if (matchKey == null) {
+         return base; // no genuine gap supports the discussed type — do NOT fabricate one.
+      }
+      return new Decision(preferred, resource, matchKey + "+discussed", base.scores, base.gaps);
+   }
+
    /** Quantify each unmet need as a gap magnitude (bigger = more urgent). Mirrors {@code compute_gaps}. */
    public static Map<String, Integer> computeGaps(VillageState v) {
       Map<String, Integer> g = new LinkedHashMap<>();

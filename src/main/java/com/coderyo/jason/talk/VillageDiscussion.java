@@ -1,9 +1,13 @@
 package com.coderyo.jason.talk;
 
+import java.util.HashMap;
+import java.util.Map;
+
 import org.millenaire.common.utilities.MillLog;
 import org.millenaire.common.village.Building;
 
 import com.coderyo.jason.build.MillNeedsModel;
+import com.coderyo.jason.build.MillProceduralConstruction;
 
 /**
  * Phase 6 (#7) — VILLAGER DISCUSSION → QUEST + DECISION generator.
@@ -37,7 +41,53 @@ public final class VillageDiscussion {
    /** Greppable tag for all discussion observation lines. */
    public static final String TAG = "███ SIM TALK";
 
+   /** Per-village discussion cooldown (game ticks) so villagers don't re-discuss every construction tick. */
+   public static final long DISCUSS_COOLDOWN_TICKS = 600L;
+   private static final Map<Long, Long> LAST_DISCUSS_TICK = new HashMap<>();
+
    private VillageDiscussion() {
+   }
+
+   // ===============================================================================================
+   // AMBIENT TICK ENTRY — called from the town hall's construction tick (Phase 7 real-game wiring).
+   // ===============================================================================================
+
+   /**
+    * Phase 7 (#7) — the AMBIENT discussion tick for one village town hall, called from
+    * {@code Building.updateConstructionQueue} alongside the war + procedural construction ticks. On its cooldown
+    * the village's villagers DISCUSS their most pressing topic ({@link #discussAndLog}) and the endorsed build
+    * type is pushed as a CAUSAL STEER onto {@link MillProceduralConstruction} — so the village's NEXT procedural
+    * build genuinely reflects what was discussed (but only if a real gap supports it; the steer never fabricates a
+    * need — strict). Mirrors {@code VillageExpansion.tick}'s client/townhall guards + per-village cooldown.
+    *
+    * @return the {@link DiscussionResult} when a discussion ran this tick, else {@code null} (guarded / cooldown).
+    */
+   public static DiscussionResult tickDiscuss(Building townHall) {
+      if (townHall == null || townHall.world == null || townHall.world.isClientSide()
+         || !townHall.isTownhall || !townHall.isActive) {
+         return null;
+      }
+      long key = townHall.getPos().getBlockPos().asLong();
+      long now = townHall.world.getGameTime();
+      Long last = LAST_DISCUSS_TICK.get(key);
+      if (last != null && now - last < DISCUSS_COOLDOWN_TICKS) {
+         return null;
+      }
+      LAST_DISCUSS_TICK.put(key, now);
+
+      DiscussionResult r = discussAndLog(townHall);
+      // Push the endorsed build type as a causal steer for the next procedural build (resource-gated by the gaps).
+      if (r != null && r.steeredBuild != null) {
+         MillProceduralConstruction.steer(townHall, r.steeredBuild);
+      }
+      return r;
+   }
+
+   /** Drop a village's discussion cooldown state (e.g. on unload) so it doesn't leak. */
+   public static void clear(Building townHall) {
+      if (townHall != null && townHall.getPos() != null) {
+         LAST_DISCUSS_TICK.remove(townHall.getPos().getBlockPos().asLong());
+      }
    }
 
    /** The kind of pressing topic the villagers settled on. */

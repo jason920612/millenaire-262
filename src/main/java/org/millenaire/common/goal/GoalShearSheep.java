@@ -7,7 +7,7 @@ import net.minecraft.world.item.DyeColor;
 import net.minecraft.world.level.block.Blocks;
 import net.minecraft.world.item.Items;
 import com.coderyo.jason.ops.OpState;
-import com.coderyo.jason.ops.VillagerWorldOps;
+import com.coderyo.jason.ops.VillagerActions;
 import org.millenaire.common.config.DocumentedElement;
 import org.millenaire.common.config.MillConfigValues;
 import org.millenaire.common.entity.MillVillager;
@@ -84,41 +84,34 @@ public class GoalShearSheep extends Goal {
       // collects the dropped wool — instead of 1.12's fake `addToInv(WOOL.pick(color), 3) + setSheared(true)`.
       // STRICT tool: with no shears available, VillagerWorldOps.shearTick returns BLOCKED and we DEFER (let the
       // tool-fetch path run) rather than faking the wool.
-      for (Entity ent : WorldUtilities.getEntitiesWithinAABB(villager.level(), Sheep.class, villager.getPos(), 4, 4)) {
+      // O5 + VillagerActions facade: the AI-invokable shear ACTION bundles approach → real Sheep.shear → walk-to +
+      // collect the dropped wool. We widen the candidate scan to the goal's range (5) so a villager the navigation
+      // deems "arrived" (range 5) but standing 4–5 blocks from the sheep still finds it (the old 4-block scan could
+      // miss a just-arrived villager and silently no-op).
+      for (Entity ent : WorldUtilities.getEntitiesWithinAABB(villager.level(), Sheep.class, villager.getPos(), this.range(villager), 4)) {
          if (ent.isRemoved()) {
             continue;
          }
          Sheep animal = (Sheep)ent;
-         // shearTick itself skips non-ready (already-sheared / baby) sheep; the readyForShearing guard here keeps the
+         // shearAnimal skips non-ready (already-sheared / baby) sheep; the readyForShearing guard here keeps the
          // 1.12 selection intent explicit and avoids needless work.
          if (!animal.readyForShearing()) {
             continue;
          }
 
-         OpState st = VillagerWorldOps.shearTick(villager, animal);
+         OpState st = VillagerActions.shearAnimal(villager, animal);
          if (st == OpState.BLOCKED) {
             // No shears: defer this tick (do NOT fake wool). The goal's getHeldItemsDestination/GoalGetTool supplies
             // the shears; we retry next tick once they are in hand.
             return false;
          }
-         if (st == OpState.PICKING_UP) {
-            // Real shear happened: walk to + collect the dropped wool (colour/count come from the sheep + loot table,
-            // faithfully replacing 1.12's Blocks.WOOL.pick(getColor()) yield). Drive pickup to completion at the
-            // sheep's spot, the worksite the wool dropped at.
-            if (MillConfigValues.LogCattleFarmer >= 1 && villager.extraLog) {
-               MillLog.major(this, "Shearing (real): " + ent + " colour=" + animal.getColor());
-            }
-            net.minecraft.core.BlockPos woolSpot = animal.blockPosition();
-            int guard = 0;
-            while (VillagerWorldOps.pickupTick(villager, woolSpot) == OpState.PICKING_UP && guard++ < 64) {
-               // pickupTick re-issues navigation toward the nearest wool drop each call; bounded so one tick of the
-               // goal can't loop forever if a drop is unreachable (it is retried next performAction tick).
-               if (guard > 0 && !villager.getNavigation().isInProgress()) {
-                  break;
-               }
-            }
+         if (st == OpState.PICKING_UP && MillConfigValues.LogCattleFarmer >= 1 && villager.extraLog) {
+            // Real shear happened (colour/count come from the sheep + loot table, faithfully replacing 1.12's
+            // Blocks.WOOL.pick(getColor()) yield). shearAnimal already drove one tick of wool pickup; the goal re-runs
+            // each tick to finish collecting before moving to the next sheep.
+            MillLog.major(this, "Shearing (real): " + ent + " colour=" + animal.getColor());
          }
-         // st == APPROACHING (out of reach) or COMPLETE (skipped) → move on to the next sheep; the goal re-runs.
+         // st == APPROACHING (out of reach) or COMPLETE (skipped / wool collected) → move on; the goal re-runs.
       }
 
       return true;

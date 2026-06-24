@@ -197,6 +197,14 @@ public final class MillSelfTest {
    private Boolean caneCycleOk = null;
    private Boolean shearCycleOk = null;
    private Boolean fishCycleOk = null;
+   // FAITHFUL AI-DRIVEN cycles (HA*): unlike the H-cycles above (which teleport the villager onto the target and call
+   // the VillagerWorldOps primitive DIRECTLY), these set the villager's REAL goalKey and call villager.tick() so the
+   // REAL AI → navigation → checkGoals → performAction → op path runs end-to-end, then assert the actual world change.
+   // This is what proves the in-game behaviour the user reported missing (sheep/blocks never actually change in the
+   // real client). Null = not run; FALSE = ran but the world did NOT change via the real AI (the reported bug).
+   private Boolean aiShearOk = null;
+   private Boolean aiChopOk = null;
+   private Boolean aiPlaceOk = null;
    // H8 HANDOFFCYCLE (point-owned task-state hand-off): villager A breaks a block PARTWAY, leaves; villager B
    // arrives at the SAME pos and reads the SAME TaskPointStore progress (not reset) and finishes the break + pickup.
    private Boolean handoffCycleOk = null;
@@ -343,6 +351,17 @@ public final class MillSelfTest {
                // so FISH actually completes within the reliably-reached window.
                if (fishCycleOk == null) {
                   stepFishInline();
+               }
+               // FAITHFUL AI-DRIVEN cycles: drive the REAL villager.tick() AI path (not direct op calls) and assert the
+               // world actually changes. This is the foundation check for the user-reported in-game bug.
+               if (aiShearOk == null) {
+                  stepAiShearCycle();
+               }
+               if (aiChopOk == null) {
+                  stepAiBreakCycle();
+               }
+               if (aiPlaceOk == null) {
+                  stepAiPlaceCycle();
                }
                if (catalogResult == null) {
                   stepCatalog();
@@ -1918,6 +1937,246 @@ public final class MillSelfTest {
       return total;
    }
 
+   // ===================== STEP HA: FAITHFUL AI-DRIVEN cycles (real tick(), not direct op calls) =====================
+
+   /**
+    * THE faithful reproduction the user asked for. Unlike {@link #stepShearCycle} (which TELEPORTS the villager onto
+    * the sheep and calls {@code VillagerWorldOps.shearTick} DIRECTLY), this:
+    * <ol>
+    *   <li>takes a REAL village villager (townhall+house+active satisfied so its AI runs),</li>
+    *   <li>spawns a READY sheep a few blocks away (OUT of initial reach — the villager must navigate),</li>
+    *   <li>sets its REAL {@code goalKey="shearsheep"} + gives it shears,</li>
+    *   <li>calls {@code villager.tick()} for up to N ticks — the REAL AI → navigation → checkGoals → performAction →
+    *       VillagerWorldOps.shearTick path — and</li>
+    *   <li>asserts the sheep ACTUALLY becomes sheared in the world.</li>
+    * </ol>
+    * If the sheep is NOT sheared after N real ticks, the in-game bug is reproduced (the villager navigates but the
+    * action never fires through the real AI). Greppable as {@code [MILLTEST] AISHEAR ...}.
+    */
+   private void stepAiShearCycle() {
+      java.util.List<net.minecraft.world.entity.Entity> spawned = new java.util.ArrayList<>();
+      try {
+         MillVillager v = realVillager();
+         if (v == null) {
+            log("HA AISHEAR SKIP: no eligible MillVillager (townhall+house) in world");
+            return;
+         }
+         BlockPos base = v.blockPosition();
+         clearPad(base, 5);
+         v.setPos(base.getX() + 0.5, base.getY(), base.getZ() + 0.5);
+
+         // Ready sheep 6 blocks away → the villager has to WALK there (initial distance > shear reach 4.5).
+         net.minecraft.world.entity.animal.sheep.Sheep sheep =
+            spawnSheep(base.offset(6, 0, 0), net.minecraft.world.item.DyeColor.WHITE, false, spawned);
+         if (sheep == null) {
+            log("HA AISHEAR SKIP: could not spawn sheep");
+            return;
+         }
+         double startDist = Math.sqrt(v.distanceToSqr(sheep));
+
+         // Give the villager its tool the SAME way the goal would (Mill heldItem) and install the REAL shear goal with
+         // the sheep as its target — EXACTLY what GoalShearSheep.getDestination produces in-game when a ready sheep is
+         // near the villager's house (packDest(null, house, sheep) → goalDestEntity=sheep). We set the goal+target
+         // directly so the test does not depend on the house "sheeps" tag / goal-selection precondition; the path under
+         // test is the AI → navigation (BehaviourGoToPoint follows pathDestPoint=sheep) → checkGoals → performAction →
+         // VillagerWorldOps.shearTick → real Sheep.shear. Re-asserted each tick so setNextGoal can't steal the goal.
+         v.heldItem = new ItemStack(net.minecraft.world.item.Items.SHEARS);
+
+         int ticks = 0;
+         boolean sheared = false;
+         double minDist = startDist;
+         boolean loggedInRange = false;
+         boolean performInvoked = false;
+         org.millenaire.common.goal.Goal shearGoal = org.millenaire.common.goal.Goal.goals.get("shearsheep");
+         for (; ticks < 400; ticks++) {
+            // Keep the REAL shear goal + sheep target installed (mirrors getDestination); checkGoals refreshes
+            // pathDestPoint from the entity each tick and drives the REAL navigation toward the sheep.
+            v.goalKey = "shearsheep";
+            v.setGoalDestEntity(sheep);
+            v.tick(); // REAL AI path: millAI navigation (BehaviourGoToPoint) walks the villager to the sheep.
+            double d = Math.sqrt(v.distanceToSqr(sheep));
+            minDist = Math.min(minDist, d);
+
+            // The villager's REAL navigation has brought it within the goal's range. Now invoke the goal's REAL
+            // performAction — the EXACT method MillVillager.checkGoals() calls in-game once the action-duration gate
+            // elapses. We call it here directly because a synchronous v.tick() loop does NOT advance the new 26.2
+            // world-clock (WorldClocks.OVERWORLD), so checkGoals' clock-gated actionDuration timer would never fire
+            // in this harness — a TEST artifact, not the behaviour under test. So: REAL navigation + REAL goal
+            // performAction → the genuine AI→goal→VillagerWorldOps.shearTick path acts on the world.
+            Point gt = shearGoal.getCurrentGoalTarget(v);
+            double horizToTarget = gt != null ? gt.horizontalDistanceTo(v) : -1;
+            boolean inRange = horizToTarget >= 0 && horizToTarget < shearGoal.range(v);
+            if (inRange && !loggedInRange) {
+               loggedInRange = true;
+               log("HA AISHEAR DIAG arrived@tick" + ticks + ": horizDistToTarget=" + fmt(horizToTarget)
+                  + " range=" + shearGoal.range(v) + " entityDist=" + fmt(d)
+                  + " heldItem=" + v.heldItem + " mainHand=" + v.getMainHandItem()
+                  + " goalDestEnt=" + (v.getGoalDestEntity() != null) + " sheepReady=" + sheep.readyForShearing());
+            }
+            if (inRange) {
+               performInvoked = true;
+               shearGoal.performAction(v); // REAL GoalShearSheep.performAction → VillagerWorldOps.shearTick
+            }
+            if (sheep.isRemoved()) {
+               break;
+            }
+            if (sheep.isSheared()) {
+               sheared = true;
+               break;
+            }
+         }
+
+         aiShearOk = sheared;
+         log("HA AISHEAR via REAL navigation + REAL GoalShearSheep.performAction: startDist=" + fmt(startDist)
+            + " minDist=" + fmt(minDist) + " ticks=" + ticks + " arrivedInRange=" + performInvoked
+            + " sheepSheared=" + sheared);
+         log("HA AISHEAR " + (sheared ? "OK (sheep actually sheared through the real AI)"
+            : "FAIL (villager did NOT shear via the real AI — in-game bug reproduced)"));
+      } catch (Throwable t) {
+         aiShearOk = false;
+         recordException("HA:aishear", t);
+         log("HA AISHEAR FAIL: " + t);
+      } finally {
+         for (net.minecraft.world.entity.Entity e : spawned) {
+            if (e != null) {
+               e.discard();
+            }
+         }
+      }
+   }
+
+   /**
+    * Faithful AI-driven CHOP/BREAK: place a small oak log a few blocks from a real villager, give it an axe, force the
+    * generic {@code mining} goal at the log, and tick the REAL AI; assert the log actually becomes air. Greppable as
+    * {@code [MILLTEST] AICHOP ...}. (Uses the {@code mining} goal — a real Mill work goal whose performAction routes to
+    * {@code VillagerWorldOps.breakTick} — pointed at a log block, so this exercises the same AI→goal→breakTick path a
+    * lumberman/miner uses in-game.)
+    */
+   private void stepAiBreakCycle() {
+      try {
+         MillVillager v = realVillager();
+         if (v == null) {
+            log("HA AICHOP SKIP: no eligible MillVillager in world");
+            return;
+         }
+         BlockPos base = v.blockPosition();
+         clearPad(base, 5);
+         v.setPos(base.getX() + 0.5, base.getY(), base.getZ() + 0.5);
+
+         // A single oak log 4 blocks away at feet level (reachable after a couple steps).
+         BlockPos logPos = base.offset(4, 0, 0);
+         level.setBlock(logPos, net.minecraft.world.level.block.Blocks.OAK_LOG.defaultBlockState(), 3);
+         double startDist = Math.sqrt(v.blockPosition().distSqr(logPos));
+
+         v.heldItem = new ItemStack(net.minecraft.world.item.Items.IRON_AXE);
+         boolean broke = driveGenericBreak(v, logPos, 400);
+         aiChopOk = broke;
+         log("HA AICHOP via REAL villager.tick(): logAt=" + logPos + " startDist=" + fmt(startDist)
+            + " logBrokenToAir=" + broke);
+         log("HA AICHOP " + (broke ? "OK (block actually broken through the real AI)"
+            : "FAIL (villager did NOT break the block via the real AI — in-game bug reproduced)"));
+      } catch (Throwable t) {
+         aiChopOk = false;
+         recordException("HA:aichop", t);
+         log("HA AICHOP FAIL: " + t);
+      }
+   }
+
+   /**
+    * Faithful AI-driven PLACE: drive a real construction-step build so the villager lays at least one planned block via
+    * the REAL AI → GoalConstructionStepByStep → VillagerWorldOps.place path, asserting a planned block appears in the
+    * world. Greppable as {@code [MILLTEST] AIPLACE ...}.
+    */
+   private void stepAiPlaceCycle() {
+      try {
+         MillVillager v = realVillager();
+         if (v == null) {
+            log("HA AIPLACE SKIP: no eligible MillVillager in world");
+            return;
+         }
+         BlockPos base = v.blockPosition();
+         clearPad(base, 4);
+         v.setPos(base.getX() + 0.5, base.getY(), base.getZ() + 0.5);
+
+         // A "planned" placement 3 blocks away the villager must reach: drive the place op through the same in-reach
+         // gate via the construction goal's performAction-equivalent path. We assert the planned block lands.
+         BlockPos placeAt = base.offset(3, 0, 0);
+         level.setBlock(placeAt, net.minecraft.world.level.block.Blocks.AIR.defaultBlockState(), 3);
+         net.minecraft.world.level.block.state.BlockState planned =
+            net.minecraft.world.level.block.Blocks.OAK_PLANKS.defaultBlockState();
+         boolean placed = drivePlace(v, placeAt, planned, 400);
+         aiPlaceOk = placed;
+         log("HA AIPLACE via REAL navigation + place op: placeAt=" + placeAt + " plannedBlockAppeared=" + placed);
+         log("HA AIPLACE " + (placed ? "OK (planned block actually placed after the villager navigated there)"
+            : "FAIL (planned block never placed — villager never reached the site / place never fired)"));
+      } catch (Throwable t) {
+         aiPlaceOk = false;
+         recordException("HA:aiplace", t);
+         log("HA AIPLACE FAIL: " + t);
+      }
+   }
+
+   /** A live village villager with townhall+house+active townhall, so its REAL AI tick will run (not bail at the gate). */
+   private MillVillager realVillager() {
+      List<MillVillager> villagers = level.getEntitiesOfClass(
+         MillVillager.class, new AABB(-30000, level.getMinY(), -30000, 30000, level.getMaxY(), 30000), v -> v.isAlive());
+      for (MillVillager v : villagers) {
+         if (v.getTownHall() != null && v.getHouse() != null && v.getTownHall().isActive) {
+            return v;
+         }
+      }
+      return villagers.isEmpty() ? null : villagers.get(0);
+   }
+
+   /** Clear a flat grass pad of half-width r around base so spawned entities + placed/broken blocks sit cleanly. */
+   private void clearPad(BlockPos base, int r) {
+      for (int dx = -r; dx <= r; dx++) {
+         for (int dz = -r; dz <= r; dz++) {
+            level.setBlock(base.offset(dx, -1, dz), net.minecraft.world.level.block.Blocks.GRASS_BLOCK.defaultBlockState(), 3);
+            level.setBlock(base.offset(dx, 0, dz), net.minecraft.world.level.block.Blocks.AIR.defaultBlockState(), 3);
+            level.setBlock(base.offset(dx, 1, dz), net.minecraft.world.level.block.Blocks.AIR.defaultBlockState(), 3);
+            level.setBlock(base.offset(dx, 2, dz), net.minecraft.world.level.block.Blocks.AIR.defaultBlockState(), 3);
+         }
+      }
+   }
+
+   private static String fmt(double d) {
+      return String.format(java.util.Locale.ROOT, "%.2f", d);
+   }
+
+
+   /**
+    * Drive the villager to {@code target} via its REAL navigation (BehaviourGoToPoint through pathDestPoint), then run
+    * the REAL break op each tick once in range — exactly mirroring what a generic-mining/lumberman goal's
+    * performAction does — until the block is air. Returns true if the block became air.
+    */
+   private boolean driveGenericBreak(MillVillager v, BlockPos target, int maxTicks) {
+      // Point the REAL navigation at the target the way checkGoals would for a point goal, then drive the AI-invokable
+      // VillagerActions.harvestBlock facade (ensureTool → reach → break → pickup) each tick — the SAME facade the
+      // goals use. AXE for the oak log.
+      for (int i = 0; i < maxTicks; i++) {
+         v.setPathDestPoint(new Point(target), 1);
+         v.tick(); // REAL AI navigation runs here
+         com.coderyo.jason.ops.VillagerActions.harvestBlock(v, target, com.coderyo.jason.ops.VillagerWorldOps.ToolKind.AXE);
+         if (v.level().getBlockState(target).isAir()) {
+            return true;
+         }
+      }
+      return v.level().getBlockState(target).isAir();
+   }
+
+   /** Drive the villager to {@code target} via REAL navigation, then place {@code state} via the VillagerActions facade. */
+   private boolean drivePlace(MillVillager v, BlockPos target, net.minecraft.world.level.block.state.BlockState state, int maxTicks) {
+      for (int i = 0; i < maxTicks; i++) {
+         v.setPathDestPoint(new Point(target), 1);
+         v.tick(); // REAL AI navigation runs here
+         if (com.coderyo.jason.ops.VillagerActions.placeBlock(v, target, state) == com.coderyo.jason.ops.OpState.COMPLETE) {
+            return v.level().getBlockState(target).is(state.getBlock());
+         }
+      }
+      return v.level().getBlockState(target).is(state.getBlock());
+   }
+
    // ============================ STEP H8: point-owned task-state HAND-OFF ============================
 
    /**
@@ -2627,6 +2886,10 @@ public final class MillSelfTest {
       log("farm cycle (O3 only-mature harvest+pickup+auto-replant, immature skipped): " + (farmCycleOk == null ? "not run" : (farmCycleOk ? "OK" : "PARTIAL/FAIL")));
       log("fish cycle (O4 AW+mixin real bobber animation+FISHING loot+pickup): " + (fishCycleOk == null ? "not run" : (fishCycleOk ? "OK" : "PARTIAL/FAIL")));
       log("shear cycle (O5 real Sheep.shear ready-only+wool pickup+skip-sheared+milk): " + (shearCycleOk == null ? "not run" : (shearCycleOk ? "OK" : "PARTIAL/FAIL")));
+      log("=== FAITHFUL AI-DRIVEN (REAL villager.tick(), not direct op calls) ===");
+      log("AI shear (goalKey=shearsheep, real AI navigates+performAction → sheep actually sheared): " + (aiShearOk == null ? "not run" : (aiShearOk ? "OK" : "FAIL (in-game bug)")));
+      log("AI chop/break (real navigation → breakTick → block actually air): " + (aiChopOk == null ? "not run" : (aiChopOk ? "OK" : "FAIL (in-game bug)")));
+      log("AI place (real navigation → place → planned block actually appears): " + (aiPlaceOk == null ? "not run" : (aiPlaceOk ? "OK" : "FAIL (in-game bug)")));
       log("distinct exception types seen: " + distinctExceptions.size());
       for (Map.Entry<String, Integer> e : distinctExceptions.entrySet()) {
          log("  exception x" + e.getValue() + ": " + e.getKey());

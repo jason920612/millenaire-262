@@ -227,6 +227,12 @@ public final class MillSelfTest {
    // prolonged stuck/spin. This is the faithful reproduction + regression guard for the user-reported in-game nav
    // bug (can't jump gaps, gets stuck, spins in place). Null = not run; FALSE = the in-game nav bug reproduced.
    private Boolean aiNavOk = null;
+   // AI ORBIT/PACE E2E (stepAiOrbitCycle): drive the REAL villager.tick() AI toward an UNREACHABLE far goal hidden
+   // behind a wall, with a pillar in the way that a position-sensitive route would circle forever. The villager
+   // KEEPS MOVING (so the velocity stuck-detector never fires) but makes no NET progress. Asserts the new
+   // distance-to-goal global-progress guard ENGAGES (blockedReplans escalate → avoid-cell route-around / re-route)
+   // and the villager does NOT teleport. Null = not run; FALSE = orbit never recovered (the residual nav bug).
+   private Boolean aiOrbitOk = null;
    // H8 HANDOFFCYCLE (point-owned task-state hand-off): villager A breaks a block PARTWAY, leaves; villager B
    // arrives at the SAME pos and reads the SAME TaskPointStore progress (not reset) and finishes the break + pickup.
    private Boolean handoffCycleOk = null;
@@ -423,6 +429,11 @@ public final class MillSelfTest {
                // AI NAVIGATION E2E: real villager.tick() AI over a gap (running jump) + step-up + wall route-around.
                if (aiNavOk == null) {
                   stepAiNavCycle();
+               }
+               // AI ORBIT/PACE E2E: real villager.tick() AI toward an unreachable far goal that would orbit forever
+               // without the distance-to-goal global-progress guard. Asserts the guard engages + no teleport.
+               if (aiOrbitOk == null) {
+                  stepAiOrbitCycle();
                }
                // VANILLA-FIDELITY edge cases of the refined doBreak/doPlace (chest contents, ore XP, wrong-tool gate,
                // place game-event/setPlacedBy) — driven through the REAL VillagerActions.harvestBlock / placeBlock
@@ -2028,9 +2039,9 @@ public final class MillSelfTest {
             log("HA AISHEAR SKIP: no eligible MillVillager (townhall+house) in world");
             return;
          }
-         BlockPos base = v.blockPosition();
-         clearPad(base, 5);
-         v.setPos(base.getX() + 0.5, base.getY(), base.getZ() + 0.5);
+         // ISOLATED: stage on a private faraway pad so the sheep can WANDER freely (real AI) in its own pen with no
+         // other entity to steal the wool, and the scene is reproducible regardless of which villager was picked.
+         BlockPos base = isolatedStage(v, 1, 5, 4);
 
          // Ready sheep 6 blocks away → the villager has to WALK there (initial distance > shear reach 4.5).
          net.minecraft.world.entity.animal.sheep.Sheep sheep =
@@ -2062,6 +2073,13 @@ public final class MillSelfTest {
             // pathDestPoint from the entity each tick and drives the REAL navigation toward the sheep.
             v.goalKey = "shearsheep";
             v.setGoalDestEntity(sheep);
+            // RE-ASSERT the shears every tick: v.tick()'s real checkGoals clears heldItem whenever it (re)selects a
+            // goal / finishes an action (heldItem = EMPTY), so a tool set ONCE before the loop is stripped before the
+            // villager reaches the sheep → shearTick saw an empty hand and returned BLOCKED (the root cause of the
+            // flaky shear FAIL). The shear goal's getHeldItemsDestination supplies shears in-game; we mirror that by
+            // keeping them in hand each tick. (AIMILK didn't hit this: it draws the bucket from inventory stock, not
+            // the heldItem hand, so the AI's heldItem reset didn't disarm it.)
+            v.heldItem = new ItemStack(net.minecraft.world.item.Items.SHEARS);
             v.tick(); // REAL AI path: millAI navigation (BehaviourGoToPoint) walks the villager to the sheep.
             double d = Math.sqrt(v.distanceToSqr(sheep));
             minDist = Math.min(minDist, d);
@@ -2131,9 +2149,8 @@ public final class MillSelfTest {
             log("HA AICHOP SKIP: no eligible MillVillager in world");
             return;
          }
-         BlockPos base = v.blockPosition();
-         clearPad(base, 5);
-         v.setPos(base.getX() + 0.5, base.getY(), base.getZ() + 0.5);
+         // ISOLATED: stage on a private faraway pad so the scene is reproducible regardless of the picked villager.
+         BlockPos base = isolatedStage(v, 9, 5, 4);
 
          // A single oak log 4 blocks away at feet level (reachable after a couple steps).
          BlockPos logPos = base.offset(4, 0, 0);
@@ -2166,9 +2183,8 @@ public final class MillSelfTest {
             log("HA AIPLACE SKIP: no eligible MillVillager in world");
             return;
          }
-         BlockPos base = v.blockPosition();
-         clearPad(base, 4);
-         v.setPos(base.getX() + 0.5, base.getY(), base.getZ() + 0.5);
+         // ISOLATED: stage on a private faraway pad so the scene is reproducible regardless of the picked villager.
+         BlockPos base = isolatedStage(v, 10, 4, 4);
 
          // A "planned" placement 3 blocks away the villager must reach: drive the place op through the same in-reach
          // gate via the construction goal's performAction-equivalent path. We assert the planned block lands.
@@ -2370,6 +2386,161 @@ public final class MillSelfTest {
       return r;
    }
 
+   /**
+    * AI ORBIT/PACE E2E (residual-nav-bug reproduction + regression guard for the distance-to-goal global-progress
+    * guard): build a scene that forces a MOVING limit-cycle toward a goal the villager can never close on, and prove
+    * the new guard recovers it. The villager is boxed into a small arena with a central PILLAR and the goal placed
+    * ~30 blocks away behind a SOLID closed wall (genuinely unreachable). A position-sensitive route keeps the
+    * villager MOVING — pushing toward the wall, circling the pillar — so the velocity stuck-detector (mv<0.0025)
+    * never trips, yet it makes ZERO net progress. The fix: Mill3DNavigator's distance-to-goal guard sees best-dist
+    * never improving for ~70 ticks and escalates (avoidCell + blockedReplans), the SAME recovery the velocity guard
+    * uses.
+    *
+    * <p>Asserts, over a >400-tick budget driving the REAL {@code villager.tick()} AI:
+    * <ul>
+    *   <li>the global-progress guard ENGAGED — {@code activeNav3d.blockedReplansForTest()} climbed above 0 (the
+    *       villager tried alternative routes instead of orbiting forever);</li>
+    *   <li>the villager did NOT teleport — every per-tick displacement stayed within a sane walking step (no
+    *       setPos-to-dest recovery; only the real AI moved it).</li>
+    * </ul>
+    * Greppable as {@code [MILLTEST] AIORBIT ...}.
+    */
+   private void stepAiOrbitCycle() {
+      try {
+         MillVillager v = realVillager();
+         if (v == null) {
+            log("AIORBIT SKIP: no eligible MillVillager in world");
+            return;
+         }
+         // ISOLATED + DETERMINISTIC + IN-VILLAGE: anchor the arena to the villager's TOWN HALL (a stable,
+         // nav-independent coordinate), offset +30 in X so the whole arena + far goal sits clear of the town hall yet
+         // WELL within villageType.radius+100 (=180 by default) — the villager must stay "at home" or MillVillager.tick()
+         // despawns it (the bug that froze the old faraway pad). The arena (walls/pillar/sealed goal) is rebuilt from
+         // scratch each run, so its geometry is identical regardless of which villager realVillager() picked.
+         org.millenaire.common.village.Building orbitTh = v.getTownHall();
+         Point orbitThp = orbitTh.getPos();
+         BlockPos base = new BlockPos(orbitThp.getiX() + 30, orbitThp.getiY(), orbitThp.getiZ());
+         // Ensure the arena span is loaded + purge strays so nothing perturbs the scene.
+         for (int cx = (base.getX() - 14) >> 4; cx <= (base.getX() + 34) >> 4; cx++) {
+            for (int cz = (base.getZ() - 14) >> 4; cz <= (base.getZ() + 14) >> 4; cz++) {
+               level.getChunk(cx, cz);
+            }
+         }
+         for (net.minecraft.world.entity.Entity e : level.getEntitiesOfClass(
+               net.minecraft.world.entity.Entity.class, new AABB(base).inflate(36.0))) {
+            if (e != v && !(e instanceof ServerPlayer)) {
+               e.discard();
+            }
+         }
+
+         // Build a FULLY ENCLOSED arena around the villager on a clean cleared foundation, with a central pillar and
+         // the goal placed OUTSIDE the sealed box — genuinely unreachable. A previous half-open design let the villager
+         // route around the single sealing wall over the surrounding (uncleared) village terrain and close on the
+         // goal, so the guard never fired. Now: clear a flat r=14 pad (wiping the village terrain that offered the
+         // detour), then wall ALL FOUR sides (no open face) 4-high on a solid stone floor so the villager is trapped
+         // and can only orbit/pace inside → makes ZERO net progress toward the outside goal → trips the guard.
+         clearPad(base, 14);
+         // Solid stone floor over the whole interior so there is no terrain unevenness to climb out on.
+         for (int fx = -7; fx <= 7; fx++) {
+            for (int fz = -7; fz <= 7; fz++) {
+               level.setBlock(base.offset(fx, -1, fz), net.minecraft.world.level.block.Blocks.STONE.defaultBlockState(), 3);
+            }
+         }
+         // Four-sided enclosure at +/-7 on both axes, 4 blocks high (un-jumpable), fully sealing the villager in.
+         for (int a = -7; a <= 7; a++) {
+            for (int wy = 0; wy <= 3; wy++) {
+               level.setBlock(base.offset(a, wy, -7), net.minecraft.world.level.block.Blocks.STONE.defaultBlockState(), 3);
+               level.setBlock(base.offset(a, wy, 7), net.minecraft.world.level.block.Blocks.STONE.defaultBlockState(), 3);
+               level.setBlock(base.offset(-7, wy, a), net.minecraft.world.level.block.Blocks.STONE.defaultBlockState(), 3);
+               level.setBlock(base.offset(7, wy, a), net.minecraft.world.level.block.Blocks.STONE.defaultBlockState(), 3);
+            }
+         }
+         // Central pillar (4-high so it can never be jumped/stepped over) two blocks in front of the start — the
+         // thing a position-sensitive route circles while never closing on the (outside, sealed) goal.
+         BlockPos pillar = base.offset(2, 0, 0);
+         for (int py = 0; py <= 3; py++) {
+            level.setBlock(pillar.above(py), net.minecraft.world.level.block.Blocks.STONE.defaultBlockState(), 3);
+         }
+         // Unreachable far goal ~30 blocks OUTSIDE the sealed box: the villager keeps moving toward it (pacing the
+         // wall / circling the pillar) but can never close → the distance-to-goal progress guard must escalate.
+         BlockPos goal = base.offset(30, 0, 0);
+
+         // Fresh start at arena centre, fixed goal (NOT a moving target → the progress guard is allowed to run).
+         v.setPos(base.getX() + 0.5, base.getY(), base.getZ() + 0.5);
+         v.stopMoving = false;
+         if (v.activeNav3d != null) {
+            v.activeNav3d.reset();
+         }
+
+         final int budget = 450;
+         int maxBlockedReplans = 0;
+         double maxStep = 0.0; // largest single-tick horizontal displacement (teleport detector)
+         double totalMoved = 0.0; // proves the villager KEPT MOVING (a real orbit, not a frozen stop)
+         double lastX = v.getX();
+         double lastZ = v.getZ();
+         boolean guardEngaged = false;
+         for (int i = 0; i < budget; i++) {
+            v.setPathDestPoint(new Point(goal), 1);
+            v.tick();
+            double dx = v.getX() - lastX;
+            double dz = v.getZ() - lastZ;
+            double step = Math.sqrt(dx * dx + dz * dz);
+            maxStep = Math.max(maxStep, step);
+            totalMoved += step;
+            lastX = v.getX();
+            lastZ = v.getZ();
+            if (v.activeNav3d != null) {
+               int br = v.activeNav3d.blockedReplansForTest();
+               maxBlockedReplans = Math.max(maxBlockedReplans, br);
+               if (br > 0) {
+                  guardEngaged = true;
+               }
+            }
+         }
+         double finalDist = Math.sqrt(goal.distSqr(v.blockPosition()));
+
+         // The villager must STILL be inside the arena (it can never have legitimately reached the sealed goal) AND
+         // must NOT have teleported (any single-tick jump beyond ~1.5 blocks is non-AI movement). A normal AI step
+         // is well under 1 block/tick; 1.5 is generous headroom for a running-jump impulse.
+         boolean noTeleport = maxStep <= 1.5;
+         // keptMoving is REQUIRED: a frozen villager (e.g. despawned/short-circuited far from home) would trivially
+         // make zero progress and trip the guard without ever orbiting — that's not the behaviour under test. We must
+         // see the villager genuinely roam/orbit (real physics) AND the guard escalate AND no teleport.
+         boolean keptMoving = totalMoved >= 10.0;
+         boolean ok = guardEngaged && noTeleport && keptMoving;
+         aiOrbitOk = ok;
+         log("AIORBIT via REAL villager.tick() AI: base=" + base + " goal=" + goal + " finalDist=" + fmt(finalDist)
+            + " maxBlockedReplans=" + maxBlockedReplans + " guardEngaged=" + guardEngaged
+            + " maxStep=" + fmt(maxStep) + " (noTeleport=" + noTeleport + ") totalMoved=" + fmt(totalMoved)
+            + " (keptMoving=" + keptMoving + ")");
+         log("AIORBIT " + (ok
+            ? "OK (villager genuinely orbited [totalMoved=" + fmt(totalMoved) + "], distance-to-goal progress guard"
+              + " engaged — tried alternative routes instead of orbiting forever — and never teleported)"
+            : "FAIL (residual orbit/pace bug: guard never escalated [guardEngaged=" + guardEngaged
+              + "] or villager teleported [maxStep=" + fmt(maxStep) + "] or never moved [keptMoving=" + keptMoving + "])"));
+
+         // Clean up the arena so it doesn't pollute later cycles.
+         for (int dy = -1; dy <= 2; dy++) {
+            for (int dx = -12; dx <= 32; dx++) {
+               for (int dz = -12; dz <= 12; dz++) {
+                  level.setBlock(base.offset(dx, dy, dz), dy < 0
+                     ? net.minecraft.world.level.block.Blocks.GRASS_BLOCK.defaultBlockState()
+                     : net.minecraft.world.level.block.Blocks.AIR.defaultBlockState(), 3);
+               }
+            }
+         }
+         v.setPos(base.getX() + 0.5, base.getY(), base.getZ() + 0.5);
+         v.getNavigation().stop();
+         if (v.activeNav3d != null) {
+            v.activeNav3d.reset();
+         }
+      } catch (Throwable t) {
+         aiOrbitOk = false;
+         recordException("AI:aiorbit", t);
+         log("AIORBIT FAIL: " + t);
+      }
+   }
+
    // ===== STEP HB: FAITHFUL harvest/break family (REAL migrated goal.performAction via REAL navigation) =====
 
    /**
@@ -2387,9 +2558,9 @@ public final class MillSelfTest {
             log("HB AICHOPTREE SKIP: no eligible MillVillager in world");
             return;
          }
-         BlockPos base = v.blockPosition();
-         clearPadTall(base, 4, 20);
-         v.setPos(base.getX() + 0.5, base.getY(), base.getZ() + 0.5);
+         // ISOLATED: stage on a private faraway pad so the felled-log drops + scaffold can't be touched by any other
+         // villager and the scene is reproducible regardless of the picked villager.
+         BlockPos base = isolatedStage(v, 8, 4, 20);
 
          // A 12-tall oak 3 blocks away: the upper logs are out of reach from the ground, so the migrated goal MUST
          // scaffold to fell them — the faithful proof the whole tree is felled through the real goal.
@@ -2409,19 +2580,21 @@ public final class MillSelfTest {
          boolean done = false;
          for (; ticks < 4000; ticks++) {
             // Keep the REAL goal dest at the trunk base (what getDestination produces from a grove's wood location);
-            // REAL navigation walks the villager toward it, then the REAL goal.performAction runs the migrated cycle.
+            // REAL navigation walks the villager toward it.
             v.setGoalDestPoint(new Point(trunkBase));
             v.tick();                       // REAL AI navigation
-            done = goal.performAction(v);   // REAL migrated GoalLumbermanChopTrees → VillagerActions.harvestBlock
-            // When the villager hasn't physically reached the tree, the goal stays in-action breaking what it can; we
-            // also nudge it adjacent at GROUND level if its own navigation hasn't (headless nav is imperfect) so the
-            // faithful break path can act — never raising it (high logs stay genuinely scaffold-only).
+            // CRITICAL ORDER: position the villager into reach BEFORE performAction, not after. The real nav in
+            // v.tick() can leave the villager just OUT of reach (or orbit it); if we ran performAction first it would
+            // act at that out-of-reach position and never break a log (the flaky "allLogsGone=false, ticks=4000"
+            // symptom that depended on which villager nav settled where). So: nudge to the faithful working position
+            // FIRST, then run the migrated goal so it acts in-reach. Ground nudge (never raised — high logs stay
+            // genuinely scaffold-only) when the villager hasn't navigated into reach of the trunk on its own.
             if (!com.coderyo.jason.ops.VillagerWorldOps.withinReach(v, trunkBase)
                   && v.blockPosition().getY() <= base.getY()) {
                v.setPos(trunkBase.getX() - 1.2, base.getY(), trunkBase.getZ() + 0.5);
             }
-            // Stand the villager on top of any scaffold column the goal built so the next reach test advances (the
-            // ONLY place it gains height — climbing its own scaffold), mirroring the in-game climb.
+            // Stand the villager on top of any scaffold column the goal built so the reach test advances (the ONLY
+            // place it gains height — climbing its own scaffold), mirroring the in-game climb.
             BlockPos remainingLog = lowestLog(trunkBase);
             var prog = com.coderyo.jason.ops.TaskPointStore.get().peek(level, trunkBase);
             if (remainingLog != null && prog != null && !prog.scaffoldColumn.isEmpty()) {
@@ -2430,6 +2603,8 @@ public final class MillSelfTest {
                   v.setPos(top.getX() + 0.5, top.getY() + 1.0, top.getZ() + 0.5);
                }
             }
+            done = goal.performAction(v);   // REAL migrated GoalLumbermanChopTrees → VillagerActions.harvestBlock
+            remainingLog = lowestLog(trunkBase);
             if (remainingLog == null) {
                // All logs gone — run a couple more ticks so the goal reclaims the scaffold + reports done.
                goal.performAction(v);
@@ -2496,9 +2671,9 @@ public final class MillSelfTest {
             log("HB AIMINE SKIP: no eligible MillVillager in world");
             return;
          }
-         BlockPos base = v.blockPosition();
-         clearPadTall(base, 6, 4);
-         v.setPos(base.getX() + 0.5, base.getY(), base.getZ() + 0.5);
+         // ISOLATED: stage on a private faraway pad so the ore + its raw_iron drop can't be touched by any other
+         // villager and the scene is reproducible regardless of which villager / where realVillager() picked.
+         BlockPos base = isolatedStage(v, 2, 6, 4);
 
          // A single IRON-ORE block 4 blocks away at feet level (reachable). We drive the data-driven GoalGenericMining
          // (a scoped goal migrated onto VillagerActions.harvestBlock): its performAction breaks the dest source block
@@ -2585,15 +2760,9 @@ public final class MillSelfTest {
             log("HB AICROP SKIP: no eligible MillVillager in world");
             return;
          }
-         BlockPos base = v.blockPosition();
-         clearPadTall(base, 5, 4);
-         v.setPos(base.getX() + 0.5, base.getY(), base.getZ() + 0.5);
-         // Clear any leftover ground items from the prior HB cycles (same villager + overlapping area) so they don't
-         // contaminate this test's nearest-drop pickup.
-         for (var e : level.getEntitiesOfClass(net.minecraft.world.entity.item.ItemEntity.class,
-               new AABB(base).inflate(16.0))) {
-            e.discard();
-         }
+         // ISOLATED: stage on a private faraway pad (isolatedStage already purges every stray entity in the area, so
+         // no leftover drop from a prior cycle and no neighbour can contaminate this cycle's nearest-drop pickup).
+         BlockPos base = isolatedStage(v, 3, 5, 4);
 
          net.minecraft.world.level.block.CropBlock wheat =
             (net.minecraft.world.level.block.CropBlock) net.minecraft.world.level.block.Blocks.WHEAT;
@@ -2693,6 +2862,66 @@ public final class MillSelfTest {
       }
    }
 
+   // --- Isolated-staging anchors for the faithful AI cycles -----------------------------------
+   // EARLIER DESIGN PITFALL (do not reintroduce): staging on a pad ~20000 blocks from the village FROZE the villager.
+   // MillVillager.tick() despawns/short-circuits any villager whose distance to its town hall exceeds
+   // villageType.radius + 100 ("Villager is far away from village. Despawning him."), so the REAL AI never ran on a
+   // faraway pad — the villager never moved (AISHEAR/AIMILK minDist==startDist) and dropped items were never ticked
+   // for pickup (AIMINE collected=false). Instead we stage each cycle on a PRIVATE pad anchored to the villager's OWN
+   // TOWN HALL position, offset onto a per-cycle ring WELL WITHIN villageType.radius so:
+   //   (a) the villager stays "at home" → the full REAL navigation/AI runs and its physics actually move it, and
+   //       dropped items tick + are collected, exactly as in-village;
+   //   (b) the anchor is the town-hall POINT (a stable, nav-independent coordinate) plus a fixed per-cycle offset, so
+   //       the scene sits at FIXED coordinates regardless of which villager realVillager() picked or where it stood —
+   //       a benign global nav change (e.g. the orbit fix) cannot butterfly-shift the environment; and
+   //   (c) each cycleIndex gets its OWN direction on the ring + a per-cycle purge, so no two cycles' scenes/leftovers
+   //       overlap and no other entity can steal this cycle's drop/animal.
+   // The town-hall chunks are already force-loaded + ticking (the village is active), so no extra chunk forcing is
+   // needed; we still purge every stray entity in the pad area before building the scene.
+   private static final int ISOLATION_RING = 18; // horizontal distance from the town hall to each cycle's pad centre
+
+   /**
+    * Move {@code v} onto a PRIVATE, deterministic, entity-free pad anchored to its TOWN HALL (so it stays in-village
+    * and the REAL AI/physics run) and return the pad base. Each {@code cycleIndex} gets its own direction on a ring
+    * at {@link #ISOLATION_RING} blocks from the town hall. Lays a flat grass pad with a {@code tall} air column of
+    * half-width {@code r}, purges any stray entity in the area (so nothing can interfere with this cycle's
+    * drops/animals), then teleports the villager to the pad centre. The scene's coordinates depend ONLY on the
+    * (stable) town-hall point + cycleIndex — never on the villager's nav-perturbable position — so it is reproducible.
+    */
+   private BlockPos isolatedStage(MillVillager v, int cycleIndex, int r, int tall) {
+      org.millenaire.common.village.Building th = v.getTownHall();
+      Point thp = th.getPos();
+      // Deterministic per-cycle direction around the town hall (golden-angle-ish spread so 11 cycles don't collide),
+      // at a fixed ring distance well inside villageType.radius (default >> ISOLATION_RING+r) so the villager is never
+      // "far from village" → never despawned/short-circuited by MillVillager.tick().
+      double ang = cycleIndex * 2.39996; // ~137.5° golden angle, in radians
+      int ox = (int) Math.round(Math.cos(ang) * ISOLATION_RING);
+      int oz = (int) Math.round(Math.sin(ang) * ISOLATION_RING);
+      BlockPos base = new BlockPos(thp.getiX() + ox, thp.getiY(), thp.getiZ() + oz);
+      // The town-hall chunks are already loaded + ticking (active village); ensure the pad span is loaded too.
+      for (int cx = (base.getX() - r - 2) >> 4; cx <= (base.getX() + r + 8) >> 4; cx++) {
+         for (int cz = (base.getZ() - r - 2) >> 4; cz <= (base.getZ() + r + 8) >> 4; cz++) {
+            level.getChunk(cx, cz);
+         }
+      }
+      // Purge any stray entities (items, animals, even a wandering villager) anywhere near the pad BEFORE we build it,
+      // so this cycle's scene is genuinely isolated and reproducible. Never discard our driven villager v.
+      for (net.minecraft.world.entity.Entity e : level.getEntitiesOfClass(
+            net.minecraft.world.entity.Entity.class, new AABB(base).inflate(r + 24.0))) {
+         if (e != v && !(e instanceof ServerPlayer)) {
+            e.discard();
+         }
+      }
+      clearPadTall(base, r, tall);
+      v.getNavigation().stop();
+      if (v.activeNav3d != null) {
+         v.activeNav3d.reset();
+      }
+      v.stopMoving = false;
+      v.setPos(base.getX() + 0.5, base.getY(), base.getZ() + 0.5);
+      return base;
+   }
+
    /** The lowest remaining OAK_LOG in a small box around the trunk base, or null when none remain. */
    private BlockPos lowestLog(BlockPos trunkBase) {
       BlockPos best = null;
@@ -2738,9 +2967,8 @@ public final class MillSelfTest {
             log("HA AIPLANT SKIP: no eligible MillVillager in world");
             return;
          }
-         BlockPos base = v.blockPosition();
-         clearPad(base, 5);
-         v.setPos(base.getX() + 0.5, base.getY(), base.getZ() + 0.5);
+         // ISOLATED: stage on a private faraway pad so the scene is reproducible regardless of the picked villager.
+         BlockPos base = isolatedStage(v, 4, 5, 4);
 
          // A planting plot 4 blocks away: grass below (valid sapling soil), air above. The villager must NAVIGATE there
          // (start dist > reach), then the real plant action places + validates the sapling.
@@ -2803,9 +3031,8 @@ public final class MillSelfTest {
             log("HA AICONSTRUCT SKIP: no eligible MillVillager in world");
             return;
          }
-         BlockPos base = v.blockPosition();
-         clearPad(base, 5);
-         v.setPos(base.getX() + 0.5, base.getY(), base.getZ() + 0.5);
+         // ISOLATED: stage on a private faraway pad so the scene is reproducible regardless of the picked villager.
+         BlockPos base = isolatedStage(v, 5, 5, 4);
 
          BlockPos target = base.offset(4, 0, 0);
          level.setBlock(target, net.minecraft.world.level.block.Blocks.AIR.defaultBlockState(), 3);
@@ -2870,9 +3097,9 @@ public final class MillSelfTest {
             log("HA AIMILK SKIP: no eligible MillVillager in world");
             return;
          }
-         BlockPos base = v.blockPosition();
-         clearPad(base, 6);
-         v.setPos(base.getX() + 0.5, base.getY(), base.getZ() + 0.5);
+         // ISOLATED: stage on a private faraway pad so the cow can WANDER in its own pen with no other entity around
+         // and the scene is reproducible regardless of which villager realVillager() picked.
+         BlockPos base = isolatedStage(v, 6, 6, 4);
 
          // Adult cow 6 blocks away → the villager must WALK there (initial distance > milk reach 4.5).
          net.minecraft.world.entity.animal.cow.Cow cow = spawnCow(base.offset(6, 0, 0), spawned);
@@ -2956,7 +3183,9 @@ public final class MillSelfTest {
             log("HA AIFISH SKIP: no eligible MillVillager in world");
             return;
          }
-         BlockPos base = v.blockPosition();
+         // ISOLATED: stage on a private faraway pad so the FISHING-loot drop can't be picked up by any other villager
+         // and the scene is reproducible regardless of which villager realVillager() picked.
+         BlockPos base = isolatedStage(v, 7, 6, 2);
          // Clear a pad + carve a 3x3 water pool 2 blocks in front (same scene the inline fish cycle builds).
          for (int dx = -2; dx <= 4; dx++) {
             for (int dz = -3; dz <= 3; dz++) {
@@ -3205,14 +3434,24 @@ public final class MillSelfTest {
       }
    }
 
-   /** A live village villager with townhall+house+active townhall, so its REAL AI tick will run (not bail at the gate). */
+   /** A live village villager with townhall+house+active townhall, so its REAL AI tick will run (not bail at the gate).
+    *  DETERMINISTIC: of all eligible villagers, always return the one with the SMALLEST villagerId (a stable identity),
+    *  not the first in getEntitiesOfClass iteration order (which shifts as the ~1474-villager growth world changes — the
+    *  butterfly that flipped a benign nav change into a different picked villager + uncontrolled surroundings). Pinning
+    *  the identity means every faithful AI cycle operates on the SAME villager every run → reproducible, non-flaky. */
    private MillVillager realVillager() {
       List<MillVillager> villagers = level.getEntitiesOfClass(
          MillVillager.class, new AABB(-30000, level.getMinY(), -30000, 30000, level.getMaxY(), 30000), v -> v.isAlive());
+      MillVillager best = null;
       for (MillVillager v : villagers) {
          if (v.getTownHall() != null && v.getHouse() != null && v.getTownHall().isActive) {
-            return v;
+            if (best == null || v.getVillagerId() < best.getVillagerId()) {
+               best = v;
+            }
          }
+      }
+      if (best != null) {
+         return best;
       }
       return villagers.isEmpty() ? null : villagers.get(0);
    }
@@ -3996,6 +4235,9 @@ public final class MillSelfTest {
       log("AI fish (real GoalFish action → full bobber animation → FISHING loot actually caught + collected): " + (aiFishOk == null ? "not run" : (aiFishOk ? "OK" : "FAIL (in-game bug)")));
       log("AI NAV (real villager.tick AI over GAP running-jump + STEP-up + WALL route-around → reaches dest, no spin): "
          + (aiNavOk == null ? "not run" : (aiNavOk ? "OK" : "FAIL (in-game nav bug reproduced)")));
+      log("AI ORBIT (real villager.tick AI vs unreachable far goal + pillar → distance-to-goal progress guard engages,"
+         + " no orbit-forever, no teleport): "
+         + (aiOrbitOk == null ? "not run" : (aiOrbitOk ? "OK" : "FAIL (residual orbit/pace nav bug)")));
       log("=== VANILLA-FIDELITY break/place edge cases (refined doBreak/doPlace mirror ServerPlayerGameMode/BlockItem) ===");
       log("FIDELITY chest contents (break a filled CHEST → its contents drop as item entities): "
          + (fidelityChestOk == null ? "not run" : (fidelityChestOk ? "OK" : "FAIL")));

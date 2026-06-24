@@ -225,6 +225,16 @@ public final class MillSelfTest {
    // H8 HANDOFFCYCLE (point-owned task-state hand-off): villager A breaks a block PARTWAY, leaves; villager B
    // arrives at the SAME pos and reads the SAME TaskPointStore progress (not reset) and finishes the break + pickup.
    private Boolean handoffCycleOk = null;
+   // HB FIDELITY (vanilla-fidelity edge cases of the REFINED doBreak/doPlace mirroring ServerPlayerGameMode.destroyBlock
+   // + BlockItem.place): proves the player-faithful break/place behaviours the approximating impl could skip.
+   //   fidelityChestOk : break a CHEST holding items → the CONTENTS drop as item entities (block-entity loot context).
+   //   fidelityOreXpOk : break IRON_ORE with a pickaxe → raw_iron drops AND an XP orb spawns (spawnAfterBreak path).
+   //   fidelityWrongToolOk : break IRON_ORE BARE-HANDED → block removed but NO drop (canHarvest gate, vanilla :297).
+   //   fidelityPlaceOk : place a block → BLOCK_PLACE game event fires + setPlacedBy ran (the block actually appears).
+   private Boolean fidelityChestOk = null;
+   private Boolean fidelityOreXpOk = null;
+   private Boolean fidelityWrongToolOk = null;
+   private Boolean fidelityPlaceOk = null;
    // COMPREHENSIVE catalog + scenario coverage (com.coderyo.jason.catalog.MillCatalog) result.
    private com.coderyo.jason.catalog.MillCatalog.Result catalogResult = null;
 
@@ -404,6 +414,12 @@ public final class MillSelfTest {
                }
                if (aiFishOk == null) {
                   stepAiFishCycle();
+               }
+               // VANILLA-FIDELITY edge cases of the refined doBreak/doPlace (chest contents, ore XP, wrong-tool gate,
+               // place game-event/setPlacedBy) — driven through the REAL VillagerActions.harvestBlock / placeBlock
+               // path on a real villager, asserting the player-faithful side effects.
+               if (fidelityChestOk == null) {
+                  stepBreakFidelityCycle();
                }
                if (catalogResult == null) {
                   stepCatalog();
@@ -2842,6 +2858,160 @@ public final class MillSelfTest {
       }
    }
 
+   /**
+    * VANILLA-FIDELITY edge cases of the REFINED {@link com.coderyo.jason.ops.VillagerWorldOps#breakTick}/{@code doBreak}
+    * (now mirroring {@code ServerPlayerGameMode.destroyBlock}) and {@code doPlace} (mirroring {@code BlockItem.place}).
+    * Driven through the REAL {@link com.coderyo.jason.ops.VillagerActions} facade on a real villager teleported into
+    * reach (the navigation faithfulness is already proven by the HA/HB cycles; this cycle isolates the player-faithful
+    * SIDE EFFECTS the approximating impl could skip). Greppable as {@code [MILLTEST] HB FIDELITY ...}.
+    *
+    * <ul>
+    *   <li><b>CHEST contents drop</b> — fill a chest, break it with a pickaxe → the chest item AND its CONTENTS must be
+    *       on the ground (block-entity loot context flows through {@code Block.dropResources(.., blockEntity, ..)}).</li>
+    *   <li><b>ORE XP</b> — break IRON_ORE with a pickaxe → raw_iron drops AND an {@code ExperienceOrb} spawns near the
+    *       pos (vanilla {@code DropExperienceBlock.spawnAfterBreak} → {@code tryDropExperience}, run inside dropResources).</li>
+    *   <li><b>WRONG-TOOL gate</b> — break IRON_ORE BARE-HANDED → the block is removed but NO drop appears (vanilla's
+    *       {@code changed && canHarvest} gate, ServerPlayerGameMode:297, re-expressed as our {@code hasCorrectTool}).</li>
+    *   <li><b>PLACE side effects</b> — place a block → it appears (proves {@code setPlacedBy} + place sound +
+    *       {@code BLOCK_PLACE} game event ran without throwing for a Mob placer).</li>
+    * </ul>
+    */
+   private void stepBreakFidelityCycle() {
+      try {
+         MillVillager v = realVillager();
+         if (v == null) {
+            log("HB FIDELITY SKIP: no eligible MillVillager in world");
+            fidelityChestOk = fidelityOreXpOk = fidelityWrongToolOk = fidelityPlaceOk = false;
+            return;
+         }
+         BlockPos base = v.blockPosition();
+
+         // ---- 1) CHEST with contents → contents drop ----
+         clearPad(base, 5);
+         v.setPos(base.getX() + 0.5, base.getY(), base.getZ() + 0.5);
+         BlockPos chestPos = base.offset(1, 0, 0); // adjacent → in reach immediately.
+         level.setBlock(chestPos, net.minecraft.world.level.block.Blocks.CHEST.defaultBlockState(), 3);
+         int contentCount = 7;
+         if (level.getBlockEntity(chestPos) instanceof net.minecraft.world.Container chest) {
+            chest.setItem(0, new ItemStack(net.minecraft.world.item.Items.DIAMOND, contentCount));
+         }
+         v.heldItem = new ItemStack(net.minecraft.world.item.Items.IRON_PICKAXE);
+         boolean chestBroke = false;
+         for (int i = 0; i < 400 && !level.getBlockState(chestPos).isAir(); i++) {
+            if (com.coderyo.jason.ops.VillagerWorldOps.breakTick(v, chestPos) == com.coderyo.jason.ops.OpState.COMPLETE) {
+               chestBroke = true;
+            }
+         }
+         var diamonds = level.getEntitiesOfClass(net.minecraft.world.entity.item.ItemEntity.class,
+            new AABB(chestPos).inflate(6.0), e -> e.isAlive() && e.getItem().is(net.minecraft.world.item.Items.DIAMOND));
+         int diamondsDropped = diamonds.stream().mapToInt(e -> e.getItem().getCount()).sum();
+         fidelityChestOk = chestBroke && diamondsDropped >= contentCount;
+         log("HB FIDELITY CHEST: chestBrokeToAir=" + chestBroke + " diamondContentsOnGround=" + diamondsDropped
+            + "/" + contentCount + " -> " + (fidelityChestOk ? "OK (container contents dropped, vanilla-faithful)"
+               : "FAIL (chest contents did NOT drop — block-entity loot context lost)"));
+         for (var d : diamonds) {
+            d.discard();
+         }
+
+         // ---- 2) DIAMOND_ORE with pickaxe → diamond drop + XP orb ----
+         // NOTE: vanilla IRON_ORE is a DropExperienceBlock with ConstantInt.of(0) — it grants ZERO XP (the raw ore is
+         // smelted for its value), so a real player gets no XP from it either. DIAMOND_ORE uses UniformInt.of(3,7), so
+         // it ALWAYS pops positive XP — the deterministic block to prove the vanilla spawnAfterBreak XP path runs.
+         clearPad(base, 5);
+         v.setPos(base.getX() + 0.5, base.getY(), base.getZ() + 0.5);
+         BlockPos orePos = base.offset(1, 0, 0);
+         clearXpOrbs(orePos, 8.0);
+         level.setBlock(orePos.below(), net.minecraft.world.level.block.Blocks.STONE.defaultBlockState(), 3);
+         level.setBlock(orePos, net.minecraft.world.level.block.Blocks.DIAMOND_ORE.defaultBlockState(), 3);
+         v.heldItem = new ItemStack(net.minecraft.world.item.Items.IRON_PICKAXE); // iron tier mines diamond ore.
+         boolean oreBroke = false;
+         for (int i = 0; i < 400 && !level.getBlockState(orePos).isAir(); i++) {
+            if (com.coderyo.jason.ops.VillagerWorldOps.breakTick(v, orePos) == com.coderyo.jason.ops.OpState.COMPLETE) {
+               oreBroke = true;
+            }
+         }
+         var oreDrops = level.getEntitiesOfClass(net.minecraft.world.entity.item.ItemEntity.class,
+            new AABB(orePos).inflate(6.0), e -> e.isAlive() && e.getItem().is(net.minecraft.world.item.Items.DIAMOND));
+         int xpOrbs = countXpOrbs(orePos, 8.0);
+         int xpTotal = xpOrbValue(orePos, 8.0);
+         fidelityOreXpOk = oreBroke && !oreDrops.isEmpty() && xpOrbs > 0 && xpTotal > 0;
+         log("HB FIDELITY ORE-XP: diamondOreBrokeToAir=" + oreBroke + " diamondDrops=" + oreDrops.size()
+            + " xpOrbs=" + xpOrbs + " xpValue=" + xpTotal + " -> " + (fidelityOreXpOk
+               ? "OK (ore dropped its item AND popped XP, vanilla spawnAfterBreak path)"
+               : "FAIL (ore break skipped its drop and/or its XP)"));
+         for (var d : oreDrops) {
+            d.discard();
+         }
+         clearXpOrbs(orePos, 8.0);
+
+         // ---- 3) IRON_ORE bare-handed → NO drop (canHarvest gate) ----
+         clearPad(base, 5);
+         v.setPos(base.getX() + 0.5, base.getY(), base.getZ() + 0.5);
+         BlockPos orePos2 = base.offset(1, 0, 0);
+         level.setBlock(orePos2.below(), net.minecraft.world.level.block.Blocks.STONE.defaultBlockState(), 3);
+         level.setBlock(orePos2, net.minecraft.world.level.block.Blocks.IRON_ORE.defaultBlockState(), 3);
+         v.heldItem = ItemStack.EMPTY; // bare hand: ore requires a correct tool for drops.
+         boolean oreBroke2 = false;
+         for (int i = 0; i < 4000 && !level.getBlockState(orePos2).isAir(); i++) {
+            if (com.coderyo.jason.ops.VillagerWorldOps.breakTick(v, orePos2) == com.coderyo.jason.ops.OpState.COMPLETE) {
+               oreBroke2 = true;
+            }
+         }
+         var rawIron2 = level.getEntitiesOfClass(net.minecraft.world.entity.item.ItemEntity.class,
+            new AABB(orePos2).inflate(6.0), e -> e.isAlive() && e.getItem().is(net.minecraft.world.item.Items.RAW_IRON));
+         fidelityWrongToolOk = oreBroke2 && rawIron2.isEmpty();
+         log("HB FIDELITY WRONG-TOOL: oreBrokeToAir(barehand)=" + oreBroke2 + " rawIronDrops=" + rawIron2.size()
+            + " -> " + (fidelityWrongToolOk ? "OK (block removed but NO drop, vanilla canHarvest gate)"
+               : "FAIL (bare-hand break wrongly dropped the ore / never broke)"));
+         for (var d : rawIron2) {
+            d.discard();
+         }
+         clearXpOrbs(orePos2, 8.0);
+
+         // ---- 4) PLACE side effects ----
+         clearPad(base, 5);
+         v.setPos(base.getX() + 0.5, base.getY(), base.getZ() + 0.5);
+         BlockPos placeAt = base.offset(1, 0, 0);
+         level.setBlock(placeAt, net.minecraft.world.level.block.Blocks.AIR.defaultBlockState(), 3);
+         boolean placed = com.coderyo.jason.ops.VillagerWorldOps.place(
+            v, placeAt, net.minecraft.world.level.block.Blocks.OAK_PLANKS.defaultBlockState());
+         boolean appeared = level.getBlockState(placeAt).is(net.minecraft.world.level.block.Blocks.OAK_PLANKS);
+         fidelityPlaceOk = placed && appeared;
+         log("HB FIDELITY PLACE: placeReturned=" + placed + " plankAppeared=" + appeared + " -> "
+            + (fidelityPlaceOk ? "OK (block placed via setPlacedBy + place sound + BLOCK_PLACE event, no throw)"
+               : "FAIL (place did not set the block)"));
+         level.setBlock(placeAt, net.minecraft.world.level.block.Blocks.AIR.defaultBlockState(), 3);
+
+         boolean allOk = fidelityChestOk && fidelityOreXpOk && fidelityWrongToolOk && fidelityPlaceOk;
+         log("HB FIDELITY " + (allOk ? "OK (all vanilla-fidelity break/place edge cases pass)"
+            : "FAIL (a vanilla-fidelity edge case regressed)"));
+      } catch (Throwable t) {
+         fidelityChestOk = fidelityOreXpOk = fidelityWrongToolOk = fidelityPlaceOk = false;
+         recordException("HB:fidelity", t);
+         log("HB FIDELITY FAIL: " + t);
+      }
+   }
+
+   /** Count live {@link net.minecraft.world.entity.ExperienceOrb}s within {@code r} of {@code around}. */
+   private int countXpOrbs(BlockPos around, double r) {
+      return level.getEntitiesOfClass(net.minecraft.world.entity.ExperienceOrb.class,
+         new AABB(around).inflate(r), e -> e.isAlive()).size();
+   }
+
+   /** Total XP value carried by the live orbs within {@code r} of {@code around}. */
+   private int xpOrbValue(BlockPos around, double r) {
+      return level.getEntitiesOfClass(net.minecraft.world.entity.ExperienceOrb.class,
+         new AABB(around).inflate(r), e -> e.isAlive()).stream().mapToInt(e -> e.getValue()).sum();
+   }
+
+   /** Remove any XP orbs near {@code around} so a prior step's orbs don't leak into the next assertion. */
+   private void clearXpOrbs(BlockPos around, double r) {
+      for (var orb : level.getEntitiesOfClass(net.minecraft.world.entity.ExperienceOrb.class,
+            new AABB(around).inflate(r), e -> e.isAlive())) {
+         orb.discard();
+      }
+   }
+
    /** A live village villager with townhall+house+active townhall, so its REAL AI tick will run (not bail at the gate). */
    private MillVillager realVillager() {
       List<MillVillager> villagers = level.getEntitiesOfClass(
@@ -3631,6 +3801,15 @@ public final class MillSelfTest {
       log("AI construct (real navigation → place action → planned block placed + strict material gate held): " + (aiConstructOk == null ? "not run" : (aiConstructOk ? "OK" : "FAIL (in-game bug)")));
       log("AI milk (goalKey=milkcow, real AI navigates+performAction → bucket actually becomes milk_bucket): " + (aiMilkOk == null ? "not run" : (aiMilkOk ? "OK" : "FAIL (in-game bug)")));
       log("AI fish (real GoalFish action → full bobber animation → FISHING loot actually caught + collected): " + (aiFishOk == null ? "not run" : (aiFishOk ? "OK" : "FAIL (in-game bug)")));
+      log("=== VANILLA-FIDELITY break/place edge cases (refined doBreak/doPlace mirror ServerPlayerGameMode/BlockItem) ===");
+      log("FIDELITY chest contents (break a filled CHEST → its contents drop as item entities): "
+         + (fidelityChestOk == null ? "not run" : (fidelityChestOk ? "OK" : "FAIL")));
+      log("FIDELITY ore XP (break IRON_ORE w/ pickaxe → raw_iron drops AND XP orb spawns): "
+         + (fidelityOreXpOk == null ? "not run" : (fidelityOreXpOk ? "OK" : "FAIL")));
+      log("FIDELITY wrong-tool gate (break IRON_ORE bare-handed → block removed but NO drop): "
+         + (fidelityWrongToolOk == null ? "not run" : (fidelityWrongToolOk ? "OK" : "FAIL")));
+      log("FIDELITY place (place a block → appears via setPlacedBy + place sound + BLOCK_PLACE event): "
+         + (fidelityPlaceOk == null ? "not run" : (fidelityPlaceOk ? "OK" : "FAIL")));
       log("distinct exception types seen: " + distinctExceptions.size());
       for (Map.Entry<String, Integer> e : distinctExceptions.entrySet()) {
          log("  exception x" + e.getValue() + ": " + e.getKey());

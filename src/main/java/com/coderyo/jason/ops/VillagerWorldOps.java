@@ -43,10 +43,13 @@ import org.millenaire.common.entity.MillVillager;
  * <h2>Break-over-time</h2>
  * Each tick within reach, {@link #breakTick} swings the arm, accumulates the POINT's {@code breakProgress} by
  * {@link #destroyProgressPerTick}, shows cracks keyed by the villager's id (so multiple villagers' cracks on the
- * same point coincide), plays the hit sound, and — when progress reaches {@code 1.0} — performs the real break
- * (particles, break sound, {@code removeBlock}, {@code dropResources} with the held tool, and tool durability via
- * {@code Item#mineBlock}). Because progress lives on the point, a second villager that arrives mid-break continues
- * the same accumulation (hand-off).
+ * same point coincide), plays the hit sound, and — when progress reaches {@code 1.0} — performs the real break via
+ * {@link #doBreak}, which MIRRORS the vanilla {@code ServerPlayerGameMode.destroyBlock} sequence
+ * ({@code playerWillDestroy} particles + {@code BLOCK_DESTROY} game event → fluid-aware {@code removeBlock} →
+ * {@code block.destroy} → tool durability {@code mineBlock} → {@code playerDestroy}-body drops+XP via
+ * {@code Block.dropResources}, gated on the held tool being correct for drops). So containers drop their contents,
+ * ore pops XP, and double/waterlogged/support-requiring blocks behave exactly as when a player mines them. Because
+ * progress lives on the point, a second villager that arrives mid-break continues the same accumulation (hand-off).
  */
 public final class VillagerWorldOps {
 
@@ -136,28 +139,88 @@ public final class VillagerWorldOps {
    }
 
    /**
-    * Performs the real block break: particles, break sound, remove the block, spawn real tool-aware drops, and
-    * apply tool durability. Drops are left on the ground for the pickup step ({@code pickupTick}, later phase).
+    * Performs the real block break, mirroring the vanilla {@code ServerPlayerGameMode.destroyBlock(BlockPos)} sequence
+    * (server/level/ServerPlayerGameMode.java:262-301) as faithfully as a {@code Mob} (never a {@code Player}) can:
+    *
+    * <ol>
+    *   <li>capture the block entity (chest/furnace contents) BEFORE removal so its loot context is intact;</li>
+    *   <li>run the public, non-Player parts of {@code Block.playerWillDestroy} ({@link #willDestroy}): destroy
+    *       particles (level event 2001) + the {@code BLOCK_DESTROY} game event — the {@code adjustedState} it returns
+    *       is the state vanilla then passes downstream (vanilla doors/double-plants drop their own resources here, but
+    *       those paths are Player-gated and their SECOND half is removed by the {@code removeBlock} neighbour update
+    *       below, so a Mob break still collapses them correctly);</li>
+    *   <li>{@code level.removeBlock(pos, false)} — IDENTICAL to vanilla line 280: it replaces the block with its
+    *       {@code FluidState.createLegacyBlock()} (so WATERLOGGED blocks leave their water) under flag 3 (neighbour
+    *       updates), which is what self-destroys the other half of a door/bed/tall-plant and re-checks block support;</li>
+    *   <li>if the block actually changed, {@code block.destroy(level, pos, adjustedState)} — the block-specific
+    *       on-destroy hook (vanilla line 286);</li>
+    *   <li>tool durability via {@code ItemStack.mineBlock} BEFORE the drops, matching vanilla's order (line 296);</li>
+    *   <li>if {@code changed && canHarvest}, the body of {@code Block.playerDestroy} (Block.java:459-465) MINUS the
+    *       two Player-only lines ({@code awardStat}/{@code causeFoodExhaustion}): {@code Block.dropResources(state,
+    *       level, pos, blockEntity, breaker, tool)} — which itself runs {@code state.spawnAfterBreak} so ORE blocks
+    *       pop their XP ({@code DropExperienceBlock.spawnAfterBreak} → {@code tryDropExperience}) and CONTAINERS drop
+    *       their contents (the {@code blockEntity} loot context), exactly like a real player. The {@code canHarvest}
+    *       gate ({@code hasCorrectToolForDrops}) mirrors vanilla line 295 so a wrong tool removes the block with no
+    *       drops, never silently dropping anyway.</li>
+    * </ol>
+    *
+    * <p>The break/break-sound + drops are left on the ground for the pickup step ({@code pickupTick}). {@code v} is the
+    * acting {@code breaker} (a {@code Mob}) everywhere vanilla passes the {@code Player}; {@code Block.dropResources},
+    * {@code block.destroy}, {@code mineBlock} and the game-event/particle calls all take an {@code Entity}/no entity,
+    * so no Player object (or fake-player) is required for the break path.
     */
    private static void doBreak(MillVillager v, BlockPos pos, BlockState state) {
       Level level = v.level();
-      ItemStack tool = v.getMainHandItem();
+      // The villager's EFFECTIVE selected item is its Mill `heldItem` ({@link #effectiveTool}); copy it as
+      // `destroyedWith` BEFORE mineBlock can mutate/break it, mirroring vanilla's
+      // `ItemStack destroyedWith = itemStack.copy()` (ServerPlayerGameMode:294).
+      ItemStack tool = effectiveTool(v);
+      ItemStack destroyedWith = tool.copy();
 
-      // Block-break particles (vanilla effect 2001 = block destroy).
-      level.levelEvent(2001, pos, Block.getId(state));
       v.playSound(state.getSoundType().getBreakSound(), 1.0f, 1.0f);
 
-      // Capture the block entity (chest/etc. contents) before removing, for correct drops.
+      // Capture the block entity (chest/etc. contents) before removing, for correct loot-context drops (vanilla :268).
       var blockEntity = level.getBlockEntity(pos);
-      level.removeBlock(pos, false);
+      Block block = state.getBlock();
 
-      // Real drops: tool-aware (fortune/silk/correct-tool), spawns ItemEntities the villager will pick up.
-      Block.dropResources(state, level, pos, blockEntity, v, tool);
+      // playerWillDestroy (public parts): destroy particles + BLOCK_DESTROY game event. Returns the state vanilla then
+      // carries downstream (adjustedState). (ServerPlayerGameMode:279, Block.java:502-510.)
+      BlockState adjustedState = willDestroy(v, level, pos, state);
 
-      // Tool durability (LivingEntity-public; applies hurtAndBreak to the held tool).
-      if (!tool.isEmpty()) {
-         tool.getItem().mineBlock(tool, level, state, pos, v);
+      // removeBlock — IDENTICAL to vanilla line 280 (fluid-aware, neighbour-updating); collapses double blocks + re-checks support.
+      boolean changed = level.removeBlock(pos, false);
+
+      // block-specific on-destroy hook (vanilla line 285-287).
+      if (changed) {
+         block.destroy(level, pos, adjustedState);
       }
+
+      // Tool durability BEFORE the drops, matching vanilla order (line 296). LivingEntity-public path for the Mob.
+      // canHarvest == vanilla Player.hasCorrectToolForDrops(state) (Player.java:617-619) re-expressed against the
+      // villager's HELD tool (its effective selected item) — Player.hasCorrectToolForDrops is Player-only, so a Mob
+      // cannot call it; hasCorrectTool(tool, state) is the identical predicate.
+      boolean canHarvest = hasCorrectTool(tool, adjustedState);
+      if (!tool.isEmpty()) {
+         tool.getItem().mineBlock(tool, level, adjustedState, pos, v);
+      }
+
+      // playerDestroy body (Block.java:459-465) minus the two Player-only stat/exhaustion lines: spawn the real
+      // tool-aware drops + spawnAfterBreak (ore XP, container contents). Gated on changed && canHarvest (vanilla :297).
+      if (changed && canHarvest) {
+         Block.dropResources(adjustedState, level, pos, blockEntity, v, destroyedWith);
+      }
+   }
+
+   /**
+    * The public, non-{@code Player} portion of vanilla {@code Block.playerWillDestroy} (Block.java:502-510): spawn the
+    * block-destroy particles (level event 2001) and fire the {@code BLOCK_DESTROY} game event with the breaking
+    * villager as the source entity. Vanilla's piglin-anger branch is Player-targeted and irrelevant to a villager
+    * breaker, so it is omitted. Returns the (unchanged) {@code state} as vanilla's {@code adjustedState}.
+    */
+   private static BlockState willDestroy(MillVillager v, Level level, BlockPos pos, BlockState state) {
+      level.levelEvent(2001, pos, Block.getId(state)); // == spawnDestroyParticles' level.levelEvent(player, 2001, ...)
+      level.gameEvent(v, GameEvent.BLOCK_DESTROY, pos);
+      return state;
    }
 
    private static void clearCracks(MillVillager v, BlockPos pos) {
@@ -234,17 +297,63 @@ public final class VillagerWorldOps {
       return PlaceResult.PLACED;
    }
 
-   /** The real, player-like placement: swing the arm, set the (rotation-correct) state, play the place sound. */
+   /**
+    * The real, player-like placement, mirroring the tail of vanilla {@code BlockItem.place(BlockPlaceContext)}
+    * (BlockItem.java:67-90) for an already-resolved, rotation-correct {@code state}. The construction/replant callers
+    * pass the FINAL placement state straight from the building plan (so the {@code BlockPlaceContext} →
+    * {@code getStateForPlacement} → {@code canPlace} front half of vanilla {@code place}, which derives the state from
+    * a player's click direction, is deliberately bypassed — there is no clicking villager and the plan already fixed
+    * the orientation). What we DO mirror is the post-placement sequence vanilla runs once the block is set:
+    *
+    * <ol>
+    *   <li>swing the arm (the villager's place gesture);</li>
+    *   <li>{@code level.setBlockAndUpdate(pos, state)} — flag 3 (BLOCK_UPDATE | NOTIFY_NEIGHBORS), the neighbour
+    *       update that vanilla {@code placeBlock} (flag 11) + the surrounding update produce, so adjacent blocks
+    *       (fences, redstone, fluids) react to the new block;</li>
+    *   <li>{@code block.setPlacedBy(level, pos, placedState, null, ItemStack.EMPTY)} — the block-specific on-place
+    *       hook (BlockItem.java:80), e.g. orienting/initialising state from the placer. We pass a {@code null} placer
+    *       (vanilla's {@code LivingEntity by} is {@code @Nullable}; a villager is not the click-source the way a player
+    *       is, and the plan already encodes facing) and an empty stack — matching the no-NBT construction material;</li>
+    *   <li>the place sound at vanilla's exact volume/pitch ({@code (volume + 1) / 2}, {@code pitch * 0.8}) —
+    *       BlockItem.java:86-87;</li>
+    *   <li>the {@code BLOCK_PLACE} game event with the villager as source entity (BlockItem.java:88).</li>
+    * </ol>
+    *
+    * <p>The Player-only tail (criteria trigger, {@code itemStack.consume}) is handled by our own strict material
+    * accounting in {@link #place(MillVillager, BlockPos, BlockState, Item, int)}, not here.
+    */
    private static void doPlace(MillVillager v, BlockPos pos, BlockState state) {
       Level level = v.level();
       v.swing(InteractionHand.MAIN_HAND);
       level.setBlockAndUpdate(pos, state);
-      v.playSound(state.getSoundType().getPlaceSound(), 1.0f, 1.0f);
+      BlockState placedState = level.getBlockState(pos);
+      // setPlacedBy on the state that actually landed (mirrors BlockItem reading placedState back from the level).
+      placedState.getBlock().setPlacedBy(level, pos, placedState, null, ItemStack.EMPTY);
+      net.minecraft.world.level.block.SoundType soundType = placedState.getSoundType();
+      v.playSound(soundType.getPlaceSound(), (soundType.getVolume() + 1.0f) / 2.0f, soundType.getPitch() * 0.8f);
+      level.gameEvent(v, GameEvent.BLOCK_PLACE, pos);
    }
 
    // ================================================================================================
    // PURE HELPERS — golden-testable, no side effects
    // ================================================================================================
+
+   /**
+    * The villager's EFFECTIVE selected item — the {@code ItemStack} that plays the role a player's selected hotbar
+    * item plays in the vanilla break/place math. A Mill villager carries its working tool in {@link MillVillager#heldItem}
+    * and does NOT mirror it into vanilla equipment: {@code MillVillager.getItemStackFromSlot(MAINHAND)} returns
+    * {@code heldItem}, but that is a Mill-named method, NOT an override of {@code LivingEntity.getItemBySlot}, so the
+    * vanilla {@code getMainHandItem()} returns the (empty) equipment slot. Reading {@code getMainHandItem()} for the
+    * tool therefore mis-reads an EMPTY hand — the break runs at bare-hand speed and (worse, post-{@code canHarvest}
+    * gate) yields NO drops for tool-requiring blocks like stone/ore. So every place the math needs "the item the
+    * villager is working with", use this: the {@code heldItem} when present, else the (possibly-set) vanilla main hand.
+    */
+   public static ItemStack effectiveTool(MillVillager v) {
+      if (v.heldItem != null && !v.heldItem.isEmpty()) {
+         return v.heldItem;
+      }
+      return v.getMainHandItem();
+   }
 
    /** True if {@code pos}'s block AABB is within {@link #REACH} of the villager's eye position (squared compare). */
    public static boolean withinReach(MillVillager v, BlockPos pos) {
@@ -266,7 +375,7 @@ public final class VillagerWorldOps {
       Level level = v.level();
       BlockState state = level.getBlockState(pos);
       float hardness = state.getDestroySpeed(level, pos);
-      return destroyProgressPerTick(v.getMainHandItem(), state, hardness);
+      return destroyProgressPerTick(effectiveTool(v), state, hardness);
    }
 
    /**
@@ -289,7 +398,7 @@ public final class VillagerWorldOps {
     * require a correct tool, or the held tool is correct for it. Pure.
     */
    public static boolean hasCorrectTool(MillVillager v, BlockPos pos) {
-      return hasCorrectTool(v.getMainHandItem(), v.level().getBlockState(pos));
+      return hasCorrectTool(effectiveTool(v), v.level().getBlockState(pos));
    }
 
    /** Pure core of {@link #hasCorrectTool(MillVillager, BlockPos)}: held {@code tool} vs target {@code state}. */
@@ -301,7 +410,7 @@ public final class VillagerWorldOps {
    public static int ticksToBreak(MillVillager v, BlockPos pos) {
       Level level = v.level();
       BlockState state = level.getBlockState(pos);
-      return ticksToBreak(v.getMainHandItem(), state, state.getDestroySpeed(level, pos));
+      return ticksToBreak(effectiveTool(v), state, state.getDestroySpeed(level, pos));
    }
 
    /** Pure overload: ticks to break = {@code ceil(1 / perTick)}; {@code Integer.MAX_VALUE} if unbreakable. */
@@ -388,9 +497,13 @@ public final class VillagerWorldOps {
          return OpState.BLOCKED;
       }
 
-      // --- Real vanilla shear ---
+      // --- Real vanilla shear --- mirrors Sheep.mobInteract's shears branch (Sheep.java:148-153):
+      //   shear(level, soundSource, tool) → gameEvent(SHEAR, entity) → tool.hurtAndBreak(1, entity, slot).
+      // Vanilla passes SoundSource.PLAYERS (the player interaction channel); we mirror that exactly. The villager is
+      // the acting entity (Sheep.shear + gameEvent + hurtAndBreak all take a ServerLevel/Entity/LivingEntity, never a
+      // Player), so no Player object is needed for shearing.
       v.swing(InteractionHand.MAIN_HAND);
-      sheep.shear(serverLevel, SoundSource.NEUTRAL, shears); // sets sheared + drops 1-3 wool (sheep colour) as items.
+      sheep.shear(serverLevel, SoundSource.PLAYERS, shears); // sets sheared + drops 1-3 wool (sheep colour) as items.
       sheep.gameEvent(GameEvent.SHEAR, v);
       // Shears durability (LivingEntity-public). Charge the main hand, like the vanilla player shear path.
       shears.hurtAndBreak(1, v, InteractionHand.MAIN_HAND);

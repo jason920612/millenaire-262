@@ -11,8 +11,8 @@ vanilla1122-decompiled/
 mc-sources/
 forge1122/
 
-# Build output
-build/
+# Build output (anchored — a bare `build/` also ignored src/main/java/com/coderyo/jason/build/)
+/build/
 .gradle/
 # Dev run dir (server world, logs, deployed content)
 run/

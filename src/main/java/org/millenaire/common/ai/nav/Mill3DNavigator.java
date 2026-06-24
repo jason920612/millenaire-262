@@ -6,6 +6,7 @@ import net.minecraft.core.BlockPos;
 
 import org.millenaire.common.entity.MillVillager;
 
+
 /**
  * Executes a {@link Mill3DPathfinder} path on a villager (one instance per villager). It walks the path
  * node-by-node via the MoveControl and JUMPS when an edge climbs or crosses a gap — which vanilla navigation
@@ -16,6 +17,15 @@ public final class Mill3DNavigator {
    private static final int MAX_NODES = 8000; // bigger budget for medium-range 3D routes (long range → HPA*)
    private static final int REPLAN_TICKS = 40;
 
+   /** No-forward-progress ticks before we force a fresh plan — FAST (well under the old 60) so a stuck villager
+    *  recovers in ~0.6s instead of seizing up for seconds. Mirrors how vanilla GroundPathNavigation drops a path
+    *  it can't follow (tooFarFromPath / no movement) rather than re-aiming at a dead node forever. */
+   private static final int STUCK_REPLAN_TICKS = 12;
+   /** After this many CONSECUTIVE failed replans (same goal, still no progress) we are genuinely blocked on the
+    *  current route: escalate to a real ALTERNATIVE — replan while AVOIDING the cell we keep getting stuck against —
+    *  instead of recomputing the identical dead-end (the "never finds another way" symptom). */
+   private static final int BLOCKED_REPLAN_ATTEMPTS = 3;
+
    private List<BlockPos> path;
    private int index;
    private int replanTimer;
@@ -24,6 +34,8 @@ public final class Mill3DNavigator {
    private double lastX = Double.NaN;
    private double lastZ;
    private int stuckTicks;
+   private int blockedReplans; // consecutive replans that didn't restore progress
+   private BlockPos avoidCell; // a cell to route AROUND on the next replan (the spot we keep jamming against)
 
    /**
     * Drive {@code villager} toward {@code goal} for one tick at {@code speed} (the MOVEMENT_SPEED multiplier —
@@ -36,20 +48,31 @@ public final class Mill3DNavigator {
       if (here.closerThan(goal, 1.6)) {
          return false; // arrived
       }
-      // No forward progress for ~1s → the current path is unwalkable from here; force a fresh plan.
+      // No forward progress → the current path is unwalkable from HERE. Recover FAST (mirrors vanilla
+      // GroundPathNavigation dropping a path it can't follow) rather than re-aiming at a dead node for seconds.
       double mv = Double.isNaN(this.lastX) ? 1.0
          : (villager.getX() - this.lastX) * (villager.getX() - this.lastX) + (villager.getZ() - this.lastZ) * (villager.getZ() - this.lastZ);
       this.lastX = villager.getX();
       this.lastZ = villager.getZ();
+      boolean forceReplan = false;
       if (mv < 0.0025) {
-         if (++this.stuckTicks > 20) {
+         if (++this.stuckTicks > STUCK_REPLAN_TICKS) {
             this.stuckTicks = 0;
-            this.path = null;
+            // Remember the cell we keep jamming against (the next path node) so the escalated replan routes AROUND
+            // it instead of recomputing the identical dead-end.
+            if (this.path != null && this.index < this.path.size()) {
+               this.avoidCell = this.path.get(Math.min(this.index, this.path.size() - 1));
+            }
+            this.path = null;        // drop the stuck path
+            forceReplan = true;
+            this.blockedReplans++;   // escalate the avoidance on repeated failure
          }
       } else {
          this.stuckTicks = 0;
+         this.blockedReplans = 0;
+         this.avoidCell = null;     // making progress → no longer blocked by anything
       }
-      boolean stale = this.path == null || this.pathGoal == null || !this.pathGoal.equals(goal)
+      boolean stale = forceReplan || this.path == null || this.pathGoal == null || !this.pathGoal.equals(goal)
          || --this.replanTimer <= 0 || this.index >= this.path.size()
          || farFromPath(here);
       if (stale) {
@@ -63,36 +86,78 @@ public final class Mill3DNavigator {
          this.index++;
       }
       BlockPos target = this.path.get(Math.min(this.index, this.path.size() - 1));
+      // The node AFTER the immediate target — used to recognise a JUMP edge (a step where the path skips over
+      // air to land 2-3 cells out) and to keep momentum aimed past the gap, not at its near lip.
+      BlockPos next = this.index + 1 < this.path.size() ? this.path.get(this.index + 1) : null;
 
       villager.getMoveControl().setWantedPosition(target.getX() + 0.5, target.getY(), target.getZ() + 0.5, speed);
-      // Jump ONLY when actually needed: climbing UP MORE than the villager can auto-step, or an actual air GAP
-      // (a hole — no floor) one step toward the target. Do NOT jump just because the next node is far (that
-      // caused pointless in-place jumping on flat ground). A wall ahead is a climb (handled by 'climbs'),
-      // not a gap.
-      // Use the ACTUAL height difference (villager.getY() is a double, so it accounts for already standing
-      // part-way up on a slab/path/snow at e.g. y+0.5) against the entity's step height: anything <= maxUpStep
-      // is auto-stepped by the vanilla collision code (Entity.maxUpStep), so jumping there is the spurious
-      // jump-on-a-half-block the navigator used to do.
+
+      // ---- JUMP DECISION (faithful: jump ONLY when the path edge genuinely needs it) ----
+      // (a) CLIMB: the target is more than one auto-step above us (vanilla auto-steps <= STEP_HEIGHT 0.6; a full
+      //     1-block ledge needs a jump). Use the live Y (a slab/path leaves us at y+0.5) vs maxUpStep.
       boolean climbs = target.getY() - villager.getY() > villager.maxUpStep();
-      boolean gapAhead = false;
-      int sdx = Integer.signum(target.getX() - here.getX());
-      int sdz = Integer.signum(target.getZ() - here.getZ());
-      if ((sdx != 0 || sdz != 0) && target.getY() >= here.getY()) {
-         Voxel v = new LevelVoxel(villager.level());
-         int ax = here.getX() + sdx;
-         int az = here.getZ() + sdz;
-         gapAhead = !v.isSolid(ax, here.getY(), az) && !v.isSolid(ax, here.getY() - 1, az); // passable + no floor = hole
-      }
+      // (b) GAP: this path EDGE crosses air — the target (or the node beyond it) is >=2 cells away horizontally
+      //     with no walkable floor in the intervening cell. The pathfinder emitted a jump/running-jump edge here;
+      //     we must launch across it. Detect it from the EDGE (here→target / target→next), not a single probe.
+      Voxel vox = new LevelVoxel(villager.level());
+      boolean gapAhead = edgeIsGap(vox, here, target) || (next != null && edgeIsGap(vox, here, next));
+      // Landing node for a running jump = the far side we must reach; aim momentum at IT so we clear the gap.
+      BlockPos landing = gapAhead ? (edgeIsGap(vox, here, target) ? target : next) : target;
+
       if ((climbs || gapAhead) && villager.onGround()) {
          villager.getJumpControl().jump();
+         // CRITICAL FORWARD MOMENTUM: vanilla jumpFromGround only adds horizontal launch when isSprinting()
+         // (LivingEntity.jumpFromGround) — a villager is never sprinting, so the bare JumpControl.jump() is a pure
+         // VERTICAL hop: it rises and falls straight back into the gap / against the ledge (exactly the "can't jump
+         // the gap / stuck on the step" bug). So we add the sprint-style horizontal impulse OURSELVES, toward the
+         // landing cell, scaled up for a multi-block running jump. This is the faithful analogue of sprint-jumping.
+         double tx = (landing.getX() + 0.5) - villager.getX();
+         double tz = (landing.getZ() + 0.5) - villager.getZ();
+         double len = Math.sqrt(tx * tx + tz * tz);
+         if (len > 1.0E-4) {
+            double horizDist = Math.max(Math.abs(landing.getX() - here.getX()), Math.abs(landing.getZ() - here.getZ()));
+            // 0.36 ~= the 0.2 sprint impulse + extra so a 2-3 block running jump actually lands; a plain step-up
+            // (horizDist<=1) gets a gentle nudge so it settles onto the ledge instead of overshooting.
+            double impulse = gapAhead ? (horizDist >= 3 ? 0.46 : 0.36) : 0.18;
+            net.minecraft.world.phys.Vec3 dm = villager.getDeltaMovement();
+            villager.setDeltaMovement(dm.x + tx / len * impulse, dm.y, dm.z + tz / len * impulse);
+         }
       }
       return true;
+   }
+
+   /**
+    * Does the straight edge {@code from→to} cross an AIR GAP that requires a jump? True when {@code to} is at
+    * least 2 cells away (cardinally) and at the same or higher level, AND the cell one step toward it has no
+    * walkable floor (a hole / trench / ravine lip) — i.e. you can't simply walk it, you must leap. Mirrors the
+    * pathfinder's jump-gap / running-jump edges so the executor jumps exactly where the planner planned a jump.
+    */
+   private static boolean edgeIsGap(Voxel v, BlockPos from, BlockPos to) {
+      if (to.getY() < from.getY()) {
+         return false; // dropping down is handled by walking off + falling, not a jump
+      }
+      int dx = to.getX() - from.getX();
+      int dz = to.getZ() - from.getZ();
+      int horiz = Math.max(Math.abs(dx), Math.abs(dz));
+      if (horiz < 2) {
+         return false; // adjacent edge — a step-up at most, not a gap
+      }
+      int sx = Integer.signum(dx);
+      int sz = Integer.signum(dz);
+      // The first cell toward the target: if there's no floor under it (and it's open), it's a real gap to jump.
+      int ax = from.getX() + sx;
+      int az = from.getZ() + sz;
+      return !v.isSolid(ax, from.getY() - 1, az) && !v.isSolid(ax, from.getY(), az);
    }
 
    public void reset() {
       this.path = null;
       this.pathGoal = null;
       this.index = 0;
+      this.stuckTicks = 0;
+      this.blockedReplans = 0;
+      this.avoidCell = null;
+      this.lastX = Double.NaN;
    }
 
    /**
@@ -131,7 +196,22 @@ public final class Mill3DNavigator {
       // Bias the 3D route away from the village danger field (hostiles/hazards) — safe AND 3D.
       org.millenaire.common.ai.MillInfluenceGrid danger = villager.getAiInfluence();
       float w = (float) org.millenaire.common.config.MillConfigValues.VFNavDangerWeight;
-      Mill3DPathfinder.CostField field = (x, y, z) -> w * danger.dangerAt(x, z);
+      // ALTERNATIVE-ROUTE escalation: once we've failed to make progress on the SAME route a few times, the
+      // planner keeps returning the identical dead-end (e.g. a node tucked behind an obstacle we can't actually
+      // traverse). Layer a heavy avoidance cost around the cell we keep jamming against so A* is forced to find a
+      // genuinely DIFFERENT way around — this is the "try another route" recovery (never spin on the same node).
+      final BlockPos avoid = this.blockedReplans >= BLOCKED_REPLAN_ATTEMPTS ? this.avoidCell : null;
+      Mill3DPathfinder.CostField field = (x, y, z) -> {
+         double extra = w * danger.dangerAt(x, z);
+         if (avoid != null) {
+            int adx = x - avoid.getX();
+            int adz = z - avoid.getZ();
+            if (adx * adx + adz * adz <= 4) { // within ~2 cells of the stuck spot → make A* route around it
+               extra += 1000.0;
+            }
+         }
+         return extra;
+      };
       this.path = Mill3DPathfinder.findPath(new LevelVoxel(villager.level()), villager.blockPosition(), goal, MAX_NODES, field);
       // Fail LOUD only on a GENUINE no-route (path == null). A size-1 path means "already adjacent to a
       // non-standable goal" — i.e. the villager is at the worksite — which is success, not a failure.

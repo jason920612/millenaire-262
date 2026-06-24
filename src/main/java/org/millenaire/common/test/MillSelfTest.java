@@ -222,6 +222,11 @@ public final class MillSelfTest {
    private Boolean aiConstructOk = null;
    private Boolean aiMilkOk = null;
    private Boolean aiFishOk = null;
+   // AI NAVIGATION E2E (stepAiNav*): drive the REAL villager.tick() AI over a real obstacle course — a running-jump
+   // GAP, a 1-block STEP-UP, and a WALL the villager must route AROUND — and assert it REACHES the dest without a
+   // prolonged stuck/spin. This is the faithful reproduction + regression guard for the user-reported in-game nav
+   // bug (can't jump gaps, gets stuck, spins in place). Null = not run; FALSE = the in-game nav bug reproduced.
+   private Boolean aiNavOk = null;
    // H8 HANDOFFCYCLE (point-owned task-state hand-off): villager A breaks a block PARTWAY, leaves; villager B
    // arrives at the SAME pos and reads the SAME TaskPointStore progress (not reset) and finishes the break + pickup.
    private Boolean handoffCycleOk = null;
@@ -414,6 +419,10 @@ public final class MillSelfTest {
                }
                if (aiFishOk == null) {
                   stepAiFishCycle();
+               }
+               // AI NAVIGATION E2E: real villager.tick() AI over a gap (running jump) + step-up + wall route-around.
+               if (aiNavOk == null) {
+                  stepAiNavCycle();
                }
                // VANILLA-FIDELITY edge cases of the refined doBreak/doPlace (chest contents, ore XP, wrong-tool gate,
                // place game-event/setPlacedBy) — driven through the REAL VillagerActions.harvestBlock / placeBlock
@@ -2030,6 +2039,8 @@ public final class MillSelfTest {
             log("HA AISHEAR SKIP: could not spawn sheep");
             return;
          }
+         // The sheep WANDERS (real AI) — shearing MUST work on a moving animal (user requirement); we do NOT
+         // immobilise it (that would mask the real bug instead of fixing it).
          double startDist = Math.sqrt(v.distanceToSqr(sheep));
 
          // Give the villager its tool the SAME way the goal would (Mill heldItem) and install the REAL shear goal with
@@ -2175,6 +2186,188 @@ public final class MillSelfTest {
          recordException("HA:aiplace", t);
          log("HA AIPLACE FAIL: " + t);
       }
+   }
+
+   /**
+    * AI NAVIGATION E2E (faithful reproduction + regression guard for the user-reported in-game nav bug): build a REAL
+    * obstacle course in the live ServerLevel and drive the REAL villager AI (villager.tick → the active
+    * Mill3DNavigator via BehaviourGoToPoint) across it, measuring whether it crosses a gap, steps up, routes around a
+    * wall, and reaches the dest WITHOUT prolonged stuck/spin. NO teleport recovery, NO direct setPos to the dest —
+    * only the real AI moves the villager. Greppable as {@code [MILLTEST] AINAV ...}.
+    *
+    * <p>Three legs, each from a fresh start adjacent to the obstacle:
+    * <ul>
+    *   <li>GAP: a 2-block-wide air trench between the villager and dest → requires a running jump to clear.</li>
+    *   <li>STEP-UP: a 1-block-high ledge the dest sits on → must step/jump up.</li>
+    *   <li>WALL: a 3-wide solid wall blocking the straight line → must route around the end.</li>
+    * </ul>
+    * Each leg asserts the villager arrived within a tick budget and that it never span (yaw oscillating with no
+    * position progress) for longer than a threshold.
+    */
+   private void stepAiNavCycle() {
+      try {
+         MillVillager v = realVillager();
+         if (v == null) {
+            log("AINAV SKIP: no eligible MillVillager in world");
+            return;
+         }
+         BlockPos base = v.blockPosition();
+
+         // --- LEG 1: GAP (running jump across a 2-wide air trench that spans the FULL corridor width) ---
+         NavResult gap = runNavLeg(v, base, "GAP", (start) -> {
+            clearPad(start, 9);
+            // Box the corridor in with walls at z=-3 and z=+3 so the only route is STRAIGHT across the trench
+            // (no diagonal walk-around), and dig a full-width 2-block trench (a real pit) at start+4..start+5.
+            for (int cx = -2; cx <= 9; cx++) {
+               level.setBlock(start.offset(cx, 0, -3), net.minecraft.world.level.block.Blocks.STONE.defaultBlockState(), 3);
+               level.setBlock(start.offset(cx, 1, -3), net.minecraft.world.level.block.Blocks.STONE.defaultBlockState(), 3);
+               level.setBlock(start.offset(cx, 0, 3), net.minecraft.world.level.block.Blocks.STONE.defaultBlockState(), 3);
+               level.setBlock(start.offset(cx, 1, 3), net.minecraft.world.level.block.Blocks.STONE.defaultBlockState(), 3);
+            }
+            for (int gx = 4; gx <= 5; gx++) {
+               for (int gz = -2; gz <= 2; gz++) {
+                  for (int gy = -1; gy >= -4; gy--) { // a real pit so it can't walk through at a lower floor
+                     level.setBlock(start.offset(gx, gy, gz), net.minecraft.world.level.block.Blocks.AIR.defaultBlockState(), 3);
+                  }
+               }
+            }
+            return start.offset(8, 0, 0); // dest on solid ground across the trench
+         });
+
+         // --- LEG 2: STEP-UP (dest on a 1-block ledge) ---
+         NavResult step = runNavLeg(v, base, "STEP", (start) -> {
+            clearPad(start, 9);
+            // A raised platform from start+4..start+7 at +1, with its support, dest on top.
+            for (int sx = 4; sx <= 7; sx++) {
+               for (int sz = -1; sz <= 1; sz++) {
+                  level.setBlock(start.offset(sx, 0, sz), net.minecraft.world.level.block.Blocks.STONE.defaultBlockState(), 3);
+                  level.setBlock(start.offset(sx, 1, sz), net.minecraft.world.level.block.Blocks.AIR.defaultBlockState(), 3);
+                  level.setBlock(start.offset(sx, 2, sz), net.minecraft.world.level.block.Blocks.AIR.defaultBlockState(), 3);
+               }
+            }
+            return start.offset(6, 1, 0); // dest standing on the ledge
+         });
+
+         // --- LEG 3: WALL (route around a blocking wall: a long wall with only ONE open end) ---
+         NavResult wall = runNavLeg(v, base, "WALL", (start) -> {
+            clearPad(start, 9);
+            // A 2-high wall at x=start+4 from z=-6 up to z=+2 (open only at the z=+3..+6 end), so the straight
+            // line to the dest is blocked and the villager must detour to the open south end and back.
+            for (int wz = -6; wz <= 2; wz++) {
+               level.setBlock(start.offset(4, 0, wz), net.minecraft.world.level.block.Blocks.STONE.defaultBlockState(), 3);
+               level.setBlock(start.offset(4, 1, wz), net.minecraft.world.level.block.Blocks.STONE.defaultBlockState(), 3);
+            }
+            return start.offset(8, 0, 0); // dest straight through the wall → must go around the open end
+         });
+
+         // Clean up the course.
+         clearPad(base, 9);
+         for (int dy = -4; dy <= 2; dy++) {
+            for (int dx = -9; dx <= 9; dx++) {
+               for (int dz = -9; dz <= 9; dz++) {
+                  level.setBlock(base.offset(dx, dy, dz), dy < 0
+                     ? net.minecraft.world.level.block.Blocks.GRASS_BLOCK.defaultBlockState()
+                     : net.minecraft.world.level.block.Blocks.AIR.defaultBlockState(), 3);
+               }
+            }
+         }
+
+         // Genuine traversal proof (a lenient arrival radius alone must not pass): the villager must have
+         // physically gotten PAST the obstacle. GAP/WALL obstacles sit at x=start+4..5, so maxX must clear them.
+         boolean gapCrossed = gap.maxX >= base.getX() + 6.0;   // past the 2-wide trench at x+4..+5
+         boolean wallCrossed = wall.maxX >= base.getX() + 5.0; // past the wall at x+4
+         boolean ok = gap.reached && step.reached && wall.reached && gapCrossed && wallCrossed
+            && gap.maxSpin <= NAV_SPIN_LIMIT && step.maxSpin <= NAV_SPIN_LIMIT && wall.maxSpin <= NAV_SPIN_LIMIT;
+         aiNavOk = ok;
+         log("AINAV via REAL villager.tick() AI: GAP=" + gap + " (crossed=" + gapCrossed + ") STEP=" + step
+            + " WALL=" + wall + " (crossed=" + wallCrossed + ")");
+         log("AINAV " + (ok
+            ? "OK (gap crossed + stepped up + routed around wall, all dests reached, no prolonged spin)"
+            : "FAIL (in-game nav bug reproduced — see per-leg reached/ticks/maxStuck/maxSpin above)"));
+      } catch (Throwable t) {
+         aiNavOk = false;
+         recordException("AI:ainav", t);
+         log("AINAV FAIL: " + t);
+      }
+   }
+
+   /** Max consecutive ticks of yaw-oscillation-with-no-progress (a spin) we tolerate before calling it a failure. */
+   private static final int NAV_SPIN_LIMIT = 40;
+
+   /** Per-leg navigation outcome. */
+   private static final class NavResult {
+      boolean reached;
+      int ticks;
+      int maxStuck;
+      int maxSpin;
+      double finalDist;
+      double maxX; // furthest +X the villager reached (proves it crossed the trench/wall, not just wandered)
+
+      @Override
+      public String toString() {
+         return "{reached=" + reached + " ticks=" + ticks + " maxStuck=" + maxStuck + " maxSpin=" + maxSpin
+            + " finalDist=" + fmt(finalDist) + "}";
+      }
+   }
+
+   /** Builds a leg's obstacle (returning the dest) then drives the REAL AI to it, measuring stuck/spin. */
+   private NavResult runNavLeg(MillVillager v, BlockPos base, String name, java.util.function.Function<BlockPos, BlockPos> course) {
+      NavResult r = new NavResult();
+      v.setPos(base.getX() + 0.5, base.getY(), base.getZ() + 0.5);
+      v.stopMoving = false;
+      BlockPos dest = course.apply(base);
+      double lastX = v.getX();
+      double lastZ = v.getZ();
+      float lastYaw = v.getYRot();
+      int curStuck = 0;
+      int curSpin = 0;
+      int lastSpinSign = 0;
+      r.maxX = v.getX();
+      final int budget = 600;
+      for (r.ticks = 0; r.ticks < budget; r.ticks++) {
+         // Real AI: point the navigation at the dest the way a point goal would, then tick the whole entity AI.
+         v.setPathDestPoint(new Point(dest), 1);
+         v.tick();
+         double dx = v.getX() - lastX;
+         double dz = v.getZ() - lastZ;
+         boolean moved = dx * dx + dz * dz >= 0.0025;
+         // Spin = yaw changing direction repeatedly while NOT moving (the in-place pirouette symptom).
+         float yawDelta = net.minecraft.util.Mth.wrapDegrees(v.getYRot() - lastYaw);
+         int spinSign = Math.abs(yawDelta) > 2.0f ? Integer.signum((int) Math.signum(yawDelta)) : 0;
+         if (!moved && spinSign != 0 && spinSign != lastSpinSign && lastSpinSign != 0) {
+            curSpin++;
+         } else if (moved) {
+            curSpin = 0;
+         }
+         if (spinSign != 0) {
+            lastSpinSign = spinSign;
+         }
+         r.maxSpin = Math.max(r.maxSpin, curSpin);
+         if (moved) {
+            curStuck = 0;
+         } else {
+            r.maxStuck = Math.max(r.maxStuck, ++curStuck);
+         }
+         lastX = v.getX();
+         lastZ = v.getZ();
+         lastYaw = v.getYRot();
+         r.maxX = Math.max(r.maxX, v.getX());
+         // Arrival: at the dest within the AI's OWN arrival radius. BehaviourGoToPoint settles at ARRIVE=2.0
+         // horizontal and Mill3DNavigator treats closerThan(goal,1.6) as arrived, so the villager legitimately
+         // stops ~2 blocks from the dest CELL CENTRE — accept that as reached (distSqr <= 5.0 ~= 2.24 blocks).
+         if (dest.distSqr(v.blockPosition()) <= 5.0) {
+            r.reached = true;
+            break;
+         }
+      }
+      r.finalDist = Math.sqrt(dest.distSqr(v.blockPosition()));
+      log("AINAV " + name + " leg: start=" + base + " dest=" + dest + " maxX=" + fmt(r.maxX) + " " + r);
+      // reset AI state between legs so a stale path/detour doesn't bleed across.
+      v.getNavigation().stop();
+      if (v.activeNav3d != null) {
+         v.activeNav3d.reset();
+      }
+      return r;
    }
 
    // ===== STEP HB: FAITHFUL harvest/break family (REAL migrated goal.performAction via REAL navigation) =====
@@ -3801,6 +3994,8 @@ public final class MillSelfTest {
       log("AI construct (real navigation → place action → planned block placed + strict material gate held): " + (aiConstructOk == null ? "not run" : (aiConstructOk ? "OK" : "FAIL (in-game bug)")));
       log("AI milk (goalKey=milkcow, real AI navigates+performAction → bucket actually becomes milk_bucket): " + (aiMilkOk == null ? "not run" : (aiMilkOk ? "OK" : "FAIL (in-game bug)")));
       log("AI fish (real GoalFish action → full bobber animation → FISHING loot actually caught + collected): " + (aiFishOk == null ? "not run" : (aiFishOk ? "OK" : "FAIL (in-game bug)")));
+      log("AI NAV (real villager.tick AI over GAP running-jump + STEP-up + WALL route-around → reaches dest, no spin): "
+         + (aiNavOk == null ? "not run" : (aiNavOk ? "OK" : "FAIL (in-game nav bug reproduced)")));
       log("=== VANILLA-FIDELITY break/place edge cases (refined doBreak/doPlace mirror ServerPlayerGameMode/BlockItem) ===");
       log("FIDELITY chest contents (break a filled CHEST → its contents drop as item entities): "
          + (fidelityChestOk == null ? "not run" : (fidelityChestOk ? "OK" : "FAIL")));

@@ -130,6 +130,11 @@ public class GoalIndianDryBrick extends Goal {
          VillagerWorldOps.place(villager, pos, MillBlocks.BS_WET_BRICK);
       }
 
+      // An emergent MERGE/WAR absorb can DEMOTE the building while this goal still points at it, leaving
+      // getGoalBuildingDest() null — a legitimate null. End the goal cleanly so it re-picks (GoalFish convention).
+      if (villager.getGoalBuildingDest() == null || villager.getGoalBuildingDest().getResManager() == null) {
+         return true;
+      }
       if (villager.getGoalBuildingDest().getResManager().getNbEmptyBrickLocation() > 0) {
          villager.setGoalInformation(this.getDestination(villager));
          return false;

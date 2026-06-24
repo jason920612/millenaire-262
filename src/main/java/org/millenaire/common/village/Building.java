@@ -5961,6 +5961,15 @@ public class Building {
          if (com.coderyo.jason.war.VillageWar.tick(this)) {
             return true;
          }
+         // Phase 7 (#7) AMBIENT DIPLOMACY: AFTER war, the village runs friendly inter-village diplomacy with its
+         // nearby, NON-hostile, NON-at-war, NON-overlapping neighbours — proposing (and on accept applying) a TRADE
+         // pact when a complementary surplus↔need actually exists, or an ALLIANCE when the relation is genuinely
+         // friendly. War-PEACE flows through VillageWar.tick and merge-consent through VillageMergeFound.tick; this
+         // is the last gap of #7 — ambient TRADE/ALLIANCE between friendly neighbours that previously only the demo
+         // ever drove. Strict no-fabrication: only a real complementary-trade / friendly-relation pair that
+         // propose()+respond() accept applies an effect; an unmet condition is no pact this tick. Self-throttles per
+         // village; does not itself count as a construction change.
+         com.coderyo.jason.talk.VillageDiplomacy.tickDiplomacy(this);
          // Phase 7 (#7) VILLAGER DISCUSSION: on its cooldown the village's villagers DISCUSS their most pressing
          // topic (defend / gather / build) and the endorsed build type is pushed as a CAUSAL STEER onto the
          // procedural construction below — so the village's next build genuinely reflects what was discussed (only

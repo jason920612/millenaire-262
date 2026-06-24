@@ -1,9 +1,17 @@
 package com.coderyo.jason.talk;
 
+import java.util.HashMap;
+import java.util.List;
+import java.util.Map;
+
+import org.millenaire.common.forge.Mill;
 import org.millenaire.common.utilities.MillLog;
+import org.millenaire.common.utilities.Point;
 import org.millenaire.common.village.Building;
+import org.millenaire.common.world.MillWorldData;
 
 import com.coderyo.jason.build.MillNeedsModel;
+import com.coderyo.jason.expand.VillageExpansion;
 import com.coderyo.jason.merge.VillageMergeFound;
 import com.coderyo.jason.war.VillageWar;
 
@@ -64,6 +72,15 @@ public final class VillageDiplomacy {
    public static final int ALLIANCE_RELATION_SET = 80;
    /** Relation gained by each side on an accepted TRADE pact (talksim {@code apply_diplomacy} trade += 10). */
    public static final int TRADE_RELATION_GAIN = 10;
+
+   /** Per-village cooldown (game ticks) so a village evaluates ambient diplomacy deliberately, not every tick. */
+   public static final long DIPLOMACY_COOLDOWN_TICKS = 800L;
+   /**
+    * Range (blocks) within which a neighbour town hall is considered "nearby" for ambient diplomacy — generous
+    * enough that two villages whose claims reach toward each other (MAX_RADIUS=400) can find each other.
+    */
+   public static final int NEIGHBOUR_RANGE = 2 * VillageExpansion.MAX_RADIUS;
+   private static final Map<Long, Long> LAST_TICK = new HashMap<>();
 
    private VillageDiplomacy() {
    }
@@ -241,6 +258,117 @@ public final class VillageDiplomacy {
       MillLog.major(null, TAG + " '" + safeName(a) + "' → '" + safeName(b) + "' " + p.kind
          + " | \"" + p.line + "\" | " + (accepted ? "ACCEPTED" : "REJECTED") + " | effect: " + effect);
       return new NegotiationResult(p, accepted, effect);
+   }
+
+   // ===============================================================================================
+   // AMBIENT TICK — autonomous trade/alliance diplomacy between friendly neighbours (Phase 7 real-game wiring)
+   // ===============================================================================================
+
+   /**
+    * Phase 7 (#7) — the AMBIENT diplomacy tick for one village town hall, called from
+    * {@code Building.updateConstructionQueue} alongside the merge / war / discussion ticks. On its cooldown the
+    * village looks at its NEARBY, NON-hostile, NON-at-war, NON-overlapping (merge owns overlap) neighbour town
+    * halls and runs a real {@link #negotiate} with each — proposing (and on accept, applying) a TRADE pact when a
+    * complementary surplus↔need actually exists, or an ALLIANCE when the relation is genuinely friendly. This is
+    * the last gap of #7: war-PEACE flows through {@link VillageWar#tick} and merge-consent through
+    * {@link VillageMergeFound#tick}, but ambient TRADE/ALLIANCE between friendly neighbours had no real-game caller
+    * (only the demo). Mirrors the existing per-village cooldown pattern + client/townhall guards.
+    *
+    * <p>Strict no-fabrication: PEACE/MERGE pairs are skipped here (those phases own them); only TRADE/ALLIANCE that
+    * {@link #propose}+{@link #respond} actually accept apply an effect. An unmet condition is simply no pact this
+    * tick. Returns the number of pacts that fired (for the caller / tests); 0 when nothing was warranted.
+    */
+   public static int tickDiplomacy(Building townHall) {
+      if (townHall == null || townHall.world == null || townHall.world.isClientSide()
+         || !townHall.isTownhall || !townHall.isActive) {
+         return 0;
+      }
+      long key = townHall.getPos().getBlockPos().asLong();
+      long now = townHall.world.getGameTime();
+      Long last = LAST_TICK.get(key);
+      if (last != null && now - last < DIPLOMACY_COOLDOWN_TICKS) {
+         return 0;
+      }
+      LAST_TICK.put(key, now);
+
+      MillWorldData mw = Mill.getMillWorld(townHall.world);
+      if (mw == null) {
+         return 0;
+      }
+      List<Building> villages = VillageMergeFound.liveTownHalls(mw);
+      int pacts = 0;
+
+      for (Building other : villages) {
+         if (!townHall.isActive) {
+            break;
+         }
+         if (other == townHall || other == null || other.getPos() == null || !other.isActive
+            || other.getPos() == townHall.getPos()) {
+            continue;
+         }
+         // Evaluate each unordered pair only once (from the lower-keyed town hall) so a pact isn't double-applied.
+         if (other.getPos().getBlockPos().asLong() < key) {
+            continue;
+         }
+         // Only NEARBY neighbours (claims able to reach toward each other) bother with diplomacy.
+         if (distance(townHall, other) > NEIGHBOUR_RANGE) {
+            continue;
+         }
+         // Skip pairs the other phases own: a war/ceasefire is the war path's, an overlapping mergeable pair is the
+         // merge path's. Ambient diplomacy here is strictly for friendly, non-warring, non-merging neighbours.
+         if (VillageWar.atWar(townHall, other)) {
+            continue;
+         }
+         if (isHostile(townHall, other) || isHostile(other, townHall)) {
+            continue; // a soured/hostile pair isn't doing friendly diplomacy (war path owns the grievance)
+         }
+         if (VillageMergeFound.overlap(townHall, other)) {
+            continue; // an overlapping same-region pair → the merge tick owns that decision
+         }
+
+         // Real negotiation: propose() only returns TRADE when a complementary surplus↔need actually exists and
+         // ALLIANCE only when the relation is genuinely ≥ ALLIANCE_RELATION; respond() accepts from the other's own
+         // state. We only ACT on the ambient TRADE/ALLIANCE branches here (PEACE/MERGE are skipped above anyway).
+         Proposal p = propose(townHall, other);
+         if (p.kind != Kind.TRADE && p.kind != Kind.ALLIANCE) {
+            continue; // nothing friendly to offer this neighbour (no fabrication)
+         }
+         int relBeforeAB = relation(townHall, other);
+         int relBeforeBA = relation(other, townHall);
+         NegotiationResult nr = negotiate(townHall, other);
+         if (nr.accepted && (nr.proposal.kind == Kind.TRADE || nr.proposal.kind == Kind.ALLIANCE)) {
+            pacts++;
+            MillLog.major(null, TAG + " AMBIENT " + nr.proposal.kind + " pact fired from real village tick: '"
+               + safeName(townHall) + "' x '" + safeName(other) + "' ACCEPTED"
+               + (nr.proposal.kind == Kind.TRADE ? " (resource=" + nr.proposal.resource + ")" : "")
+               + " — relation " + relBeforeAB + "/" + relBeforeBA + " → " + relation(townHall, other) + "/"
+               + relation(other, townHall) + " | effect: " + nr.effect);
+         } else {
+            MillLog.major(null, TAG + " AMBIENT " + p.kind + " proposal from real village tick: '"
+               + safeName(townHall) + "' x '" + safeName(other) + "' REJECTED (relation "
+               + relBeforeAB + "/" + relBeforeBA + ")");
+         }
+      }
+      return pacts;
+   }
+
+   /** A relation at/below the hostile threshold means the pair is in the war path's territory, not friendly diplomacy. */
+   private static boolean isHostile(Building a, Building b) {
+      return relation(a, b) < 0;
+   }
+
+   /** Horizontal distance between two town halls (for the nearby-neighbour gate). */
+   private static double distance(Building a, Building b) {
+      Point pa = a.getPos();
+      Point pb = b.getPos();
+      return Math.hypot(pa.getiX() - pb.getiX(), pa.getiZ() - pb.getiZ());
+   }
+
+   /** Drop a village's ambient-diplomacy cooldown state (e.g. on unload / after it is absorbed) so it doesn't leak. */
+   public static void clear(Building townHall) {
+      if (townHall != null && townHall.getPos() != null) {
+         LAST_TICK.remove(townHall.getPos().getBlockPos().asLong());
+      }
    }
 
    // ===============================================================================================

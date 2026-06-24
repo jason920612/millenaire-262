@@ -157,6 +157,11 @@ public class GoalIndianGatherBrick extends Goal {
          // fall through to re-target the next full-brick location.
       }
 
+      // An emergent MERGE/WAR absorb can DEMOTE the building while this goal still points at it, leaving
+      // getGoalBuildingDest() null — a legitimate null. End the goal cleanly so it re-picks (GoalFish convention).
+      if (villager.getGoalBuildingDest() == null || villager.getGoalBuildingDest().getResManager() == null) {
+         return true;
+      }
       if (villager.getGoalBuildingDest().getResManager().getNbFullBrickLocation() > 0) {
          villager.setGoalInformation(this.getDestination(villager));
          return false;

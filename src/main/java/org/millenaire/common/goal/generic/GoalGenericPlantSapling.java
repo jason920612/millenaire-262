@@ -85,6 +85,12 @@ public class GoalGenericPlantSapling extends GoalGeneric {
       if (block == Blocks.AIR
          || block == Blocks.SNOW
          || BlockItemUtilities.isBlockDecorativePlant(block) && !(block instanceof SaplingBlock)) {
+         // An emergent MERGE/WAR absorb can DEMOTE the grove building while this goal still points at it, leaving
+         // getGoalBuildingDest() null. That is a legitimate null (not an error): end the goal cleanly so it gets
+         // re-picked, matching GoalFish's convention (return true).
+         if (villager.getGoalBuildingDest() == null || villager.getGoalBuildingDest().getResManager() == null) {
+            return true;
+         }
          String saplingType = villager.getGoalBuildingDest().getResManager().getPlantingLocationType(villager.getGoalDestPoint());
          // 26.2: the 1.12 sapling meta-variants (SaplingBlock.TYPE + BlockPlanks.EnumType) are gone — each
          // wood type is a distinct sapling block. The planting-location type maps to the matching block.

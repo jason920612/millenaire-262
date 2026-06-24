@@ -927,8 +927,15 @@ public class MillWorldData {
    public void removeVillagerRecord(long villagerId) {
       VillagerRecord villagerRecord = this.villagerRecords.get(villagerId);
       if (villagerRecord != null) {
-         villagerRecord.getTownHall().removeVillagerRecord(villagerId);
-         villagerRecord.getHouse().removeVillagerRecord(villagerId);
+         // An emergent MERGE/WAR absorb can DEMOTE/remove this record's town hall or house while the record still
+         // points at it, so getTownHall()/getHouse() return null. Those are legitimate nulls (the building is gone):
+         // skip the now-defunct building's own record-removal rather than NPE, and still drop the global record.
+         if (villagerRecord.getTownHall() != null) {
+            villagerRecord.getTownHall().removeVillagerRecord(villagerId);
+         }
+         if (villagerRecord.getHouse() != null) {
+            villagerRecord.getHouse().removeVillagerRecord(villagerId);
+         }
       }
 
       this.villagerRecords.remove(villagerId);

@@ -182,10 +182,14 @@ public class GoalGenericGatherBlocks extends GoalGeneric {
          } else {
             // In reach: real player-like interact — swing, then the 1.12 transform + the 1.12-fixed bonus yield.
             villager.swing(InteractionHand.MAIN_HAND);
+            // An emergent MERGE/WAR absorb can DEMOTE the building while this goal still points at it, leaving
+            // getGoalBuildingDest() null. If so, fall back to the villager's own inventory rather than NPE on the
+            // direct deref (a legitimate null from emergent demotion).
+            Building gatherDest = villager.getGoalBuildingDest();
             for (AnnotedParameter.BonusItem bonusItem : this.harvestItem) {
                if (MillRandom.randomInt(100) <= bonusItem.chance) {
-                  if (this.collectInBuilding) {
-                     villager.getGoalBuildingDest().storeGoods(bonusItem.item, 1);
+                  if (this.collectInBuilding && gatherDest != null) {
+                     gatherDest.storeGoods(bonusItem.item, 1);
                   } else {
                      villager.addToInv(bonusItem.item, 1);
                   }
